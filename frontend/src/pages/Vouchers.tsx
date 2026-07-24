@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Ticket, Download, Zap, Printer, Layers } from 'lucide-react'
+import { Ticket, Download, Zap, Printer, Layers, BarChart3 } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { api, apiError } from '../lib/api'
 import { useQuery } from '../lib/cache'
@@ -11,11 +11,12 @@ import { statusPill } from '../lib/format'
 import { GlassCard, PageTitle, Pagination, Pill, Modal, EmptyState, CustomSelect, Spinner } from '../components/ui'
 import { VoucherCard } from '../components/VoucherCard'
 import VoucherGenerateTab from './VoucherGenerateTab'
+import VoucherSalesSummaryTab from './VoucherSalesSummaryTab'
 
 export default function Vouchers() {
   const { user, refresh } = useAuth()
   const navigate = useNavigate()
-  const [activeTab, setActiveTab] = useState<'vouchers' | 'batches' | 'generate'>('generate')
+  const [activeTab, setActiveTab] = useState<'vouchers' | 'batches' | 'generate' | 'sales-summary'>('generate')
   const [loadingAction, setLoadingAction] = useState(false)
   const [progress, setProgress] = useState(0)
   
@@ -186,12 +187,20 @@ export default function Vouchers() {
         >
           <Ticket size={16} /> Vouchers List
         </button>
-        <button 
+        <button
           className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-t-xl border-b-2 transition-all ${activeTab === 'batches' ? 'border-primary text-primary' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
           onClick={() => setActiveTab('batches')}
         >
           <Layers size={16} /> Batches List
         </button>
+        {user?.role !== 'seller' && (
+          <button
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-t-xl border-b-2 transition-all ${activeTab === 'sales-summary' ? 'border-primary text-primary' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+            onClick={() => setActiveTab('sales-summary')}
+          >
+            <BarChart3 size={16} /> Sales Summary
+          </button>
+        )}
       </div>
 
       {activeTab === 'vouchers' && (
@@ -353,15 +362,17 @@ export default function Vouchers() {
       )}
 
       {activeTab === 'generate' && (
-        <VoucherGenerateTab 
-          plans={plans} 
-          refetchPlans={refetchPlans} 
+        <VoucherGenerateTab
+          plans={plans}
+          refetchPlans={refetchPlans}
           onSuccess={() => {
             load()
             refetchBatches()
           }}
         />
       )}
+
+      {activeTab === 'sales-summary' && <VoucherSalesSummaryTab />}
 
       {/* Sell Voucher Modal */}
       <Modal open={!!sellVoucher} onClose={() => setSellVoucher(null)} title={`Sell Voucher: ${sellVoucher?.code}`}>

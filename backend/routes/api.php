@@ -113,6 +113,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Reports — used-voucher package summary (scoped); drill-down via /vouchers.
     Route::get('/reports/package-summary', [ReportController::class, 'packageSummary'])->middleware('permission:reports');
+    Route::get('/reports/reseller-summary', [ReportController::class, 'resellerSummary'])->middleware('permission:reports');
 
     // System Permissions Configuration Matrix
     Route::get('/permissions', [PermissionController::class, 'index']);

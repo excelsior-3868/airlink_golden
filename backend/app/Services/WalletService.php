@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Payment;
 use App\Models\User;
 use App\Models\WalletTransaction;
 use Illuminate\Support\Facades\DB;
@@ -13,8 +14,14 @@ class WalletService
      * Move money from $from to $to (admin→reseller or reseller→seller "load",
      * or reseller→seller "transfer"). Deducts the sender, credits the
      * receiver, and records both sides — atomically.
+     *
+     * Partial payment strategy mirrors GbService::allocate: the receiver's
+     * wallet_balance always gets the full amount, but only the unpaid
+     * remainder ($amount - $paidAmount) is added to their wallet_due. When
+     * $paidAmount is null the load is treated as fully settled (no due),
+     * which preserves the original debt-free transfer behavior.
      */
-    public function transfer(User $from, User $to, float $amount, string $type = 'load', ?string $note = null, ?string $reference = null): void
+    public function transfer(User $from, User $to, float $amount, string $type = 'load', ?string $note = null, ?string $reference = null, ?float $paidAmount = null): void
     {
         if ($amount <= 0) {
             throw ValidationException::withMessages(['amount' => 'Amount must be greater than zero.']);
@@ -29,7 +36,15 @@ class WalletService
             throw ValidationException::withMessages(['user_id' => 'You can only load/transfer to your own direct downline.']);
         }
 
-        DB::transaction(function () use ($from, $to, $amount, $type, $note, $reference) {
+        $paidAmount ??= $amount;
+        if ($paidAmount < 0) {
+            throw ValidationException::withMessages(['paid_amount' => 'Paid amount cannot be negative.']);
+        }
+        if ($paidAmount > $amount) {
+            throw ValidationException::withMessages(['paid_amount' => "Paid amount Rs {$paidAmount} cannot exceed the loaded amount of Rs {$amount}."]);
+        }
+
+        DB::transaction(function () use ($from, $to, $amount, $type, $note, $reference, $paidAmount) {
             // Lock both rows to prevent concurrent double-spend.
             $sender = User::whereKey($from->id)->lockForUpdate()->first();
             $receiver = User::whereKey($to->id)->lockForUpdate()->first();
@@ -40,6 +55,13 @@ class WalletService
 
             $sender->decrement('wallet_balance', $amount);
             $receiver->increment('wallet_balance', $amount);
+
+            // Only the unpaid remainder becomes outstanding due.
+            $dueAmount = round($amount - $paidAmount, 2);
+            if ($dueAmount > 0) {
+                $receiver->increment('wallet_due', $dueAmount);
+            }
+
             $sender->refresh();
             $receiver->refresh();
 
@@ -53,6 +75,17 @@ class WalletService
                 'balance_after' => $receiver->wallet_balance, 'from_user_id' => $sender->id,
                 'reference' => $reference, 'note' => $note ?? "Received from {$sender->username}",
             ]);
+
+            // Record the upfront settlement as a payment (receiver pays the sender).
+            if ($paidAmount > 0) {
+                Payment::create([
+                    'sender_id' => $receiver->id,
+                    'receiver_id' => $sender->id,
+                    'amount' => $paidAmount,
+                    'payment_date' => now(),
+                    'note' => $note ?? "Payment for wallet load from {$sender->username}",
+                ]);
+            }
         });
     }
 

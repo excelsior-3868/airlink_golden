@@ -23,11 +23,20 @@ class WalletController extends Controller
         $data = $request->validate([
             'user_id' => ['required', 'integer', 'exists:users,id'],
             'amount' => ['required', 'numeric', 'min:0.01'],
+            'paid_amount' => ['nullable', 'numeric', 'min:0'],
             'note' => ['nullable', 'string', 'max:255'],
         ]);
 
         $to = User::findOrFail($data['user_id']);
-        $this->wallet->transfer($request->user(), $to, (float) $data['amount'], 'load', $data['note'] ?? null);
+        $this->wallet->transfer(
+            $request->user(),
+            $to,
+            (float) $data['amount'],
+            'load',
+            $data['note'] ?? null,
+            null,
+            isset($data['paid_amount']) ? (float) $data['paid_amount'] : null,
+        );
 
         return $this->ok(['balance' => $to->fresh()->wallet_balance], 'Wallet loaded.');
     }

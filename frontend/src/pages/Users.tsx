@@ -8,6 +8,19 @@ import { useAuth } from '../lib/auth'
 import { rs, gb, date, datet } from '../lib/format'
 import { GlassCard, PageTitle, Modal, Pill, Pagination, EmptyState, Spinner } from '../components/ui'
 
+// Live-typing display formatter for a numeric amount input: inserts Indian-style
+// thousand separators on the integer part while preserving an in-progress decimal.
+const formatAmountInput = (raw: string) => {
+  if (!raw) return ''
+  const neg = raw.startsWith('-') ? '-' : ''
+  const body = neg ? raw.slice(1) : raw
+  const dotIdx = body.indexOf('.')
+  const intPart = dotIdx === -1 ? body : body.slice(0, dotIdx)
+  const decPart = dotIdx === -1 ? '' : '.' + body.slice(dotIdx + 1)
+  const intFormatted = intPart ? Number(intPart).toLocaleString('en-IN') : (decPart ? '0' : '')
+  return neg + intFormatted + decPart
+}
+
 export default function Users({ role }: { role: 'reseller' | 'seller' }) {
   const { user, refresh, can } = useAuth()
   const location = useLocation()
@@ -240,13 +253,21 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
     setBusy(true)
     setErr('')
     try {
-      if (fund.amount) await api.post('/wallet/load', { user_id: fundUser.id, amount: +fund.amount })
-      if (fund.gb_amount) {
-        const gbTotal = +fund.gb_amount * +(fundUser?.gb_rate || 0)
+      const walletAmt = +fund.amount || 0
+      const gbAmt = +fund.gb_amount || 0
+      const gbTotal = gbAmt * +(fundUser?.gb_rate || 0)
+      const totalCost = walletAmt + gbTotal
+      const paidNow = Math.min(+fund.gb_paid || 0, totalCost)
+      // Payment applies to the GB cost first, any leftover settles the wallet portion.
+      const paidToGb = Math.min(paidNow, gbTotal)
+      const paidToWallet = paidNow - paidToGb
+
+      if (walletAmt > 0) await api.post('/wallet/load', { user_id: fundUser.id, amount: walletAmt, paid_amount: paidToWallet })
+      if (gbAmt > 0) {
         await api.post('/gb/allocate', {
           user_id: fundUser.id,
-          gb_amount: +fund.gb_amount,
-          paid_amount: fund.gb_paid ? Math.min(+fund.gb_paid, gbTotal) : 0,
+          gb_amount: gbAmt,
+          paid_amount: paidToGb,
         })
       }
       setFundUser(null); setFund({ amount: '', gb_amount: '', gb_paid: '' }); setExpandedUserId(null); setHistoryData([]); load(); refresh()
@@ -657,35 +678,54 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
             </div>
           )}
 
-          {+fund.gb_amount > 0 && (() => {
-            const gbTotal = (+fund.gb_amount || 0) * +(fundUser?.gb_rate || 0)
-            const paid = Math.min(+fund.gb_paid || 0, gbTotal)
-            const due = Math.max(gbTotal - paid, 0)
+          {(+fund.amount > 0 || +fund.gb_amount > 0) && (() => {
+            const walletAmt = +fund.amount || 0
+            const gbAmt = (+fund.gb_amount || 0) * +(fundUser?.gb_rate || 0)
+            const totalCost = walletAmt + gbAmt
+            const paid = Math.min(+fund.gb_paid || 0, totalCost)
+            const due = Math.max(totalCost - paid, 0)
             return (
               <div className="rounded-2xl border border-slate-200/80 bg-slate-50/60 p-3 space-y-3">
-                <div className="flex items-center justify-between text-xs flex-wrap gap-2">
-                  <span className="text-slate-500 font-semibold">GB Allocation cost</span>
-                  <div className="flex items-center gap-1 text-[11px] sm:text-xs font-bold text-slate-700">
-                    <span className="text-purple-600 font-bold">{rs(gbTotal)}</span>
+                {walletAmt > 0 && (
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-500 font-semibold">Wallet Price</span>
+                    <span className="font-bold text-slate-700">{rs(walletAmt)}</span>
                   </div>
-                </div>
+                )}
+                {gbAmt > 0 && (
+                  <div className="flex items-center justify-between text-xs flex-wrap gap-2">
+                    <span className="text-slate-500 font-semibold">GB Allocation cost</span>
+                    <span className="text-purple-600 font-bold">{rs(gbAmt)}</span>
+                  </div>
+                )}
                 <div className="relative">
                   <Wallet size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
                     className="input pl-10 no-spinners"
-                    type="number"
-                    min="0"
-                    max={gbTotal}
-                    step="0.01"
+                    type="text"
+                    inputMode="decimal"
                     placeholder="Paid now (Rs) — optional"
-                    value={fund.gb_paid}
-                    onChange={(e) => setFund({ ...fund, gb_paid: e.target.value })}
+                    value={formatAmountInput(fund.gb_paid)}
+                    onChange={(e) => {
+                      const raw = e.target.value.replace(/,/g, '')
+                      if (raw !== '' && !/^\d*\.?\d*$/.test(raw)) return
+                      // Preserve in-progress decimal typing (e.g. "100."); only clamp once it actually exceeds the cap.
+                      const parsed = +raw
+                      const next = raw !== '' && !isNaN(parsed) && parsed > totalCost ? String(totalCost) : raw
+                      setFund({ ...fund, gb_paid: next })
+                    }}
                   />
                 </div>
                 <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-200/70">
                   <span className="text-slate-500 font-semibold">Remaining due (added)</span>
                   <span className={`font-bold ${due > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{rs(due)}</span>
                 </div>
+                {walletAmt > 0 && gbAmt > 0 && (
+                  <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-200/70">
+                    <span className="text-slate-600 font-semibold">Total Amount</span>
+                    <span className="font-bold text-blue-700">{rs(walletAmt + gbAmt)}</span>
+                  </div>
+                )}
               </div>
             )
           })()}
