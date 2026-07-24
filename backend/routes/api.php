@@ -145,6 +145,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/radius/auth-logs', [RadiusController::class, 'authLogs']);
         Route::get('/radius/clients-config', [RadiusController::class, 'clientsConfig']);
         Route::post('/radius/test-auth', [RadiusController::class, 'testAuth']);
+        Route::post('/radius/restart', [RadiusController::class, 'restart']);
 
         // Seasons management (admin only)
         Route::put('/seasons/{season}', [SeasonController::class, 'update']);

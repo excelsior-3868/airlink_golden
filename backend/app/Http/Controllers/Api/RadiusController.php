@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Exception;
 
 class RadiusController extends Controller
@@ -72,6 +73,35 @@ class RadiusController extends Controller
             }
         } catch (Exception $e) {
             return $this->fail('RADIUS authentication test failed: ' . $e->getMessage(), 500);
+        }
+    }
+
+    /**
+     * Restart the FreeRADIUS container so newly added/edited NAS clients
+     * (loaded from the `nas` table only at process startup) take effect.
+     * Goes through a docker-socket-proxy scoped to container restart only,
+     * never the raw Docker socket, so a compromised backend can't do more
+     * than restart the one named container.
+     */
+    public function restart(): JsonResponse
+    {
+        $proxyUrl = env('DOCKER_PROXY_URL');
+        $container = env('FREERADIUS_CONTAINER');
+
+        if (!$proxyUrl || !$container) {
+            return $this->fail('Docker proxy is not configured (DOCKER_PROXY_URL / FREERADIUS_CONTAINER missing).', 500);
+        }
+
+        try {
+            $response = Http::timeout(15)->post("{$proxyUrl}/containers/{$container}/restart");
+
+            if ($response->status() === 204) {
+                return $this->ok(['restarted' => true], 'FreeRADIUS server restarted successfully.');
+            }
+
+            return $this->fail('Docker API returned status ' . $response->status() . ': ' . $response->body(), 502);
+        } catch (Exception $e) {
+            return $this->fail('Failed to restart FreeRADIUS: ' . $e->getMessage(), 500);
         }
     }
 

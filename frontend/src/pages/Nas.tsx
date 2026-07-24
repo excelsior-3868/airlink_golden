@@ -26,6 +26,8 @@ export default function Nas() {
   // FreeRADIUS state
   const [radiusStatus, setRadiusStatus] = useState<any>(null)
   const [radiusLoading, setRadiusLoading] = useState(false)
+  const [confirmRestart, setConfirmRestart] = useState(false)
+  const [restartMsg, setRestartMsg] = useState<{ success: boolean; message: string } | null>(null)
   const [testUser, setTestUser] = useState('')
   const [testPass, setTestPass] = useState('')
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null)
@@ -53,6 +55,13 @@ export default function Nas() {
     api.get('/radius/status')
       .then((r) => setRadiusStatus(r.data.data))
       .finally(() => setRadiusLoading(false))
+  }
+
+  const restartRadius = async () => {
+    setRestartMsg(null)
+    const { data } = await api.post('/radius/restart')
+    setRestartMsg({ success: true, message: data.message || 'FreeRADIUS restarted successfully.' })
+    loadRadiusStatus()
   }
 
   const loadAuthLogs = (page = 1) => {
@@ -230,9 +239,20 @@ export default function Nas() {
                     <span className="text-muted-foreground">Active Accounting Sessions</span>
                     <span className="font-bold text-primary">{num(radiusStatus.stats.active_sessions)}</span>
                   </div>
-                  <div className="pt-2">
+                  <div className="pt-2 flex items-center gap-2">
                     <button className="btn-ghost text-xs py-1" onClick={loadRadiusStatus}>Refresh Status</button>
+                    <button
+                      className="btn-ghost text-xs py-1 text-amber-600"
+                      onClick={() => { setRestartMsg(null); setConfirmRestart(true) }}
+                    >
+                      Restart RADIUS Server
+                    </button>
                   </div>
+                  {restartMsg && (
+                    <p className={`text-xs font-semibold ${restartMsg.success ? 'text-emerald-600' : 'text-red-600'}`}>
+                      {restartMsg.message}
+                    </p>
+                  )}
                 </div>
               ) : (
                 <EmptyState>Failed to load status.</EmptyState>
@@ -283,6 +303,7 @@ export default function Nas() {
                 </button>
                 <p className="text-[9px] text-slate-400 text-center mt-1.5 font-medium leading-normal">
                   Static file clients are read-only. Use the NAS Devices tab to add, edit, or delete dynamic clients.
+                  New or edited clients only take effect after a RADIUS restart (see the Status panel).
                 </p>
               </div>
             </GlassCard>
@@ -479,6 +500,16 @@ export default function Nas() {
         title="Delete NAS"
         message={`Are you sure you want to delete NAS "${pendingDeleteNas?.name}"? This action cannot be undone.`}
         confirmText="Delete NAS"
+      />
+
+      <ConfirmModal
+        open={confirmRestart}
+        onClose={() => setConfirmRestart(false)}
+        onConfirm={restartRadius}
+        title="Restart RADIUS Server"
+        message="Restart the FreeRADIUS server now? Active RADIUS traffic will briefly drop."
+        confirmText="Restart Server"
+        tone="warning"
       />
     </div>
   )

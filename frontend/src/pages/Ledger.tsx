@@ -419,22 +419,6 @@ function ExpensesLedgerView() {
     }
   }
 
-  const handleSaveParty = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!partyForm.name) return
-    try {
-      setBusy(true)
-      await api.post('/parties', partyForm)
-      setPartyForm({ name: '', phone: '', email: '', note: '' })
-      setPartyModalOpen(false)
-      refetchParties()
-    } catch (err: any) {
-      alert(apiError(err))
-    } finally {
-      setBusy(false)
-    }
-  }
-
   return (
     <div className="space-y-6">
       {/* KPI Cards */}
