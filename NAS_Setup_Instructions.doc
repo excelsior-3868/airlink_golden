@@ -1,0 +1,57 @@
+<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <title>NAS Connection Setup - Airlink v3.0</title>
+    <style>
+        body { font-family: 'Calibri', sans-serif; font-size: 11pt; line-height: 1.5; padding: 20px; }
+        h1 { color: #2E74B5; font-size: 16pt; }
+        h2 { color: #2E74B5; font-size: 14pt; margin-top: 20px; }
+        p { margin: 10px 0; }
+        ul { margin: 10px 0 10px 20px; }
+        li { margin-bottom: 5px; }
+        .highlight { background-color: #f0f0f0; padding: 2px 5px; border: 1px solid #ccc; font-family: monospace; }
+        .step-box { border: 1px solid #4F81BD; padding: 10px; margin-bottom: 15px; background-color: #F2F5F9; }
+    </style>
+</head>
+<body>
+    <h1>Airlink v3.0: NAS (MikroTik) Connection Setup Guide</h1>
+    <p>Follow these steps to connect your actual NAS (Network Access Server) to your Airlink billing system. <i>(Note: The firewall on your server has already been configured to allow ports 1812 and 1813.)</i></p>
+    
+    <div class="step-box">
+        <h2>Step 1: Add the NAS in the Airlink Web Interface</h2>
+        <p>Because FreeRADIUS reads directly from your Airlink database, you don't need to edit configuration files. You just need to register the router in the web interface.</p>
+        <ul>
+            <li>Log in to your <b>Airlink v3.0 Web Admin Panel</b>.</li>
+            <li>Go to the section where you manage <b>NAS / Routers</b> (usually under Settings or Network).</li>
+            <li>Click to add a new NAS and enter the following details:</li>
+            <ul>
+                <li><b>IP Address:</b> The public IP address of your actual MikroTik/NAS device.</li>
+                <li><b>RADIUS Secret:</b> Create a strong shared secret (e.g., <span class="highlight">SuperSecret123</span>).</li>
+            </ul>
+        </ul>
+        <p><i>Note: Saving this inserts the router into the database, and FreeRADIUS will instantly accept connections from it.</i></p>
+    </div>
+
+    <div class="step-box">
+        <h2>Step 2: Configure your NAS (e.g., MikroTik)</h2>
+        <p>Now, log in to your physical router (via Winbox or web) and configure it to point to your VPS server.</p>
+        <p>Enter the following RADIUS settings into your router:</p>
+        <ul>
+            <li><b>RADIUS Server IP Address:</b> <span class="highlight">161.97.101.7</span> <i>(This is the public IPv4 address of your VPS)</i></li>
+            <li><b>Authentication Port:</b> <span class="highlight">1812</span></li>
+            <li><b>Accounting Port:</b> <span class="highlight">1813</span></li>
+            <li><b>Secret:</b> The exact same secret you created in Step 1.</li>
+            <li><b>Timeout:</b> Set this to <span class="highlight">3000ms</span> (3 seconds) to ensure it doesn't time out too quickly over the internet.</li>
+        </ul>
+    </div>
+
+    <div class="step-box">
+        <h2>Step 3: Enable Services</h2>
+        <p>Finally, tell your NAS to actually use RADIUS for the services you provide!</p>
+        <ul>
+            <li><b>For PPPoE:</b> Go to PPP -> Secrets -> PPP Authentication & Accounting -> Check "Use Radius".</li>
+            <li><b>For Hotspot:</b> Go to IP -> Hotspot -> Server Profiles -> Select your profile -> RADIUS tab -> Check "Use RADIUS".</li>
+        </ul>
+    </div>
+</body>
+</html>

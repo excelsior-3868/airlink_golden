@@ -7,12 +7,12 @@ import { useAuth } from '../lib/auth'
 import { GlassCard, PageTitle, Modal, Pill, EmptyState, CustomSelect, Pagination, ConfirmModal, Spinner } from '../components/ui'
 import { num } from '../lib/format'
 
-const blank = { name: '', nasname: '', shortname: '', type: 'mikrotik', secret: '', api_ip: '', api_username: '', api_password: '', description: '', status: 'active' }
+const blank = { name: '', nasname: '', shortname: '', type: 'mikrotik', secret: '', description: '', status: 'active', require_message_authenticator: 'auto' }
 
 export default function Nas() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
-  const [activeTab, setActiveTab] = useState<'nas' | 'radius'>('nas')
+  const [activeTab, setActiveTab] = useState<'nas' | 'radius' | 'authlogs'>('nas')
 
   // NAS state
   const [open, setOpen] = useState(false)
@@ -97,18 +97,19 @@ export default function Nas() {
     }))
   }
 
-  useEffect(() => { 
+  useEffect(() => {
     if (activeTab === 'nas') {
-      load() 
+      load()
     } else if (activeTab === 'radius' && isAdmin) {
       loadRadiusStatus()
-      loadAuthLogs(1)
       loadClientsConfig()
+    } else if (activeTab === 'authlogs' && isAdmin) {
+      loadAuthLogs(1)
     }
   }, [activeTab, logUserSearch, logReplyFilter])
 
   const openNew = () => { setForm(blank); setEditId(null); setErr(''); setOpen(true) }
-  const openEdit = (n: any) => { setForm({ ...blank, ...n, api_password: '' }); setEditId(n.id); setErr(''); setOpen(true) }
+  const openEdit = (n: any) => { setForm({ ...blank, ...n }); setEditId(n.id); setErr(''); setOpen(true) }
 
   const save = async () => {
     setBusy(true); setErr('')
@@ -165,11 +166,17 @@ export default function Nas() {
           >
             <Router size={16} /> NAS Devices
           </button>
-          <button 
+          <button
             className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-t-xl border-b-2 transition-all ${activeTab === 'radius' ? 'border-primary text-primary' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
             onClick={() => setActiveTab('radius')}
           >
             <Server size={16} /> FreeRADIUS Management
+          </button>
+          <button
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-t-xl border-b-2 transition-all ${activeTab === 'authlogs' ? 'border-primary text-primary' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+            onClick={() => setActiveTab('authlogs')}
+          >
+            <Activity size={16} /> Authentication Logs
           </button>
         </div>
       )}
@@ -179,14 +186,13 @@ export default function Nas() {
           {rowsLoading && rows.length === 0 ? <Spinner /> : null}
           <div className={`overflow-x-auto ${rowsLoading && rows.length === 0 ? 'hidden' : ''}`}>
             <table className="w-full">
-              <thead><tr><th>Name</th><th>NAS Address</th><th>Type</th><th>API IP</th><th>Status</th>{isAdmin && <th></th>}</tr></thead>
+              <thead><tr><th>Name</th><th>NAS Address</th><th>Type</th><th>Status</th>{isAdmin && <th></th>}</tr></thead>
               <tbody>
                 {rows.map((n, idx) => (
                   <motion.tr key={n.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: idx * 0.03 }} className="hover:bg-secondary/30">
                     <td className="font-semibold flex items-center gap-2"><Router size={15} className="text-primary" /> {n.name}</td>
                     <td className="font-mono text-xs">{n.nasname}</td>
                     <td className="capitalize">{n.type}</td>
-                    <td className="font-mono text-xs">{n.api_ip || '—'}</td>
                     <td><Pill tone={n.status === 'active' ? 'success' : 'secondary'}>{n.status}</Pill></td>
                     {isAdmin && (
                       <td className="text-right whitespace-nowrap">
@@ -201,9 +207,9 @@ export default function Nas() {
             {rows.length === 0 && <EmptyState>No NAS devices yet.</EmptyState>}
           </div>
         </GlassCard>
-      ) : (
+      ) : activeTab === 'radius' ? (
         <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Status Panel */}
             <GlassCard className="space-y-4">
               <h3 className="font-bold flex items-center gap-2"><Server size={18} className="text-primary" /> RADIUS Server Status</h3>
@@ -259,55 +265,6 @@ export default function Nas() {
               )}
             </GlassCard>
 
-            {/* Allowable Clients Config Card */}
-            <GlassCard className="space-y-4 flex flex-col justify-between">
-              <div className="space-y-4">
-                <h3 className="font-bold flex items-center gap-2"><Router size={18} className="text-[#003164]" /> Allowable RADIUS Clients</h3>
-                {clientsLoading && !clients.length ? (
-                  <EmptyState>Loading clients configuration…</EmptyState>
-                ) : clients.length > 0 ? (
-                  <div className="space-y-3">
-                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Active Client Subnets & Secrets</p>
-                    <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
-                      {clients.map((c) => (
-                        <div key={c.ipaddr + '-' + c.name} className="bg-slate-50/70 border border-slate-100 p-2.5 rounded-xl space-y-1 select-none">
-                          <div className="flex justify-between items-center">
-                            <span className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
-                              {c.name}
-                              <span className={`text-[8px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider ${c.source === 'database' ? 'bg-sky-50 text-sky-600 border border-sky-100' : 'bg-slate-100 text-slate-500'}`}>
-                                {c.source === 'database' ? 'DB' : 'File'}
-                              </span>
-                            </span>
-                            <span className="font-mono text-[10px] text-slate-500 font-semibold">{c.ipaddr}</span>
-                          </div>
-                          <div className="flex justify-between items-center text-[10px]">
-                            <span className="text-slate-400 font-medium">Secret</span>
-                            <span className="font-mono font-bold text-[#003164] bg-blue-50/50 p-0.5 px-2 rounded border border-blue-100/30">{c.secret}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  <EmptyState>No allowable clients defined.</EmptyState>
-                )}
-              </div>
-
-              {/* Management redirect action */}
-              <div className="pt-2 border-t border-slate-100/80">
-                <button 
-                  onClick={() => setActiveTab('nas')}
-                  className="btn-primary w-full py-2 text-xs flex items-center justify-center gap-1.5 font-bold"
-                >
-                  <Plus size={13} /> Manage Dynamic DB Clients
-                </button>
-                <p className="text-[9px] text-slate-400 text-center mt-1.5 font-medium leading-normal">
-                  Static file clients are read-only. Use the NAS Devices tab to add, edit, or delete dynamic clients.
-                  New or edited clients only take effect after a RADIUS restart (see the Status panel).
-                </p>
-              </div>
-            </GlassCard>
-
             {/* Test Authentication Tool */}
             <GlassCard className="space-y-4">
               <h3 className="font-bold flex items-center gap-2"><Activity size={18} className="text-primary" /> Test RADIUS Authentication</h3>
@@ -347,6 +304,51 @@ export default function Nas() {
             </GlassCard>
           </div>
 
+          {/* Allowable RADIUS Clients (Full Width) */}
+          <GlassCard className="!p-0 overflow-hidden">
+            <div className="flex items-center justify-between p-5 pb-0">
+              <h3 className="font-bold flex items-center gap-2"><Router size={18} className="text-[#003164]" /> Allowable RADIUS Clients</h3>
+              <button
+                onClick={() => setActiveTab('nas')}
+                className="btn-primary py-1.5 px-3 text-xs flex items-center gap-1.5 font-bold"
+              >
+                <Plus size={13} /> Manage Dynamic DB Clients
+              </button>
+            </div>
+            <p className="text-[10px] text-slate-400 px-5 pt-2 font-medium leading-normal">
+              Devices added from the NAS Devices tab are written directly into clients.conf and trigger a RADIUS
+              restart automatically. Only "File" clients (localhost, docker_networks, etc.) are hand-maintained.
+            </p>
+            {clientsLoading && !clients.length ? (
+              <div className="p-5"><EmptyState>Loading clients configuration…</EmptyState></div>
+            ) : clients.length > 0 ? (
+              <div className="overflow-x-auto mt-3 pb-3">
+                <table className="w-full">
+                  <thead><tr><th>Name</th><th>Source</th><th>IP / Subnet</th><th>Secret</th><th>Message-Authenticator</th></tr></thead>
+                  <tbody>
+                    {clients.map((c, idx) => (
+                      <motion.tr key={c.ipaddr + '-' + c.name} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: idx * 0.02 }} className="hover:bg-secondary/30">
+                        <td className="font-semibold text-slate-800">{c.name}</td>
+                        <td>
+                          <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider ${c.source === 'database' ? 'bg-sky-50 text-sky-600 border border-sky-100' : 'bg-slate-100 text-slate-500'}`}>
+                            {c.source === 'database' ? 'DB' : 'File'}
+                          </span>
+                        </td>
+                        <td className="font-mono text-xs text-slate-600">{c.ipaddr}</td>
+                        <td className="font-mono text-xs font-bold text-[#003164]">{c.secret}</td>
+                        <td className="text-xs font-semibold text-slate-600 capitalize">{c.require_message_authenticator || 'auto'}</td>
+                      </motion.tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="p-5"><EmptyState>No allowable clients defined.</EmptyState></div>
+            )}
+          </GlassCard>
+        </div>
+      ) : (
+        <div className="space-y-6">
           {/* Authentication Logs Card (Full Width) */}
           <GlassCard className="space-y-4">
             <h3 className="font-bold flex items-center gap-2"><Activity size={18} className="text-[#003164]" /> RADIUS Authentication Logs</h3>
@@ -480,9 +482,17 @@ export default function Nas() {
                 ]}
               />
             </div>
-            <input className="input" placeholder="API IP (optional)" value={form.api_ip} onChange={(e) => setForm({ ...form, api_ip: e.target.value })} />
-            <input className="input" placeholder="API username" value={form.api_username} onChange={(e) => setForm({ ...form, api_username: e.target.value })} />
-            <input className="input" type="password" placeholder="API password" value={form.api_password} onChange={(e) => setForm({ ...form, api_password: e.target.value })} />
+            <div className="flex flex-col col-span-2">
+              <CustomSelect
+                value={form.require_message_authenticator}
+                onChange={(val) => setForm({ ...form, require_message_authenticator: val })}
+                options={[
+                  { value: 'auto', label: 'Message-Authenticator: Auto (recommended)' },
+                  { value: 'yes', label: 'Message-Authenticator: Always require' },
+                  { value: 'no', label: 'Message-Authenticator: Never require' }
+                ]}
+              />
+            </div>
           </div>
           <input className="input" placeholder="Description" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
           {err && <div className="pill danger w-full justify-center py-2">{err}</div>}

@@ -12,6 +12,10 @@ COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 ENV COMPOSER_ALLOW_SUPERUSER=1
 WORKDIR /var/www/html
 
+# Shared GID with the host's `radiusweb` group, so www-data can write the
+# bind-mounted clients.conf / restart-trigger without any other host access.
+RUN groupadd -g 5555 radiusweb && usermod -aG radiusweb www-data
+
 # App code + production dependencies.
 COPY backend/ /var/www/html/
 RUN composer install --no-dev --optimize-autoloader --no-interaction --no-progress \

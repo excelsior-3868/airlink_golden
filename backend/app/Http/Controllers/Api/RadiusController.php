@@ -3,14 +3,16 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Services\ClientsConfService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use Exception;
 
 class RadiusController extends Controller
 {
+    public function __construct(private ClientsConfService $clientsConf) {}
+
     /** Get FreeRADIUS server status and stats (admin only). */
     public function status(): JsonResponse
     {
@@ -23,9 +25,11 @@ class RadiusController extends Controller
         $credentialsCount = DB::table('radcheck')->count();
         $activeSessionsCount = DB::table('radacct')->whereNull('acctstoptime')->distinct()->count('username');
 
-        $host = env('RADIUS_HOST', 'freeradius');
+        // FreeRADIUS runs on the Docker host (systemd), not as a compose
+        // service, since 2026-07-25 — reach it via the host-gateway alias.
+        $host = env('RADIUS_HOST', 'host.docker.internal');
         $port = (int) env('RADIUS_PORT', 1812);
-        
+
         // We'll perform a quick socket-level check.
         $radiusOnline = false;
         $socket = @fsockopen("udp://$host", $port, $errno, $errstr, 1);
@@ -54,8 +58,11 @@ class RadiusController extends Controller
             'password' => ['required', 'string'],
         ]);
 
-        $host = env('RADIUS_HOST', 'freeradius');
+        $host = env('RADIUS_HOST', 'host.docker.internal');
         $port = (int) env('RADIUS_PORT', 1812);
+        // Must match the `docker_networks` client's secret in clients.conf —
+        // that's the client covering the Docker bridge range this request
+        // actually arrives from.
         $secret = env('RADIUS_SECRET', 'testing123');
 
         try {
@@ -77,31 +84,22 @@ class RadiusController extends Controller
     }
 
     /**
-     * Restart the FreeRADIUS container so newly added/edited NAS clients
-     * (loaded from the `nas` table only at process startup) take effect.
-     * Goes through a docker-socket-proxy scoped to container restart only,
-     * never the raw Docker socket, so a compromised backend can't do more
-     * than restart the one named container.
+     * Request a FreeRADIUS restart so newly added/edited NAS clients take
+     * effect. FreeRADIUS now runs as a host systemd service, not a
+     * container we can reach via the Docker API — instead we touch a
+     * trigger file that a host-side systemd path-unit watches, which runs
+     * `systemctl restart freeradius` on our behalf. The backend never gets
+     * more host access than write permission on that one file (plus
+     * clients.conf), via a shared group on the bind-mounted paths.
      */
     public function restart(): JsonResponse
     {
-        $proxyUrl = env('DOCKER_PROXY_URL');
-        $container = env('FREERADIUS_CONTAINER');
-
-        if (!$proxyUrl || !$container) {
-            return $this->fail('Docker proxy is not configured (DOCKER_PROXY_URL / FREERADIUS_CONTAINER missing).', 500);
-        }
-
         try {
-            $response = Http::timeout(15)->post("{$proxyUrl}/containers/{$container}/restart");
+            $this->clientsConf->requestRestart();
 
-            if ($response->status() === 204) {
-                return $this->ok(['restarted' => true], 'FreeRADIUS server restarted successfully.');
-            }
-
-            return $this->fail('Docker API returned status ' . $response->status() . ': ' . $response->body(), 502);
+            return $this->ok(['restarted' => true], 'FreeRADIUS restart requested.');
         } catch (Exception $e) {
-            return $this->fail('Failed to restart FreeRADIUS: ' . $e->getMessage(), 500);
+            return $this->fail('Failed to request FreeRADIUS restart: ' . $e->getMessage(), 500);
         }
     }
 
@@ -218,75 +216,23 @@ class RadiusController extends Controller
         ]);
     }
 
-    /** Retrieve allowable NAS configuration from clients.conf file and nas database table (admin only). */
+    /** Retrieve the real, live clients.conf contents and parsed clients (admin only). */
     public function clientsConfig(): JsonResponse
     {
-        $path = base_path('clients.conf');
-        $staticClients = [];
-        $content = '';
-        if (file_exists($path)) {
-            $content = file_get_contents($path);
-            
-            // Match client block header e.g. client localhost { or client docker_net {
-            preg_match_all('/client\s+([a-zA-Z0-9_\-]+)\s*\{([^}]+)\}/', $content, $matches, PREG_SET_ORDER);
-            
-            foreach ($matches as $match) {
-                $name = $match[1];
-                $body = $match[2];
-                
-                $client = [
-                    'name' => $name,
-                    'ipaddr' => '',
-                    'secret' => '',
-                    'source' => 'config_file',
-                ];
-                
-                // Extract lines inside the body
-                $lines = explode("\n", $body);
-                foreach ($lines as $line) {
-                    $line = trim($line);
-                    if (empty($line) || str_starts_with($line, '#')) {
-                        continue;
-                    }
-                    
-                    if (str_contains($line, '=')) {
-                        [$key, $val] = explode('=', $line, 2);
-                        $key = trim($key);
-                        $val = trim($val);
-                        if ($key === 'ipaddr') {
-                            $client['ipaddr'] = $val;
-                        } elseif ($key === 'secret') {
-                            $client['secret'] = $val;
-                        }
-                    }
-                }
-                
-                $staticClients[] = $client;
-            }
-        }
+        $path = $this->clientsConf->path();
+        $content = file_exists($path) ? file_get_contents($path) : '';
 
-        // Fetch dynamic clients from the nas database table
-        $dbClients = DB::table('nas')
-            ->select('nasname', 'shortname', 'secret', 'type', 'description')
-            ->get()
-            ->map(function ($row) {
-                return [
-                    'name' => $row->shortname ?: $row->nasname,
-                    'ipaddr' => $row->nasname,
-                    'secret' => $row->secret,
-                    'source' => 'database',
-                    'type' => $row->type,
-                    'description' => $row->description
-                ];
-            })
-            ->toArray();
-
-        // Merge both static and dynamic clients
-        $allClients = array_merge($staticClients, $dbClients);
+        // Admin-managed devices (from the NAS Devices tab) carry a
+        // "{name}_{id}" block name; anything else is a hand-maintained
+        // static client (localhost, docker_networks, Mikrotik test clients).
+        $parsed = array_map(
+            fn ($c) => $c + ['source' => preg_match('/_\d+$/', $c['name']) ? 'database' : 'config_file'],
+            $this->clientsConf->parse(),
+        );
 
         return $this->ok([
             'raw' => $content,
-            'parsed' => $allClients
+            'parsed' => $parsed,
         ]);
     }
 
