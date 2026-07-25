@@ -14,6 +14,37 @@ server default {
 
     authorize {
         preprocess
+
+        # Voucher lifecycle check, straight from the `vouchers` table (not
+        # radcheck) so it's correct even if the 5-min status-sync job
+        # hasn't caught up yet: reject expired/already-used vouchers with
+        # a distinct Reply-Message before ever touching Cleartext-Password.
+        update control {
+            Tmp-String-0 := "%{sql: SELECT \
+                CASE \
+                    WHEN status = 'used' THEN 'used' \
+                    WHEN status = 'expired' THEN 'expired' \
+                    WHEN expires_at IS NOT NULL AND expires_at < NOW() THEN 'expired' \
+                    ELSE 'ok' \
+                END \
+                FROM vouchers WHERE username = '%{User-Name}' LIMIT 1}"
+        }
+
+        switch &control:Tmp-String-0 {
+            case "expired" {
+                update reply {
+                    Reply-Message := "This voucher has expired. Please purchase a new one."
+                }
+                reject
+            }
+            case "used" {
+                update reply {
+                    Reply-Message := "This voucher has already been used."
+                }
+                reject
+            }
+        }
+
         sql          # pull radcheck/radreply for this username
         pap          # prepare PAP using Cleartext-Password
     }
@@ -36,6 +67,14 @@ server default {
     }
 
     post-auth {
+        # Mark the voucher used the instant login succeeds, instead of
+        # waiting on the 5-min vouchers:sync-status cron job — closes the
+        # window where a still-"active" voucher could be reused on
+        # another device before the job caught up.
+        update control {
+            Tmp-String-1 := "%{sql: UPDATE vouchers SET status = 'used', activated_at = IFNULL(activated_at, NOW()) WHERE username = '%{User-Name}' AND status IN ('active','sold')}"
+        }
+
         sql          # write radpostauth
         Post-Auth-Type REJECT {
             sql
