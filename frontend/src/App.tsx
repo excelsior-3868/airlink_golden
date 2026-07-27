@@ -22,6 +22,7 @@ import SeasonDuration from './pages/SeasonDuration' // force rebuild to resolve 
 import SalesLedger from './pages/SalesLedger'
 import ExpensesLedger from './pages/ExpensesLedger'
 import Ledger from './pages/Ledger'
+import ApiTokens from './pages/ApiTokens'
 
 function Protected({ children }: { children: JSX.Element }) {
   const { user, loading } = useAuth()
@@ -92,6 +93,7 @@ export default function App() {
         <Route path="/permissions" element={<Guard perm="view_settings" roles={['admin']}><Permissions /></Guard>} />
         <Route path="/settings/system-load" element={<Guard perm="view_settings" roles={['admin']}><SystemLoad /></Guard>} />
         <Route path="/settings/voucher-card" element={<Guard roles={['admin', 'reseller', 'seller']}><VoucherCardDesigner /></Guard>} />
+        <Route path="/settings/api-tokens" element={<Guard perm="manage_api_tokens" roles={['admin', 'reseller', 'seller']}><ApiTokens /></Guard>} />
         <Route path="/settings/seasons" element={<Guard perm="view_settings" roles={['admin']}><SeasonDuration /></Guard>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

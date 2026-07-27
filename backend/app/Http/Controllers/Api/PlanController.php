@@ -12,6 +12,10 @@ class PlanController extends Controller
     /** List plans — all roles. */
     public function index(Request $request): JsonResponse
     {
+        if (! $request->user()->tokenCan('plans.read')) {
+            return $this->fail("This API token does not have the 'plans.read' ability.", 403);
+        }
+
         $query = InternetPlan::query()->with('creator:id,name,username,role,gb_balance')->orderBy('name');
         if ($request->boolean('active_only')) {
             $query->where('status', 'active');
@@ -49,14 +53,25 @@ class PlanController extends Controller
         return $this->ok($query->get());
     }
 
-    public function show(InternetPlan $plan): JsonResponse
+    public function show(Request $request, InternetPlan $plan): JsonResponse
     {
+        if (! $request->user()->tokenCan('plans.read')) {
+            return $this->fail("This API token does not have the 'plans.read' ability.", 403);
+        }
+
         return $this->ok($plan);
     }
 
     /** Create — admin, reseller, and seller. */
     public function store(Request $request): JsonResponse
     {
+        // 'plans.write' is deliberately NOT in IntegrationTokenAbilities::ALL — a scoped
+        // integration token can never create/modify/delete plans, regardless of the
+        // underlying user's role permissions. Only the SPA's own login token (['*']) can.
+        if (! $request->user()->tokenCan('plans.write')) {
+            return $this->fail("This API token does not have the 'plans.write' ability.", 403);
+        }
+
         // Inline custom packages built during voucher generation are gated separately
         // from plans created on the Plans page.
         $feature = $request->boolean('via_voucher') ? 'create_voucher_plan' : 'create_plan';
@@ -114,6 +129,10 @@ class PlanController extends Controller
 
     public function update(Request $request, InternetPlan $plan): JsonResponse
     {
+        if (! $request->user()->tokenCan('plans.write')) {
+            return $this->fail("This API token does not have the 'plans.write' ability.", 403);
+        }
+
         if (!$request->user()->isAdmin() && ($plan->package_type === 'wallet' || $plan->created_by !== $request->user()->id)) {
             return $this->fail('You do not have permission to modify this plan.', 403);
         }
@@ -166,6 +185,10 @@ class PlanController extends Controller
 
     public function destroy(InternetPlan $plan): JsonResponse
     {
+        if (! request()->user()->tokenCan('plans.write')) {
+            return $this->fail("This API token does not have the 'plans.write' ability.", 403);
+        }
+
         if (!request()->user()->isAdmin() && ($plan->package_type === 'wallet' || $plan->created_by !== request()->user()->id)) {
             return $this->fail('You do not have permission to delete this plan.', 403);
         }

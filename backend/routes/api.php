@@ -19,6 +19,7 @@ use App\Http\Controllers\Api\BillingController;
 use App\Http\Controllers\Api\TransactionController;
 use App\Http\Controllers\Api\SeasonController;
 use App\Http\Controllers\Api\AccountController;
+use App\Http\Controllers\Api\IntegrationTokenController;
 use Illuminate\Support\Facades\Route;
 
 // --- Public ---
@@ -132,6 +133,16 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Seasons lookup readable by all authenticated roles
     Route::get('/seasons', [SeasonController::class, 'index']);
+
+    // Integration API tokens — named, ability-scoped Sanctum tokens a user issues for a
+    // third-party app (e.g. a PMS selling vouchers through their reseller/seller account).
+    // Scoped to the caller's own tokens only (no route-model binding across users).
+    Route::get('/api-tokens/abilities', [IntegrationTokenController::class, 'abilities']);
+    Route::middleware('permission:manage_api_tokens')->group(function () {
+        Route::get('/api-tokens', [IntegrationTokenController::class, 'index']);
+        Route::post('/api-tokens', [IntegrationTokenController::class, 'store']);
+        Route::delete('/api-tokens/{id}', [IntegrationTokenController::class, 'destroy']);
+    });
 
     Route::middleware('role:admin')->group(function () {
         Route::post('/admin/system-load', [UserController::class, 'systemLoad']);

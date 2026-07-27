@@ -49,6 +49,7 @@ const NAV: NavItem[] = [
     children: [
       { to: '/settings/system-load', label: 'System Load', roles: ['admin'], icon: WalletIcon, color: 'text-emerald-500' },
       { to: '/settings/voucher-card', label: 'Voucher Card', roles: ['admin', 'reseller', 'seller'], icon: Ticket, color: 'text-rose-500' },
+      { to: '/settings/api-tokens', label: 'API Tokens', roles: ['admin', 'reseller', 'seller'], icon: Key, color: 'text-indigo-500', perm: 'manage_api_tokens' },
       { to: '/settings/seasons', label: 'Season Duration', roles: ['admin'], icon: Calendar, color: 'text-amber-500' },
       { to: '/nas', label: 'NAS / Routers', roles: ['admin'], icon: Router, color: 'text-violet-500' },
       { to: '/permissions', label: 'Permissions', roles: ['admin'], icon: ShieldCheck, color: 'text-rose-600' },

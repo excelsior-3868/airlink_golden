@@ -26,6 +26,14 @@ class VoucherController extends Controller
 
     public function generate(Request $request): JsonResponse
     {
+        // 'vouchers.generate' is deliberately NOT in IntegrationTokenAbilities::ALL — a scoped
+        // integration token (e.g. Trekkers Inn's) can never spend wallet/GB balance generating
+        // stock, no matter what the underlying user's role permits. Only the SPA's own login
+        // token (abilities ['*']) can reach this.
+        if (! $request->user()->tokenCan('vouchers.generate')) {
+            return $this->fail("This API token does not have the 'vouchers.generate' ability.", 403);
+        }
+
         $data = $request->validate([
             'plan_id' => ['required', 'integer', 'exists:internet_plans,id'],
             'quantity' => ['required', 'integer', 'min:1', 'max:'.VoucherService::MAX_BATCH],
@@ -60,6 +68,10 @@ class VoucherController extends Controller
     /** Filtered, scoped voucher list. */
     public function index(Request $request): JsonResponse
     {
+        if (! $request->user()->tokenCan('vouchers.read')) {
+            return $this->fail("This API token does not have the 'vouchers.read' ability.", 403);
+        }
+
         $q = $this->scopedQuery($request->user())->with(['plan:id,name,package_type', 'batch:id,batch_code', 'reseller:id,username', 'seller:id,username']);
 
         // Actual data consumed so far, straight from radacct — separate from
@@ -132,6 +144,10 @@ class VoucherController extends Controller
 
     public function show(Request $request, Voucher $voucher): JsonResponse
     {
+        if (! $request->user()->tokenCan('vouchers.read')) {
+            return $this->fail("This API token does not have the 'vouchers.read' ability.", 403);
+        }
+
         if (! $this->canAccess($request->user(), $voucher)) {
             return $this->fail('Not found.', 404);
         }
@@ -142,6 +158,10 @@ class VoucherController extends Controller
     /** Disable a voucher — removes its RADIUS credential so it rejects. */
     public function disable(Request $request, Voucher $voucher): JsonResponse
     {
+        if (! $request->user()->tokenCan('vouchers.disable')) {
+            return $this->fail("This API token does not have the 'vouchers.disable' ability.", 403);
+        }
+
         if (! $this->canAccess($request->user(), $voucher)) {
             return $this->fail('You do not have permission to disable this voucher.', 403);
         }
@@ -158,6 +178,10 @@ class VoucherController extends Controller
     /** Re-enable a disabled voucher — rebuilds RADIUS rows. */
     public function enable(Request $request, Voucher $voucher): JsonResponse
     {
+        if (! $request->user()->tokenCan('vouchers.enable')) {
+            return $this->fail("This API token does not have the 'vouchers.enable' ability.", 403);
+        }
+
         if (! $this->canAccess($request->user(), $voucher)) {
             return $this->fail('You do not have permission to enable this voucher.', 403);
         }
@@ -175,8 +199,12 @@ class VoucherController extends Controller
     }
 
     /** Delete a voucher (admin) — also drops its RADIUS rows. */
-    public function destroy(Voucher $voucher): JsonResponse
+    public function destroy(Request $request, Voucher $voucher): JsonResponse
     {
+        if (! $request->user()->tokenCan('vouchers.delete')) {
+            return $this->fail("This API token does not have the 'vouchers.delete' ability.", 403);
+        }
+
         DB::transaction(function () use ($voucher) {
             DB::table('radcheck')->where('username', $voucher->username)->delete();
             DB::table('radreply')->where('username', $voucher->username)->delete();
@@ -189,6 +217,8 @@ class VoucherController extends Controller
     /** Stream a CSV of the scoped/filtered voucher list (codes + details). */
     public function exportCsv(Request $request): StreamedResponse
     {
+        abort_unless($request->user()->tokenCan('vouchers.export'), 403, "This API token does not have the 'vouchers.export' ability.");
+
         $q = $this->scopedQuery($request->user())->with('plan:id,name');
         if ($b = $request->query('batch')) {
             $q->whereHas('batch', fn ($x) => $x->where('batch_code', $b));
@@ -214,6 +244,8 @@ class VoucherController extends Controller
     /** Excel (.xlsx) export of the scoped/filtered voucher list. */
     public function exportXlsx(Request $request): StreamedResponse
     {
+        abort_unless($request->user()->tokenCan('vouchers.export'), 403, "This API token does not have the 'vouchers.export' ability.");
+
         $q = $this->scopedQuery($request->user())->with('plan:id,name');
         if ($b = $request->query('batch')) {
             $q->whereHas('batch', fn ($x) => $x->where('batch_code', $b));
@@ -255,6 +287,9 @@ class VoucherController extends Controller
     /** Single voucher card as a PNG (QR + code + plan + T&C). */
     public function card(Request $request, Voucher $voucher)
     {
+        if (! $request->user()->tokenCan('vouchers.read')) {
+            return $this->fail("This API token does not have the 'vouchers.read' ability.", 403);
+        }
         if (! $this->canAccess($request->user(), $voucher)) {
             return $this->fail('Not found.', 404);
         }
@@ -269,6 +304,8 @@ class VoucherController extends Controller
     /** Printable HTML sheet of all cards in a batch (browser Ctrl+P). */
     public function printSheet(Request $request)
     {
+        abort_unless($request->user()->tokenCan('vouchers.export'), 403, "This API token does not have the 'vouchers.export' ability.");
+
         $batch = $request->query('batch');
         if (! $batch) {
             return $this->fail('batch is required.', 422);
@@ -310,6 +347,10 @@ class VoucherController extends Controller
     /** Sell a voucher (reseller/seller). Sets status to sold, optionally registers customer_username. */
     public function sell(Request $request, Voucher $voucher): JsonResponse
     {
+        if (! $request->user()->tokenCan('vouchers.sell')) {
+            return $this->fail("This API token does not have the 'vouchers.sell' ability.", 403);
+        }
+
         if (! $this->canAccess($request->user(), $voucher)) {
             return $this->fail('Not found.', 404);
         }
@@ -334,6 +375,10 @@ class VoucherController extends Controller
     /** Redeem a voucher to load GB balance (reseller/seller). Consumes the voucher. */
     public function redeem(Request $request): JsonResponse
     {
+        if (! $request->user()->tokenCan('vouchers.redeem')) {
+            return $this->fail("This API token does not have the 'vouchers.redeem' ability.", 403);
+        }
+
         $data = $request->validate([
             'code' => ['required', 'string', 'exists:vouchers,code'],
         ]);
