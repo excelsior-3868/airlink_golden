@@ -4,7 +4,8 @@
       "Bash(php -l app/Http/Controllers/Api/ReportController.php)",
       "Bash(php -l routes/api.php)",
       "Bash(php -l app/Services/WalletService.php)",
-      "Bash(php -l app/Http/Controllers/Api/WalletController.php)"
+      "Bash(php -l app/Http/Controllers/Api/WalletController.php)",
+      "Bash(git commit -m ' *)"
     ]
   }
 }
