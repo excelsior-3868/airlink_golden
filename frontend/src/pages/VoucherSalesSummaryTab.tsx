@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Wallet, Ticket, CreditCard, Archive, Database, TrendingUp, CheckCircle2, AlertCircle } from 'lucide-react'
+import { ArrowLeft, Ticket, CreditCard, Archive, Database, TrendingUp } from 'lucide-react'
 import { api } from '../lib/api'
 import { useQuery } from '../lib/cache'
 import { rs, gb, num } from '../lib/format'
@@ -30,7 +30,7 @@ function ResellerList({ onSelect }: { onSelect: (account: any) => void }) {
       <div className="p-4 border-b border-slate-100 flex items-center justify-between flex-wrap gap-2">
         <div>
           <h3 className="font-extrabold text-slate-800 text-sm">{roleLabel} Account Summary</h3>
-          <p className="text-xs text-slate-400">Card generation, sales, and collection totals per {roleLabel.toLowerCase()}</p>
+          <p className="text-xs text-slate-400">Card generation and sales totals per {roleLabel.toLowerCase()}</p>
         </div>
         {loading && <Spinner />}
       </div>
@@ -40,14 +40,11 @@ function ResellerList({ onSelect }: { onSelect: (account: any) => void }) {
           <thead>
             <tr>
               <th>{roleLabel}</th>
-              <th>Wallet</th>
               <th>Cards Generated</th>
               <th>Cards Sold</th>
               <th>Cards in Stock</th>
               <th>GB Sold</th>
               <th>Sales Amount</th>
-              <th>Amount Collected</th>
-              <th>Amount Due</th>
             </tr>
           </thead>
           <tbody>
@@ -64,17 +61,11 @@ function ResellerList({ onSelect }: { onSelect: (account: any) => void }) {
                   <div>{a.name}</div>
                   <div className="text-xs font-mono text-slate-400">{a.username}</div>
                 </td>
-                <td className="font-bold text-slate-700">{rs(a.wallet_balance)}</td>
                 <td>{num(a.cards_generated)}</td>
                 <td>{num(a.cards_sold)}</td>
                 <td>{num(a.cards_in_stock)}</td>
                 <td>{gb(a.gb_sold)}</td>
                 <td className="font-bold text-blue-600">{rs(a.sales_amount)}</td>
-                <td className="font-bold text-emerald-600">{rs(a.amount_collected)}</td>
-                <td className="font-bold text-rose-600">
-                  {a.amount_due > 0 && <span className="inline-block w-1.5 h-1.5 rounded-full bg-rose-500 mr-1.5 align-middle" />}
-                  {rs(a.amount_due)}
-                </td>
               </motion.tr>
             ))}
           </tbody>
@@ -85,13 +76,10 @@ function ResellerList({ onSelect }: { onSelect: (account: any) => void }) {
       {totals && accounts.length > 0 && (
         <div className="p-4 border-t border-slate-100 flex flex-wrap gap-x-8 gap-y-1 text-xs">
           <span className="font-bold text-slate-500">Totals:</span>
-          <span>Wallet <b className="text-slate-700">{rs(totals.wallet_balance)}</b></span>
           <span>Generated <b className="text-slate-700">{num(totals.cards_generated)}</b></span>
           <span>Sold <b className="text-slate-700">{num(totals.cards_sold)}</b></span>
           <span>GB Sold <b className="text-slate-700">{gb(totals.gb_sold)}</b></span>
           <span>Sales <b className="text-blue-600">{rs(totals.sales_amount)}</b></span>
-          <span>Collected <b className="text-emerald-600">{rs(totals.amount_collected)}</b></span>
-          <span>Due <b className="text-rose-600">{rs(totals.amount_due)}</b></span>
         </div>
       )}
     </GlassCard>
@@ -122,14 +110,11 @@ function ResellerDetail({ account, onBack }: { account: any; onBack: () => void 
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <StatCard label="Wallet Balance" value={rs(account.wallet_balance)} icon={<Wallet size={18} />} iconColorClass="text-blue-600 bg-blue-50" />
         <StatCard label="Cards Generated" value={num(account.cards_generated)} icon={<Ticket size={18} />} iconColorClass="text-indigo-600 bg-indigo-50" />
         <StatCard label="Cards Sold" value={num(account.cards_sold)} icon={<CreditCard size={18} />} iconColorClass="text-amber-600 bg-amber-50" />
         <StatCard label="Cards in Stock" value={num(account.cards_in_stock)} icon={<Archive size={18} />} iconColorClass="text-slate-600 bg-slate-100" />
         <StatCard label="GB Sold" value={gb(account.gb_sold)} icon={<Database size={18} />} iconColorClass="text-sky-600 bg-sky-50" />
         <StatCard label="Total Sales" value={rs(account.sales_amount)} icon={<TrendingUp size={18} />} iconColorClass="text-blue-600 bg-blue-50" />
-        <StatCard label="Collected" value={rs(account.amount_collected)} icon={<CheckCircle2 size={18} />} iconColorClass="text-emerald-600 bg-emerald-50" />
-        <StatCard label="Outstanding" value={rs(account.amount_due)} icon={<AlertCircle size={18} />} iconColorClass="text-rose-600 bg-rose-50" />
       </div>
 
       <GlassCard className="!p-0 overflow-hidden">

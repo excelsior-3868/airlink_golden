@@ -68,6 +68,7 @@ export default function Wallet() {
         open={fundOpen}
         onClose={() => setFundOpen(false)}
         onSuccess={() => { refetch(); invalidateCache('dashboard') }}
+        defaultAllocType="wallet"
       />
     </div>
   )

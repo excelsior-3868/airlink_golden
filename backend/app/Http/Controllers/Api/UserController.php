@@ -24,7 +24,7 @@ class UserController extends Controller
             $query->where(fn ($q) => $q->where('username', 'like', "%$search%")->orWhere('name', 'like', "%$search%"));
         }
 
-        $users = $query->withCount(['children', 'vouchers'])->orderByDesc('id')->paginate($request->integer('per_page', 20));
+        $users = $query->with('parent:id,name,username')->withCount(['children', 'vouchers'])->orderByDesc('id')->paginate($request->integer('per_page', 20));
 
         return $this->ok($users);
     }
@@ -54,27 +54,20 @@ class UserController extends Controller
         return $this->created($reseller, 'Reseller created.');
     }
 
-    /**
-     * Create a seller. Reseller → parented to self. Admin → must name the
-     * parent reseller (sellers report to resellers).
-     */
+    /** Create a seller. Only resellers can create sellers, parented to themselves. */
     public function storeSeller(Request $request): JsonResponse
     {
         $actor = $request->user();
-        $data = $this->validateNewUser($request);
 
-        if ($actor->isReseller()) {
-            $parentId = $actor->id;
-        } else { // admin
-            $request->validate([
-                'parent_id' => ['required', 'integer', Rule::exists('users', 'id')->where('role', 'reseller')],
-            ]);
-            $parentId = $request->integer('parent_id');
+        if (! $actor->isReseller()) {
+            return $this->fail('Only resellers can create sellers.', 403);
         }
+
+        $data = $this->validateNewUser($request);
 
         $seller = User::create($data + [
             'role' => 'seller',
-            'parent_id' => $parentId,
+            'parent_id' => $actor->id,
             'created_by' => $actor->id,
             'status' => 'active',
         ]);

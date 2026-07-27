@@ -28,6 +28,10 @@ class WalletController extends Controller
         ]);
 
         $to = User::findOrFail($data['user_id']);
+        if ($to->role !== 'reseller') {
+            return $this->fail('Wallet balance can only be loaded to resellers.', 422);
+        }
+
         $this->wallet->transfer(
             $request->user(),
             $to,

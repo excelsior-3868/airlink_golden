@@ -1,20 +1,21 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Ticket, Download, Zap, Printer, Layers, BarChart3 } from 'lucide-react'
+import { Ticket, Download, Zap, Printer, Layers, BarChart3, Calendar, Sparkles, Sun, Leaf, Snowflake } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { api, apiError } from '../lib/api'
 import { useQuery } from '../lib/cache'
 import { useAuth } from '../lib/auth'
-import { rs, gb, date } from '../lib/format'
+import { rs, gb, date, num } from '../lib/format'
 import { statusPill } from '../lib/format'
-import { GlassCard, PageTitle, Pagination, Pill, Modal, EmptyState, CustomSelect, Spinner } from '../components/ui'
+import { GlassCard, PageTitle, Pagination, Pill, Modal, EmptyState, CustomSelect, Spinner, StatCard } from '../components/ui'
+import { DualDatePicker } from '../components/DualDatePicker'
 import { VoucherCard } from '../components/VoucherCard'
 import VoucherGenerateTab from './VoucherGenerateTab'
 import VoucherSalesSummaryTab from './VoucherSalesSummaryTab'
 
 export default function Vouchers() {
-  const { user, refresh } = useAuth()
+  const { user, refresh, can } = useAuth()
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState<'vouchers' | 'batches' | 'generate' | 'sales-summary'>('generate')
   const [loadingAction, setLoadingAction] = useState(false)
@@ -72,9 +73,13 @@ export default function Vouchers() {
     }
   }
 
-  // Vouchers state
+  // Vouchers state — includes the reporting filters merged in from the old
+  // standalone Voucher Usage Report page (season/date range/package/reseller/seller).
   const [page, setPage] = useState(1)
-  const [filters, setFilters] = useState<any>({ status: '', code: '', batch: '' })
+  const [filters, setFilters] = useState<any>({
+    status: '', code: '', batch: '',
+    from: '', to: '', plan_id: '', reseller_id: '', seller_id: '', season_id: '',
+  })
   // Applied filter signature — only changes on Apply, so typing doesn't refetch.
   const [appliedVoucherKey, setAppliedVoucherKey] = useState('{}')
 
@@ -92,11 +97,41 @@ export default function Vouchers() {
   const cleanBatchFilters = () => Object.fromEntries(Object.entries(batchFilters).filter(([, v]) => v))
 
   const { data: plans = [], refetch: refetchPlans } = useQuery<any[]>('plans?active_only=1', () => api.get('/plans', { params: { active_only: 1 } }).then((r) => r.data.data))
+  // Reporting extras (season filter, summary cards) are only relevant — and only
+  // authorized — for users with the 'reports' permission, same as the old standalone page.
+  const canSeeReports = can('reports')
+  const { data: seasons = [] } = useQuery<any[]>('seasons', () => api.get('/seasons').then((r) => r.data.data), { enabled: canSeeReports })
+  const { data: resellers = [] } = useQuery<any[]>('users?role=reseller&per_page=100', () => api.get('/users', { params: { role: 'reseller', per_page: 100 } }).then((r) => r.data.data.data), { enabled: canSeeReports && user?.role === 'admin' })
+  const { data: sellers = [] } = useQuery<any[]>('users?role=seller&per_page=500', () => api.get('/users', { params: { role: 'seller', per_page: 500 } }).then((r) => r.data.data.data), { enabled: canSeeReports && (user?.role === 'admin' || user?.role === 'reseller') })
 
   const { data, loading: vouchersLoading, refetch: load } = useQuery<any>(
     `vouchers?page=${page}&${appliedVoucherKey}`,
     () => api.get('/vouchers', { params: { page, ...cleanFilters() } }).then((r) => r.data.data),
   )
+
+  // Usage summary cards, merged in from the old standalone Voucher Usage Report page.
+  const { data: summary, loading: summaryLoading } = useQuery<any>(
+    `vouchers/package-summary?${appliedVoucherKey}`,
+    () => api.get('/reports/package-summary', { params: cleanFilters() }).then((r) => r.data.data),
+    { enabled: activeTab === 'vouchers' && canSeeReports },
+  )
+
+  const handleSeasonChange = (seasonId: any) => {
+    if (!seasonId) {
+      setFilters({ ...filters, season_id: '', from: '', to: '' })
+      return
+    }
+    const season = seasons.find((s: any) => s.id === +seasonId)
+    if (!season) return
+    const currentYear = new Date().getFullYear()
+    const sm = season.start_month.toString().padStart(2, '0')
+    const sd = season.start_day.toString().padStart(2, '0')
+    const em = season.end_month.toString().padStart(2, '0')
+    const ed = season.end_day.toString().padStart(2, '0')
+    const fromDate = `${currentYear}-${sm}-${sd}`
+    const toDate = season.start_month > season.end_month ? `${currentYear + 1}-${em}-${ed}` : `${currentYear}-${em}-${ed}`
+    setFilters({ ...filters, season_id: seasonId, from: fromDate, to: toDate })
+  }
 
   const { data: batchesData, loading: batchesLoading, refetch: refetchBatches } = useQuery<any>(
     `batches?page=${batchesPage}&${appliedBatchKey}`,
@@ -205,29 +240,125 @@ export default function Vouchers() {
 
       {activeTab === 'vouchers' && (
         <>
-          {/* Filters */}
-          <GlassCard className="mb-4 flex flex-wrap gap-3 items-end relative z-10">
-            <div className="flex flex-col">
-              <label className="text-xs font-semibold text-slate-500 mb-1">Status</label>
-              <CustomSelect
-                value={filters.status}
-                onChange={(val) => setFilters({ ...filters, status: val })}
-                options={[
-                  { value: '', label: 'All Statuses' },
-                  ...['active', 'used', 'sold', 'expired', 'disabled'].map((s) => ({ value: s, label: s.toUpperCase() }))
-                ]}
-              />
+          {/* Filters — includes the season/date/package/reseller/seller filters
+              merged in from the old standalone Voucher Usage Report page. */}
+          <GlassCard className="mb-4 space-y-3 relative z-10">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-12 gap-3">
+              {canSeeReports && (
+                <>
+                  <div className="md:col-span-3">
+                    <label className="text-xs font-semibold text-slate-500 block mb-1">Season</label>
+                    <CustomSelect
+                      className="w-full"
+                      value={filters.season_id}
+                      onChange={handleSeasonChange}
+                      options={[
+                        { value: '', label: 'All Seasons', icon: <Calendar size={14} className="text-slate-400" /> },
+                        ...seasons.map((s: any) => {
+                          let Icon = Calendar
+                          let iconColor = 'text-slate-400'
+                          if (s.name === 'Spring') { Icon = Sparkles; iconColor = 'text-emerald-500' }
+                          else if (s.name === 'Summer') { Icon = Sun; iconColor = 'text-amber-500' }
+                          else if (s.name === 'Autumn') { Icon = Leaf; iconColor = 'text-orange-500' }
+                          else if (s.name === 'Winter') { Icon = Snowflake; iconColor = 'text-sky-500' }
+                          const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+                          const sm = MONTH_NAMES[s.start_month - 1] || ''
+                          const em = MONTH_NAMES[s.end_month - 1] || ''
+                          return { value: s.id, label: `${s.name} (${sm} ${s.start_day}-${em} ${s.end_day})`, icon: <Icon size={14} className={iconColor} /> }
+                        })
+                      ]}
+                    />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="text-xs font-semibold text-slate-500 block mb-1">From Date</label>
+                    <DualDatePicker label="From Date" value={filters.from} onChange={(val) => setFilters({ ...filters, from: val })} />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="text-xs font-semibold text-slate-500 block mb-1">To Date</label>
+                    <DualDatePicker label="To Date" value={filters.to} onChange={(val) => setFilters({ ...filters, to: val })} />
+                  </div>
+                </>
+              )}
+              <div className="md:col-span-2">
+                <label className="text-xs font-semibold text-slate-500 block mb-1">Status</label>
+                <CustomSelect
+                  className="w-full"
+                  value={filters.status}
+                  onChange={(val) => setFilters({ ...filters, status: val })}
+                  options={[
+                    { value: '', label: 'All Statuses' },
+                    ...['active', 'used', 'sold', 'expired', 'disabled'].map((s) => ({ value: s, label: s.toUpperCase() }))
+                  ]}
+                />
+              </div>
+              {canSeeReports && (
+                <div className="md:col-span-3">
+                  <label className="text-xs font-semibold text-slate-500 block mb-1">Package</label>
+                  <CustomSelect
+                    className="w-full"
+                    value={filters.plan_id ? +filters.plan_id : ''}
+                    onChange={(val) => setFilters({ ...filters, plan_id: val })}
+                    options={[{ value: '', label: 'All Packages' }, ...plans.map((p: any) => ({ value: p.id, label: p.name }))]}
+                  />
+                </div>
+              )}
             </div>
-            <div>
-              <label className="text-xs font-semibold text-slate-500">Code</label>
-              <input className="input mt-1" value={filters.code} onChange={(e) => setFilters({ ...filters, code: e.target.value })} placeholder="Search code" />
+            <div className="flex flex-col md:flex-row md:items-end gap-3 flex-wrap">
+              {canSeeReports && user?.role === 'admin' && (
+                <div className="flex-1 min-w-[140px] max-w-[250px]">
+                  <label className="text-xs font-semibold text-slate-500 block mb-1">Reseller</label>
+                  <CustomSelect
+                    className="w-full"
+                    value={filters.reseller_id ? +filters.reseller_id : ''}
+                    onChange={(val) => setFilters({ ...filters, reseller_id: val })}
+                    options={[{ value: '', label: 'All Resellers' }, ...resellers.map((r: any) => ({ value: r.id, label: r.name || r.username }))]}
+                  />
+                </div>
+              )}
+              {canSeeReports && (user?.role === 'admin' || user?.role === 'reseller') && (
+                <div className="flex-1 min-w-[140px] max-w-[250px]">
+                  <label className="text-xs font-semibold text-slate-500 block mb-1">Seller</label>
+                  <CustomSelect
+                    className="w-full"
+                    value={filters.seller_id ? +filters.seller_id : ''}
+                    onChange={(val) => setFilters({ ...filters, seller_id: val })}
+                    options={[{ value: '', label: 'All Sellers' }, ...sellers.map((s: any) => ({ value: s.id, label: s.name || s.username }))]}
+                  />
+                </div>
+              )}
+              <div className="flex-1 min-w-[140px] max-w-[250px]">
+                <label className="text-xs font-semibold text-slate-500 block mb-1">Code</label>
+                <input className="input" value={filters.code} onChange={(e) => setFilters({ ...filters, code: e.target.value })} placeholder="Search code" />
+              </div>
+              <div className="flex-1 min-w-[140px] max-w-[250px]">
+                <label className="text-xs font-semibold text-slate-500 block mb-1">Batch</label>
+                <input className="input" value={filters.batch} onChange={(e) => setFilters({ ...filters, batch: e.target.value })} placeholder="Batch code" />
+              </div>
+              <div className="md:ml-auto flex gap-2 shrink-0 w-full md:w-auto">
+                <button
+                  className="btn-ghost flex-1 md:flex-initial"
+                  onClick={() => { const reset = { status: '', code: '', batch: '', from: '', to: '', plan_id: '', reseller_id: '', seller_id: '', season_id: '' }; setFilters(reset); setPage(1); setAppliedVoucherKey('{}') }}
+                >
+                  Clear
+                </button>
+                <button className="btn-primary flex-1 md:flex-initial" onClick={() => { setPage(1); setAppliedVoucherKey(JSON.stringify(cleanFilters())) }}>Apply Filters</button>
+              </div>
             </div>
-            <div>
-              <label className="text-xs font-semibold text-slate-500">Batch</label>
-              <input className="input mt-1" value={filters.batch} onChange={(e) => setFilters({ ...filters, batch: e.target.value })} placeholder="Batch code" />
-            </div>
-            <button className="btn-primary" onClick={() => { setPage(1); setAppliedVoucherKey(JSON.stringify(cleanFilters())) }}>Apply</button>
           </GlassCard>
+
+          {summaryLoading && !summary ? (
+            <div className="mb-6"><Spinner /></div>
+          ) : null}
+          {summary && (
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-6">
+              <StatCard label="Generated" value={<span className="text-indigo-600 font-bold">{num(summary.totals.generated)}</span>} />
+              <StatCard label="Sold" value={<span className="text-blue-600 font-bold">{num(summary.totals.by_status?.sold || 0)}</span>} />
+              <StatCard label="Active" value={<span className="text-emerald-600 font-bold">{num(summary.totals.by_status?.active || 0)}</span>} />
+              <StatCard label="Used" value={<span className="text-cyan-600 font-bold">{num(summary.totals.by_status?.used || 0)}</span>} />
+              <StatCard label="Expired" value={<span className="text-amber-600 font-bold">{num(summary.totals.by_status?.expired || 0)}</span>} />
+              <StatCard label="Disabled" value={<span className="text-rose-600 font-bold">{num(summary.totals.by_status?.disabled || 0)}</span>} />
+            </div>
+          )}
 
           <GlassCard className="!p-0 overflow-hidden">
             {vouchersLoading && !data ? <div className="py-8"><Spinner /></div> : null}
@@ -239,10 +370,15 @@ export default function Vouchers() {
                     <th>Plan</th>
                     <th>Batch</th>
                     <th>Data</th>
+                    <th>Used</th>
                     <th>Price</th>
                     <th>Status</th>
                     <th>Expires</th>
-                    <th></th>
+                    {canSeeReports && <th>Login Date</th>}
+                    {canSeeReports && <th>Customer</th>}
+                    {canSeeReports && user?.role !== 'seller' && <th>Reseller</th>}
+                    {canSeeReports && user?.role !== 'seller' && <th>Seller</th>}
+                    {can('generate_voucher') && <th></th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -266,21 +402,28 @@ export default function Vouchers() {
                         ) : '—'}
                       </td>
                       <td>{v.data_gb ? gb(v.data_gb) : '—'}</td>
+                      <td>{v.data_gb ? `${gb(v.used_gb || 0)} / ${gb(v.data_gb)}` : (v.used_gb ? gb(v.used_gb) : '—')}</td>
                       <td>{rs(v.price)}</td>
                       <td><Pill tone={statusPill[v.status] || 'secondary'}>{v.status}</Pill></td>
                       <td className="text-xs">{date(v.expires_at)}</td>
-                      <td className="text-right whitespace-nowrap">
-                        {v.status === 'active' && (
-                          <button className="text-xs font-bold text-emerald-600 hover:underline mr-3" onClick={() => { setSellVoucher(v); setCustomerUsername(''); setSelling(false) }}>Sell</button>
-                        )}
-                        <button 
-                          className={`text-xs font-bold hover:underline mr-3 ${v.status === 'disabled' ? 'text-sky-600' : 'text-slate-500'}`} 
-                          onClick={() => toggleDisable(v)}
-                        >
-                          {v.status === 'disabled' ? 'Enable' : 'Disable'}
-                        </button>
-                        <button className="text-xs font-bold text-primary hover:underline" onClick={() => printSingleCard(v)}>Card</button>
-                      </td>
+                      {canSeeReports && <td className="text-xs">{v.activated_at ? date(v.activated_at) : '—'}</td>}
+                      {canSeeReports && <td className="font-semibold text-slate-700">{v.customer_username || '—'}</td>}
+                      {canSeeReports && user?.role !== 'seller' && <td>{v.reseller?.username || '—'}</td>}
+                      {canSeeReports && user?.role !== 'seller' && <td>{v.seller?.username || '—'}</td>}
+                      {can('generate_voucher') && (
+                        <td className="text-right whitespace-nowrap">
+                          {v.status === 'active' && (
+                            <button className="text-xs font-bold text-emerald-600 hover:underline mr-3" onClick={() => { setSellVoucher(v); setCustomerUsername(''); setSelling(false) }}>Sell</button>
+                          )}
+                          <button
+                            className={`text-xs font-bold hover:underline mr-3 ${v.status === 'disabled' ? 'text-sky-600' : 'text-slate-500'}`}
+                            onClick={() => toggleDisable(v)}
+                          >
+                            {v.status === 'disabled' ? 'Enable' : 'Disable'}
+                          </button>
+                          <button className="text-xs font-bold text-primary hover:underline" onClick={() => printSingleCard(v)}>Card</button>
+                        </td>
+                      )}
                     </motion.tr>
                   ))}
                 </tbody>

@@ -35,7 +35,9 @@ class ReportController extends Controller
             ];
             $summary[$r->plan_id]['generated'] += (int) $r->c;
             $summary[$r->plan_id]['by_status'][$r->status] = (int) $r->c;
-            if (in_array($r->status, ['sold', 'active', 'used', 'expired'], true)) {
+            // Only cards actually handed off to a customer count toward sales
+            // — 'active' is printed but still sitting in stock.
+            if (in_array($r->status, ['sold', 'used', 'expired'], true)) {
                 $summary[$r->plan_id]['revenue'] += (float) $r->revenue;
                 $summary[$r->plan_id]['gb_sold'] += (float) $r->gb;
             }
@@ -47,8 +49,9 @@ class ReportController extends Controller
         $totalsByStatus = ['new' => 0, 'sold' => 0, 'active' => 0, 'used' => 0, 'expired' => 0, 'disabled' => 0];
         foreach ($summary as &$s) {
             $s['remaining'] = $s['generated'] - $s['used'];
-            // "Sold" = handed off to a customer in any downstream state (mirrors reseller-summary's stock math).
-            $s['sold'] = $s['by_status']['sold'] + $s['by_status']['active'] + $s['by_status']['used'] + $s['by_status']['expired'];
+            // "Sold" = actually handed off to a customer — 'active' is printed
+            // but still sitting in stock (mirrors reseller-summary's stock math).
+            $s['sold'] = $s['by_status']['sold'] + $s['by_status']['used'] + $s['by_status']['expired'];
             $s['in_stock'] = max(0, $s['generated'] - $s['sold']);
             foreach ($s['by_status'] as $status => $count) {
                 $totalsByStatus[$status] += $count;
@@ -100,15 +103,19 @@ class ReportController extends Controller
         $users = $userQuery->orderBy('name')->get();
         $userIds = $users->pluck('id')->all();
 
-        $soldSet = "'sold', 'active', 'used', 'expired'";
+        // Voucher sales tracking is purely card-based: a card only counts as
+        // "sold" (and its GB/price counted toward sales) once it's actually
+        // been handed off to a customer — 'active' cards are printed but
+        // still sitting in stock.
+        $cardsSoldSet = "'sold', 'used', 'expired'";
         $voucherStats = Voucher::query()
             ->whereIn($groupColumn, $userIds)
             ->select(
                 "{$groupColumn} as uid",
                 DB::raw('count(*) as generated'),
-                DB::raw("sum(case when status in ({$soldSet}) then 1 else 0 end) as sold"),
-                DB::raw("sum(case when status in ({$soldSet}) then data_gb else 0 end) as gb_sold"),
-                DB::raw("sum(case when status in ({$soldSet}) then price else 0 end) as sales_amount")
+                DB::raw("sum(case when status in ({$cardsSoldSet}) then 1 else 0 end) as sold"),
+                DB::raw("sum(case when status in ({$cardsSoldSet}) then data_gb else 0 end) as gb_sold"),
+                DB::raw("sum(case when status in ({$cardsSoldSet}) then price else 0 end) as sales_amount")
             )
             ->groupBy($groupColumn)
             ->get()
@@ -118,34 +125,26 @@ class ReportController extends Controller
             $s = $voucherStats->get($u->id);
             $generated = (int) ($s->generated ?? 0);
             $sold = (int) ($s->sold ?? 0);
-            $salesAmount = round((float) ($s->sales_amount ?? 0), 2);
-            $due = round((float) $u->wallet_due, 2);
 
             return [
                 'id' => $u->id,
                 'name' => $u->name,
                 'username' => $u->username,
                 'role' => $u->role,
-                'wallet_balance' => round((float) $u->wallet_balance, 2),
                 'cards_generated' => $generated,
                 'cards_sold' => $sold,
                 'cards_in_stock' => max(0, $generated - $sold),
                 'gb_sold' => round((float) ($s->gb_sold ?? 0), 3),
-                'sales_amount' => $salesAmount,
-                'amount_collected' => round(max(0.0, $salesAmount - $due), 2),
-                'amount_due' => $due,
+                'sales_amount' => round((float) ($s->sales_amount ?? 0), 2),
             ];
         })->values();
 
         $totals = [
-            'wallet_balance' => round((float) $accounts->sum('wallet_balance'), 2),
             'cards_generated' => (int) $accounts->sum('cards_generated'),
             'cards_sold' => (int) $accounts->sum('cards_sold'),
             'cards_in_stock' => (int) $accounts->sum('cards_in_stock'),
             'gb_sold' => round((float) $accounts->sum('gb_sold'), 3),
             'sales_amount' => round((float) $accounts->sum('sales_amount'), 2),
-            'amount_collected' => round((float) $accounts->sum('amount_collected'), 2),
-            'amount_due' => round((float) $accounts->sum('amount_due'), 2),
         ];
 
         return $this->ok(['role_label' => $roleLabel, 'accounts' => $accounts, 'totals' => $totals]);
@@ -154,8 +153,8 @@ class ReportController extends Controller
     private function emptyResellerSummaryTotals(): array
     {
         return [
-            'wallet_balance' => 0, 'cards_generated' => 0, 'cards_sold' => 0, 'cards_in_stock' => 0,
-            'gb_sold' => 0, 'sales_amount' => 0, 'amount_collected' => 0, 'amount_due' => 0,
+            'cards_generated' => 0, 'cards_sold' => 0, 'cards_in_stock' => 0,
+            'gb_sold' => 0, 'sales_amount' => 0,
         ];
     }
 

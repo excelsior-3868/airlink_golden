@@ -3,7 +3,7 @@ import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   LayoutDashboard, Package, Users2, Store, Wallet as WalletIcon,
-  Database, Ticket, BarChart3, LogOut, Wifi, Router, ShieldCheck, Shield,
+  Database, Ticket, LogOut, Wifi, Router, ShieldCheck, Shield,
   ChevronDown, ChevronRight, Key, Gauge, ArrowLeftRight, Menu, X, Terminal, Calendar,
   BookOpen, Receipt
 } from 'lucide-react'
@@ -17,8 +17,8 @@ interface NavItem {
   icon: any;
   roles: Role[];
   color: string;
-  perm?: string;
-  children?: { to: string; label: string; roles: Role[]; icon: any; color: string; perm?: string }[];
+  perm?: string | string[];
+  children?: { to: string; label: string; roles: Role[]; icon: any; color: string; perm?: string | string[] }[];
 }
 
 const NAV: NavItem[] = [
@@ -39,8 +39,7 @@ const NAV: NavItem[] = [
   { to: '/sellers', label: 'Add/View Sellers', icon: Store, roles: ['admin', 'reseller'], color: 'text-amber-500', perm: 'view_sellers' },
   { to: '/ledger', label: 'Accounting & Ledger', icon: BookOpen, roles: ['admin', 'reseller', 'seller'], color: 'text-emerald-500' },
   { to: '/funds', label: 'Wallet / GB Allocation', icon: WalletIcon, roles: ['admin', 'reseller', 'seller'], color: 'text-emerald-500' },
-  { to: '/vouchers', label: 'Voucher Sales', icon: Ticket, roles: ['admin', 'reseller', 'seller'], color: 'text-rose-500', perm: 'generate_voucher' },
-  { to: '/reports', label: 'Voucher Usage Report', icon: BarChart3, roles: ['admin', 'reseller', 'seller'], color: 'text-teal-500', perm: 'reports' },
+  { to: '/vouchers', label: 'Voucher Sales', icon: Ticket, roles: ['admin', 'reseller', 'seller'], color: 'text-rose-500', perm: ['generate_voucher', 'reports'] },
   { to: '/diagnostics', label: 'Voucher Diagnostics', icon: Terminal, roles: ['admin', 'reseller', 'seller'], color: 'text-slate-600' },
   {
     label: 'Settings',
@@ -64,7 +63,7 @@ interface NavListProps {
   expanded: Record<string, boolean>;
   toggleExpanded: (label: string) => void;
   user: { role: Role; name: string };
-  can: (perm?: string) => boolean;
+  can: (perm?: string | string[]) => boolean;
   onNavigate?: () => void;
 }
 
@@ -170,11 +169,14 @@ export default function AppShell() {
   }, [drawerOpen])
 
   if (!user) return null
+  // A perm can be a single feature or a list — list means "any of these grants access",
+  // used where one menu item now covers what used to be two separately-gated pages.
+  const canAny = (perm?: string | string[]) => !perm || (Array.isArray(perm) ? perm.some((p) => can(p)) : can(perm))
   const items = NAV
     // Hide items the role can't access OR the permission matrix has switched off.
-    .filter((n) => n.roles.includes(user.role) && can(n.perm))
+    .filter((n) => n.roles.includes(user.role) && canAny(n.perm))
     // Drop parents whose children are all hidden by role/permission.
-    .filter((n) => !n.children || n.children.some((c) => c.roles.includes(user.role) && can(c.perm)))
+    .filter((n) => !n.children || n.children.some((c) => c.roles.includes(user.role) && canAny(c.perm)))
 
   const doLogout = async () => {
     await logout()
@@ -201,7 +203,7 @@ export default function AppShell() {
           expanded={expanded}
           toggleExpanded={toggleExpanded}
           user={user}
-          can={can}
+          can={canAny}
         />
 
         {/* Profile Card Dropdown Container */}
@@ -335,7 +337,7 @@ export default function AppShell() {
                 expanded={expanded}
                 toggleExpanded={toggleExpanded}
                 user={user}
-                can={can}
+                can={canAny}
                 onNavigate={() => setDrawerOpen(false)}
               />
 

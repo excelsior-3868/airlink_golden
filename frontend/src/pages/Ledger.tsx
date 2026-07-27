@@ -230,7 +230,7 @@ function SalesLedgerView() {
           <div>
             <p className="text-xs font-semibold text-slate-400">Accounts Active</p>
             <p className="text-xl font-extrabold text-slate-800 mt-1">{userSummaries.length}</p>
-            <p className="text-[11px] text-slate-400 mt-1 font-medium">Resellers & Sellers</p>
+            <p className="text-[11px] text-slate-400 mt-1 font-medium">{user?.role === 'admin' ? 'Resellers' : 'Resellers & Sellers'}</p>
           </div>
           <div className="w-12 h-12 rounded-2xl bg-slate-100 border border-slate-200 text-slate-600 flex items-center justify-center shrink-0">
             <Users size={22} />
@@ -279,7 +279,7 @@ function SalesLedgerView() {
         <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
           <div>
             <h3 className="font-extrabold text-slate-800 text-sm">Detailed Sales Ledger Statements</h3>
-            <p className="text-xs text-slate-400 mt-0.5">Itemized statement of GB allocations and cash collections</p>
+            <p className="text-xs text-slate-400 mt-0.5">Itemized statement of GB allocations, voucher sales, and cash collections</p>
           </div>
         </div>
 
@@ -324,6 +324,10 @@ function SalesLedgerView() {
                       {row.type === 'invoice' ? (
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-600 border border-blue-100 flex items-center gap-1 w-max">
                           <FileText size={11} /> Invoice
+                        </span>
+                      ) : row.type === 'voucher_sale' ? (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-50 text-purple-600 border border-purple-100 flex items-center gap-1 w-max">
+                          <Tag size={11} /> Voucher Sale
                         </span>
                       ) : (
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center gap-1 w-max">

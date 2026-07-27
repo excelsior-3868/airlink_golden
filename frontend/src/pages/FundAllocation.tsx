@@ -252,6 +252,7 @@ export default function FundAllocation({ defaultTab }: { defaultTab?: TabType })
         open={fundOpen}
         onClose={() => setFundOpen(false)}
         onSuccess={() => handleRefresh()}
+        defaultAllocType={activeTab}
       />
     </div>
   )

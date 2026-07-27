@@ -10,26 +10,27 @@ interface FundModalProps {
   open: boolean
   onClose: () => void
   onSuccess?: () => void
+  defaultAllocType?: 'gb' | 'wallet'
 }
 
-export default function FundModal({ open, onClose, onSuccess }: FundModalProps) {
+export default function FundModal({ open, onClose, onSuccess, defaultAllocType = 'gb' }: FundModalProps) {
   const { user, refresh } = useAuth()
-  
+
   // Selection state
   const [targetUserId, setTargetUserId] = useState('')
-  const [allocType, setAllocType] = useState<'gb' | 'wallet'>('gb')
-  
+  const [allocType, setAllocType] = useState<'gb' | 'wallet'>(defaultAllocType)
+
   // Form values
   const [walletAmount, setWalletAmount] = useState('')
   const [walletNote, setWalletNote] = useState('')
-  
+
   const [gbAmount, setGbAmount] = useState('')
   const [gbPaid, setGbPaid] = useState('')
   const [gbNote, setGbNote] = useState('')
 
   const [resellers, setResellers] = useState<any[]>([])
   const [sellers, setSellers] = useState<any[]>([])
-  
+
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [success, setSuccess] = useState('')
@@ -38,6 +39,7 @@ export default function FundModal({ open, onClose, onSuccess }: FundModalProps) 
   useEffect(() => {
     if (!open) return
     setTargetUserId('')
+    setAllocType(defaultAllocType)
     setWalletAmount('')
     setWalletNote('')
     setGbAmount('')
@@ -45,7 +47,7 @@ export default function FundModal({ open, onClose, onSuccess }: FundModalProps) 
     setGbNote('')
     setErr('')
     setSuccess('')
-  }, [open])
+  }, [open, defaultAllocType])
 
   // Load downlines on mount / user change
   useEffect(() => {
@@ -69,7 +71,7 @@ export default function FundModal({ open, onClose, onSuccess }: FundModalProps) 
     return sellers.find((s) => String(s.id) === targetUserId) || null
   }, [targetUserId, resellers, sellers])
 
-  // Options list for CustomSelect dropdown
+  // Options list for CustomSelect dropdown — wallet loading is reseller-only
   const selectOptions = useMemo(() => {
     const opts: SelectOption[] = []
 
@@ -85,28 +87,37 @@ export default function FundModal({ open, onClose, onSuccess }: FundModalProps) 
       })
     })
 
-    sellers.forEach((s) => {
-      opts.push({
-        value: String(s.id),
-        label: s.name,
-        badge: (
-          <span className="text-[10px] bg-amber-50 text-amber-600 font-bold px-2 py-0.5 rounded-full shrink-0 border border-amber-100/50">
-            Seller
-          </span>
-        )
+    if (allocType !== 'wallet') {
+      sellers.forEach((s) => {
+        opts.push({
+          value: String(s.id),
+          label: s.name,
+          badge: (
+            <span className="text-[10px] bg-amber-50 text-amber-600 font-bold px-2 py-0.5 rounded-full shrink-0 border border-amber-100/50">
+              Seller
+            </span>
+          )
+        })
       })
-    })
+    }
 
     return opts
-  }, [resellers, sellers])
+  }, [resellers, sellers, allocType])
+
+  // Drop the selected seller if the type switches to wallet (reseller-only)
+  useEffect(() => {
+    if (allocType === 'wallet' && targetUserId && !resellers.some((r) => String(r.id) === targetUserId)) {
+      setTargetUserId('')
+    }
+  }, [allocType, resellers, targetUserId])
 
   // Cost and wallet check
+  const roundTo2 = (n: number) => Math.round(n * 100) / 100
+
   const gbCost = useMemo(() => {
     if (!gbAmount || !targetUser) return 0
     return roundTo2(+gbAmount * +(targetUser.gb_rate || 0))
   }, [gbAmount, targetUser])
-
-  const roundTo2 = (n: number) => Math.round(n * 100) / 100
 
   const remainingDue = useMemo(() => {
     const paid = gbPaid ? parseFloat(gbPaid) : 0
@@ -168,8 +179,8 @@ export default function FundModal({ open, onClose, onSuccess }: FundModalProps) 
     <Modal
       open={open}
       onClose={onClose}
-      title="Load & Allocate Balance"
-      subtitle="Select a reseller or seller to allocate GB data quota or load wallet balance."
+      title={allocType === 'wallet' ? 'Load Wallet' : 'Allocate GB'}
+      subtitle={allocType === 'wallet' ? 'Select a reseller to load wallet.' : 'Select a reseller or seller to allocate GB data quota.'}
       icon={<Send size={22} className="text-blue-600" />}
       bodyClassName="overflow-visible"
     >
@@ -177,7 +188,7 @@ export default function FundModal({ open, onClose, onSuccess }: FundModalProps) 
         {/* User Selection */}
         <div>
           <label className="text-xs font-bold text-slate-500 block mb-1.5">
-            Select Recipient (Reseller / Seller)
+            {allocType === 'wallet' ? 'Select Recipient (Reseller)' : 'Select Recipient (Reseller / Seller)'}
           </label>
           <CustomSelect
             className="w-full"
@@ -188,7 +199,7 @@ export default function FundModal({ open, onClose, onSuccess }: FundModalProps) 
               setErr('')
               setSuccess('')
             }}
-            placeholder="Choose reseller or seller..."
+            placeholder={allocType === 'wallet' ? 'Choose a reseller...' : 'Choose reseller or seller...'}
             options={selectOptions}
           />
         </div>

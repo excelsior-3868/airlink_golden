@@ -33,7 +33,7 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
       setCreateOpen(true)
     }
   }, [location.search])
-  const [form, setForm] = useState<any>({ name: '', username: '', email: '', phone: '', password: '', confirm_password: '', parent_id: '', gb_rate: '' })
+  const [form, setForm] = useState<any>({ name: '', username: '', email: '', phone: '', password: '', confirm_password: '', gb_rate: '' })
   const [showPw, setShowPw] = useState(false)
   const [showConfirmPw, setShowConfirmPw] = useState(false)
   const [fundUser, setFundUser] = useState<any>(null)
@@ -225,7 +225,7 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
     setBusy(true)
     setErr('')
     try {
-      const pid = role === 'seller' ? (user?.role === 'reseller' ? user.id : form.parent_id) : user!.id
+      const pid = user!.id
       const payload = { ...form }
       delete payload.confirm_password
       if (user?.role !== 'admin' || !payload.gb_rate || String(payload.gb_rate).trim() === '') {
@@ -233,7 +233,7 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
       }
       await api.post(`/${role}s`, { ...payload, parent_id: pid })
       setCreateOpen(false)
-      setForm({ name: '', username: '', email: '', phone: '', password: '', confirm_password: '', parent_id: '', gb_rate: '' })
+      setForm({ name: '', username: '', email: '', phone: '', password: '', confirm_password: '', gb_rate: '' })
       setShowPw(false)
       setShowConfirmPw(false)
       load()
@@ -300,7 +300,9 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
     <div>
       <PageTitle title={`Add/View ${label}s`} subtitle={`Manage your ${label.toLowerCase()} network`}
         icon={role === 'reseller' ? <Users2 size={22} className="text-purple-500" /> : <Store size={22} className="text-amber-500" />}
-        action={<motion.button whileTap={{ scale: 0.95 }} className="btn-primary flex items-center gap-2" onClick={() => { setErr(''); setCreateOpen(true) }}><Plus size={16} /> New {label}</motion.button>} />
+        action={(role !== 'seller' || user?.role !== 'admin') && (
+          <motion.button whileTap={{ scale: 0.95 }} className="btn-primary flex items-center gap-2" onClick={() => { setErr(''); setCreateOpen(true) }}><Plus size={16} /> New {label}</motion.button>
+        )} />
 
       {/* Action Guide / Legend */}
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2 mb-3.5 px-4 py-2.5 bg-slate-50 border border-slate-200/50 rounded-2xl text-xs text-slate-500 shadow-sm">
@@ -317,7 +319,7 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
         )}
         <span className="flex items-center gap-1.5">
           <span className="p-1 rounded-md bg-slate-100 text-primary inline-flex"><Wallet size={12} /></span>
-          <span>{user?.role === 'admin' ? 'Load Wallet/GB' : 'Allocate GB'}</span>
+          <span>{user?.role === 'admin' && role !== 'seller' ? 'Load Wallet/GB' : 'Allocate GB'}</span>
         </span>
         <span className="flex items-center gap-1.5">
           <span className="p-1 rounded-md bg-rose-50 text-rose-500 inline-flex"><UserMinus size={12} /></span>
@@ -335,7 +337,9 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
               <tr>
                 <th>Name</th>
                 <th>Username</th>
+                {role === 'seller' && user?.role === 'admin' && <th>Parent Reseller</th>}
                 <th>Payment Due</th>
+                {role === 'reseller' && <th>Wallet Balance</th>}
                 <th>GB Balance</th>
                 <th>GB Rate</th>
                 <th>Vouchers Generated</th>
@@ -358,7 +362,19 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
                     >
                       <td className="font-semibold text-slate-800">{u.name}</td>
                       <td className="font-mono text-xs">{u.username}</td>
+                      {role === 'seller' && user?.role === 'admin' && (
+                        <td>
+                          {u.parent?.name ? (
+                            <span className="text-[10px] bg-purple-50 text-purple-600 font-bold px-2 py-0.5 rounded-full border border-purple-100/50 whitespace-nowrap">
+                              {u.parent.name}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-slate-400">—</span>
+                          )}
+                        </td>
+                      )}
                       <td className="text-rose-600 font-semibold">{rs(u.wallet_due)}</td>
+                      {role === 'reseller' && <td className="font-semibold text-emerald-700">{rs(u.wallet_balance)}</td>}
                       <td>{gb(u.gb_balance)}</td>
                       <td>{rs(u.gb_rate)}/GB</td>
                       <td className="font-semibold text-slate-700">{u.vouchers_count ?? 0}</td>
@@ -373,7 +389,7 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
                             <CreditCard size={14} />
                           </button>
                         )}
-                        <button className="text-primary hover:text-indigo-800 p-1.5 rounded-lg hover:bg-slate-100/80 transition-all inline-flex items-center justify-center mr-1" title={user?.role === 'admin' ? 'Load Wallet/GB' : 'Allocate GB'} onClick={() => { setFundUser(u); setErr(''); setFund({ amount: '', gb_amount: '', gb_paid: '' }); }}>
+                        <button className="text-primary hover:text-indigo-800 p-1.5 rounded-lg hover:bg-slate-100/80 transition-all inline-flex items-center justify-center mr-1" title={user?.role === 'admin' && role !== 'seller' ? 'Load Wallet/GB' : 'Allocate GB'} onClick={() => { setFundUser(u); setErr(''); setFund({ amount: '', gb_amount: '', gb_paid: '' }); }}>
                           <Wallet size={14} />
                         </button>
                         <button className={`${u.status === 'active' ? 'text-rose-500 hover:text-rose-700 hover:bg-rose-50' : 'text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50'} p-1.5 rounded-lg transition-all inline-flex items-center justify-center mr-1`} title={u.status === 'active' ? 'Disable' : 'Enable'} onClick={() => toggle(u)}>
@@ -386,7 +402,7 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
                     </motion.tr>
                     {isExpanded && (
                       <tr className="bg-slate-50/40">
-                        <td colSpan={role === 'reseller' ? 9 : 8} className="py-4 px-6 border-b border-slate-200/60">
+                        <td colSpan={role === 'reseller' ? 10 : (user?.role === 'admin' ? 9 : 8)} className="py-4 px-6 border-b border-slate-200/60">
                           <div className="mb-3 flex items-center justify-between">
                             <div className="flex items-center gap-3">
                               <div className="w-10 h-10 rounded-full bg-purple-100 text-purple-700 flex items-center justify-center font-bold text-lg shadow-sm border border-purple-200/50 shrink-0">
@@ -546,16 +562,6 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
               )}
             </div>
 
-            {role === 'seller' && user?.role === 'admin' && (
-              <div className="md:col-span-2">
-                <label className="text-xs font-bold text-slate-500 block mb-1.5">Parent Reseller</label>
-                <select className="input" value={form.parent_id} onChange={(e) => setForm({ ...form, parent_id: e.target.value })}>
-                  <option value="">Select parent reseller…</option>
-                  {resellers.map((r) => <option key={r.id} value={r.id}>{r.name} ({r.username})</option>)}
-                </select>
-              </div>
-            )}
-
             {user?.role === 'admin' && (
               <div className="md:col-span-2">
                 <label className="text-xs font-bold text-slate-500 block mb-1.5">GB Rate (Rs. Per GB)</label>
@@ -641,12 +647,12 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
         </div>
       </Modal>
 
-      <Modal open={!!fundUser} onClose={() => setFundUser(null)} title={user?.role === 'admin' ? `Load Wallet/GB — ${fundUser?.name || ''}` : `Allocate GB — ${fundUser?.name || ''}`}>
+      <Modal open={!!fundUser} onClose={() => setFundUser(null)} title={user?.role === 'admin' && role !== 'seller' ? `Load Wallet/GB — ${fundUser?.name || ''}` : `Allocate GB — ${fundUser?.name || ''}`}>
         <div className="space-y-3">
           <div className="flex items-center justify-between pb-1 flex-wrap gap-2">
             <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Your Balance:</span>
             <div className="flex gap-2">
-              {user?.role === 'admin' && (
+              {user?.role === 'admin' && role !== 'seller' && (
                 <span className="px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100/80 text-xs font-bold shadow-sm flex items-center gap-1">
                   <Wallet size={12} />
                   Wallet: {rs(user!.wallet_balance)}
@@ -658,7 +664,7 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
               </span>
             </div>
           </div>
-          {user?.role === 'admin' && (
+          {user?.role === 'admin' && role !== 'seller' && (
             <div className="relative">
               <Wallet size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input className="input pl-10 no-spinners" type="number" placeholder="Wallet amount (Rs)" value={fund.amount} onChange={(e) => setFund({ ...fund, amount: e.target.value })} />

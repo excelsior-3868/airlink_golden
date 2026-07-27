@@ -1,13 +1,13 @@
-import { useState } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { Plus, Package, Pencil, Trash2 } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useQuery, invalidateCache } from '../lib/cache'
 import { useAuth } from '../lib/auth'
 import { rs, gb } from '../lib/format'
-import { GlassCard, PageTitle, Modal, Pill, EmptyState, ConfirmModal, Spinner } from '../components/ui'
+import { GlassCard, PageTitle, Modal, Pill, EmptyState, ConfirmModal, Spinner, CustomSelect, SelectOption } from '../components/ui'
 
-const blank = { name: '', type: 'hotspot', plan_type: 'data', bandwidth_id: '', data_gb: '', time_limit: '', validity_days: 1, base_price: 0, selling_price: 0, status: 'active' }
+const blank = { name: '', type: 'hotspot', package_type: 'wallet', plan_type: 'unlimited', bandwidth_id: '', data_gb: '', validity_days: 1, base_price: 0, selling_price: 0, status: 'active', delegation_id: '' }
 
 export default function HotspotPlans() {
   const { user } = useAuth()
@@ -22,22 +22,102 @@ export default function HotspotPlans() {
   const { data: plans = [], loading: plansLoading, refetch: refetchPlans } = useQuery<any[]>('plans?type=hotspot', () => api.get('/plans?type=hotspot').then((r) => r.data.data))
   const { data: bandwidths = [] } = useQuery<any[]>('bandwidths', () => api.get('/bandwidths').then((r) => r.data.data))
 
+  // Users lists for delegation when creating a GB Package on behalf of a reseller or seller
+  const [allResellers, setAllResellers] = useState<any[]>([])
+  const [allSellers, setAllSellers] = useState<any[]>([])
+
+  useEffect(() => {
+    if (!user) return
+    if (user.role === 'admin') {
+      api.get('/users', { params: { role: 'reseller', per_page: 100 } }).then((r) => setAllResellers(r.data.data.data))
+      api.get('/users', { params: { role: 'seller', per_page: 500 } }).then((r) => setAllSellers(r.data.data.data))
+    } else if (user.role === 'reseller') {
+      setAllResellers([])
+      api.get('/users', { params: { role: 'seller', per_page: 100 } }).then((r) => setAllSellers(r.data.data.data))
+    }
+  }, [user])
+
+  const canDelegate = user?.role === 'admin' || user?.role === 'reseller'
+
+  const delegationOptions = useMemo(() => {
+    const opts: SelectOption[] = []
+    if (user?.role === 'admin' || user?.role === 'reseller') {
+      allResellers.filter((r) => r.id !== user?.id).forEach((r) => {
+        opts.push({
+          value: `reseller-${r.id}`,
+          label: r.name,
+          badge: <span className="text-[10px] bg-purple-50 text-purple-600 font-bold px-2 py-0.5 rounded-full border border-purple-100/50">Reseller</span>
+        })
+      })
+    }
+    allSellers.forEach((s) => {
+      opts.push({
+        value: `seller-${s.id}`,
+        label: s.name,
+        badge: <span className="text-[10px] bg-amber-50 text-amber-600 font-bold px-2 py-0.5 rounded-full border border-amber-100/50">Seller</span>
+      })
+    })
+    return opts
+  }, [allResellers, allSellers, user])
+
+  const [ownerFilter, setOwnerFilter] = useState('all')
+
+  const filterOwnerOptions = useMemo(() => {
+    const opts: SelectOption[] = [{ value: 'all', label: 'All Packages (Default View)' }]
+    if (isAdmin) {
+      opts.push({ value: 'admin', label: 'Admin Default Packages' })
+    }
+    allResellers.filter((r) => r.id !== user?.id).forEach((r) => {
+      opts.push({
+        value: `reseller-${r.id}`,
+        label: r.name,
+        badge: <span className="text-[10px] bg-purple-50 text-purple-600 font-bold px-2 py-0.5 rounded-full border border-purple-100/50">Reseller</span>
+      })
+    })
+    allSellers.forEach((s) => {
+      opts.push({
+        value: `seller-${s.id}`,
+        label: s.name,
+        badge: <span className="text-[10px] bg-amber-50 text-amber-600 font-bold px-2 py-0.5 rounded-full border border-amber-100/50">Seller</span>
+      })
+    })
+    return opts
+  }, [allResellers, allSellers, user, isAdmin])
+
   // Refresh this page's plans and drop other cached plan lists after a change.
   const load = () => { refetchPlans(); invalidateCache('plans'); invalidateCache('reports/plans') }
 
   const openNew = () => {
-    setForm({ ...blank, bandwidth_id: bandwidths[0]?.id || '' })
+    const defaultPackageType = isAdmin ? 'wallet' : 'gb'
+    setForm({
+      ...blank,
+      bandwidth_id: bandwidths[0]?.id || '',
+      package_type: defaultPackageType,
+      plan_type: defaultPackageType === 'wallet' ? 'unlimited' : 'data',
+      base_price: 0,
+      selling_price: 0,
+      delegation_id: defaultPackageType === 'gb' ? (delegationOptions[0]?.value || '') : ''
+    })
     setEditId(null)
     setErr('')
     setOpen(true)
   }
 
   const openEdit = (p: any) => {
+    const pkgType = p.package_type || (isAdmin ? 'wallet' : 'gb')
+    let delId = ''
+    if (p.creator && p.creator.id !== user?.id && p.creator.role) {
+      delId = `${p.creator.role}-${p.creator.id}`
+    }
     setForm({
       ...p,
       bandwidth_id: p.bandwidth_id ?? '',
       data_gb: p.data_gb ?? '',
-      time_limit: p.time_limit ?? ''
+      package_type: pkgType,
+      plan_type: p.plan_type === 'time' ? 'unlimited' : (p.plan_type || (pkgType === 'wallet' ? 'unlimited' : 'data')),
+      base_price: p.base_price ?? 0,
+      selling_price: p.selling_price ?? 0,
+      delegation_id: delId
     })
     setEditId(p.id)
     setErr('')
@@ -48,13 +128,37 @@ export default function HotspotPlans() {
     setBusy(true)
     setErr('')
     try {
-      const payload = {
+      const pkgType = isAdmin ? (form.package_type || 'wallet') : 'gb'
+      const quotaType = pkgType === 'wallet' ? 'unlimited' : 'data'
+
+      if (pkgType === 'gb' && (!form.data_gb || +form.data_gb <= 0)) {
+        setErr('Please enter a valid Data GB amount greater than 0 for a GB Package.')
+        setBusy(false)
+        return
+      }
+
+      const payload: any = {
         ...form,
         type: 'hotspot',
+        package_type: pkgType,
+        plan_type: quotaType,
         bandwidth_id: form.bandwidth_id || null,
-        data_gb: form.data_gb || null,
-        time_limit: form.time_limit || null
+        data_gb: quotaType === 'data' ? +form.data_gb || null : null,
+        base_price: +form.base_price || 0,
+        selling_price: +form.selling_price || 0
       }
+      delete payload.time_limit
+      delete payload.delegation_id
+
+      if (pkgType === 'gb') {
+        const delId = form.delegation_id || (delegationOptions[0]?.value || '')
+        if (delId.startsWith('seller-')) {
+          payload.owner_id = +delId.replace('seller-', '')
+        } else if (delId.startsWith('reseller-')) {
+          payload.owner_id = +delId.replace('reseller-', '')
+        }
+      }
+
       if (editId) {
         await api.put(`/plans/${editId}`, payload)
       } else {
@@ -76,10 +180,18 @@ export default function HotspotPlans() {
   }
 
   const filteredPlans = plans.filter((p) => {
-    if (user?.role !== 'reseller') return true
-    if (activeTab === 'my') return p.created_by === user.id
-    if (activeTab === 'admin') return p.created_by === null || p.creator?.role === 'admin'
-    if (activeTab === 'seller') return p.created_by !== null && p.created_by !== user.id && p.creator?.role === 'seller'
+    if (user?.role === 'seller' && p.package_type === 'wallet') return false
+    if (user?.role === 'reseller') {
+      if (activeTab === 'my' && p.created_by !== user.id) return false
+      if (activeTab === 'admin' && (p.created_by !== null && p.creator?.role !== 'admin')) return false
+      if (activeTab === 'seller' && (p.created_by === null || p.created_by === user.id || p.creator?.role !== 'seller')) return false
+    }
+    if (ownerFilter === 'admin') {
+      if (p.created_by && p.creator?.role !== 'admin') return false
+    } else if (ownerFilter !== 'all') {
+      const idStr = ownerFilter.split('-')[1]
+      if (p.created_by !== +idStr) return false
+    }
     return true
   })
 
@@ -135,6 +247,22 @@ export default function HotspotPlans() {
         </div>
       )}
 
+      {canDelegate && (
+        <div className="mb-6 flex flex-col sm:flex-row sm:items-center gap-4 bg-slate-50/70 p-3.5 rounded-xl border border-slate-200/60">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full sm:w-auto">
+            <span className="text-sm font-bold text-slate-700 whitespace-nowrap">Show Packages For:</span>
+            <div className="w-full sm:w-[540px]">
+              <CustomSelect
+                value={ownerFilter}
+                onChange={(val) => setOwnerFilter(val)}
+                options={filterOwnerOptions}
+                searchable={true}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       <GlassCard className="!p-0 overflow-hidden">
         {plansLoading ? (
           <Spinner />
@@ -146,15 +274,13 @@ export default function HotspotPlans() {
                   <th>Name</th>
                   <th>Type</th>
                   <th>Package Type</th>
+                  <th>Package Owner</th>
                   <th>Bandwidth</th>
                   <th>Data</th>
                   <th>Validity</th>
                   <th>Price</th>
                   {user?.role === 'reseller' && activeTab === 'seller' && (
-                    <>
-                      <th>Created By</th>
-                      <th>Seller GB Balance</th>
-                    </>
+                    <th>Seller GB Balance</th>
                   )}
                   <th>Status</th>
                   <th></th>
@@ -176,25 +302,37 @@ export default function HotspotPlans() {
                         {p.package_type === 'gb' ? 'GB Package' : 'Wallet Package'}
                       </Pill>
                     </td>
+                    <td className="font-medium">
+                      {!p.creator || p.creator?.role === 'admin' ? (
+                        <span className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200/80">
+                          Admin (Default)
+                        </span>
+                      ) : p.creator?.role === 'reseller' ? (
+                        <span className="inline-flex items-center gap-1.5 text-xs font-bold text-purple-700 bg-purple-50 px-2.5 py-1 rounded-lg border border-purple-200/80">
+                          {p.creator.name}
+                          <span className="text-[10px] bg-purple-100 text-purple-800 px-1.5 py-0.5 rounded font-extrabold">Reseller</span>
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200/80">
+                          {p.creator?.name || 'Seller'}
+                          <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-extrabold">Seller</span>
+                        </span>
+                      )}
+                    </td>
                     <td>{p.bandwidth || '—'}</td>
                     <td>{p.data_gb ? gb(p.data_gb) : '—'}</td>
                     <td>{p.validity_days}d</td>
                     <td>{rs(p.selling_price)}</td>
                     {user?.role === 'reseller' && activeTab === 'seller' && (
-                      <>
-                        <td className="font-medium text-slate-600">
-                          {p.creator ? `${p.creator.name} (${p.creator.username})` : '—'}
-                        </td>
-                        <td className="font-medium text-cyan-600">
-                          {p.creator ? gb(p.creator.gb_balance) : '—'}
-                        </td>
-                      </>
+                      <td className="font-medium text-cyan-600">
+                        {p.creator ? gb(p.creator.gb_balance) : '—'}
+                      </td>
                     )}
                     <td>
                       <Pill tone={p.status === 'active' ? 'success' : 'secondary'}>{p.status}</Pill>
                     </td>
                     <td className="text-right whitespace-nowrap pr-3">
-                      {(isAdmin || p.created_by === user?.id) && (
+                      {(isAdmin || (p.package_type !== 'wallet' && p.created_by === user?.id)) && (
                         <>
                           <button className="text-primary hover:text-indigo-700 mr-2 p-1.5 rounded-lg hover:bg-slate-100/80 transition-all inline-flex items-center justify-center" title="Edit" onClick={() => openEdit(p)}>
                             <Pencil size={14} />
@@ -217,7 +355,7 @@ export default function HotspotPlans() {
       <Modal open={open} onClose={() => setOpen(false)} title={editId ? 'Edit Hotspot Plan' : 'New Hotspot Plan'}>
         <div className="space-y-3">
           <div>
-            <label className="text-xs font-semibold text-muted-foreground uppercase block mb-1">Plan name</label>
+            <label className="text-xs font-bold text-slate-600 block mb-1">Plan Name</label>
             <input
               className="input"
               placeholder="e.g. 5GB Voucher"
@@ -228,60 +366,91 @@ export default function HotspotPlans() {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-semibold text-muted-foreground uppercase block mb-1">Quota Type</label>
-              <select
-                className="input"
-                value={form.plan_type}
-                onChange={(e) => setForm({ ...form, plan_type: e.target.value })}
-              >
-                <option value="data">Data</option>
-                <option value="time">Time</option>
-                <option value="unlimited">Unlimited</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="text-xs font-semibold text-muted-foreground uppercase block mb-1">Bandwidth Limit</label>
-              <select
-                className="input"
-                value={form.bandwidth_id}
-                onChange={(e) => setForm({ ...form, bandwidth_id: e.target.value })}
-              >
-                <option value="">— Select Bandwidth —</option>
-                {bandwidths.map((bw) => (
-                  <option key={bw.id} value={bw.id}>
-                    {bw.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="text-xs font-semibold text-muted-foreground uppercase block mb-1">Data GB</label>
-              <input
-                className="input"
-                type="number"
-                placeholder="Data GB"
-                value={form.data_gb}
-                disabled={form.plan_type === 'time' || form.plan_type === 'unlimited'}
-                onChange={(e) => setForm({ ...form, data_gb: e.target.value })}
+              <label className="text-xs font-bold text-slate-600 block mb-1">Package Category</label>
+              <CustomSelect
+                value={form.package_type || (isAdmin ? 'wallet' : 'gb')}
+                onChange={(val) => {
+                  const newQuota = val === 'wallet' ? 'unlimited' : 'data'
+                  const defaultDelegation = val === 'gb' ? (form.delegation_id || delegationOptions[0]?.value || '') : ''
+                  setForm({ ...form, package_type: val, plan_type: newQuota, delegation_id: defaultDelegation })
+                }}
+                disabled={!isAdmin || (editId !== null && !isAdmin)}
+                options={[
+                  ...(isAdmin ? [{ value: 'wallet', label: 'Wallet Package' }] : []),
+                  { value: 'gb', label: 'GB Package' }
+                ]}
               />
             </div>
 
             <div>
-              <label className="text-xs font-semibold text-muted-foreground uppercase block mb-1">Time Limit (min)</label>
+              <label className="text-xs font-bold text-slate-600 block mb-1">Quota Type</label>
+              <CustomSelect
+                value={form.plan_type === 'time' ? 'unlimited' : form.plan_type}
+                onChange={(val) => setForm({ ...form, plan_type: val })}
+                disabled={true}
+                options={
+                  (form.package_type || (isAdmin ? 'wallet' : 'gb')) === 'wallet'
+                    ? [{ value: 'unlimited', label: 'Unlimited' }]
+                    : [{ value: 'data', label: 'Data' }]
+                }
+              />
+            </div>
+
+            {(form.package_type || (isAdmin ? 'wallet' : 'gb')) === 'gb' && canDelegate && (
+              <div className="col-span-2">
+                <label className="text-xs font-bold text-slate-600 block mb-1">On Behalf Of (Reseller/Seller)</label>
+                <CustomSelect
+                  value={form.delegation_id || delegationOptions[0]?.value || ''}
+                  onChange={(val) => setForm({ ...form, delegation_id: val })}
+                  options={delegationOptions}
+                  className="w-full"
+                />
+              </div>
+            )}
+
+            <div>
+              <label className="text-xs font-bold text-slate-600 block mb-1">Retail Price (Rs)</label>
               <input
                 className="input"
                 type="number"
-                placeholder="Time limit (min)"
-                value={form.time_limit}
-                disabled={form.plan_type === 'data' || form.plan_type === 'unlimited'}
-                onChange={(e) => setForm({ ...form, time_limit: e.target.value })}
+                min="0"
+                step="any"
+                placeholder="e.g. 100"
+                value={form.selling_price}
+                onChange={(e) => setForm({ ...form, selling_price: e.target.value })}
               />
             </div>
 
             <div>
-              <label className="text-xs font-semibold text-muted-foreground uppercase block mb-1">Validity Days</label>
+              <label className="text-xs font-bold text-slate-600 block mb-1">Wholesale Cost (Rs)</label>
+              <input
+                className="input"
+                type="number"
+                min="0"
+                step="any"
+                placeholder="e.g. 80"
+                value={form.base_price}
+                onChange={(e) => setForm({ ...form, base_price: e.target.value })}
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-slate-600 block mb-1">Bandwidth Limit</label>
+              <CustomSelect
+                value={form.bandwidth_id ? String(form.bandwidth_id) : ''}
+                onChange={(val) => setForm({ ...form, bandwidth_id: val })}
+                options={[
+                  { value: '', label: '— Select Bandwidth —' },
+                  ...bandwidths.map((bw) => ({
+                    value: String(bw.id),
+                    label: bw.name
+                  }))
+                ]}
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-slate-600 block mb-1">Validity Days</label>
               <input
                 className="input"
                 type="number"
@@ -292,15 +461,27 @@ export default function HotspotPlans() {
             </div>
 
             <div>
-              <label className="text-xs font-semibold text-muted-foreground uppercase block mb-1">Status</label>
-              <select
+              <label className="text-xs font-bold text-slate-600 block mb-1">Data GB</label>
+              <input
                 className="input"
+                type="number"
+                placeholder="Data GB"
+                value={form.data_gb}
+                disabled={(form.package_type || (isAdmin ? 'wallet' : 'gb')) === 'wallet' || form.plan_type === 'unlimited'}
+                onChange={(e) => setForm({ ...form, data_gb: e.target.value })}
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-slate-600 block mb-1">Status</label>
+              <CustomSelect
                 value={form.status}
-                onChange={(e) => setForm({ ...form, status: e.target.value })}
-              >
-                <option value="active">Active</option>
-                <option value="disabled">Disabled</option>
-              </select>
+                onChange={(val) => setForm({ ...form, status: val })}
+                options={[
+                  { value: 'active', label: 'Active' },
+                  { value: 'disabled', label: 'Disabled' }
+                ]}
+              />
             </div>
 
           </div>

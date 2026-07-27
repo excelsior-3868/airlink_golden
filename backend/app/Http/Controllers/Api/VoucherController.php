@@ -62,6 +62,14 @@ class VoucherController extends Controller
     {
         $q = $this->scopedQuery($request->user())->with(['plan:id,name,package_type', 'batch:id,batch_code', 'reseller:id,username', 'seller:id,username']);
 
+        // Actual data consumed so far, straight from radacct — separate from
+        // data_gb, which is just the plan's allotted quota at generation time.
+        $q->addSelect('vouchers.*')->selectSub(function ($sub) {
+            $sub->from('radacct')
+                ->selectRaw('ROUND(COALESCE(SUM(acctinputoctets + acctoutputoctets), 0) / 1073741824, 3)')
+                ->whereColumn('radacct.username', 'vouchers.username');
+        }, 'used_gb');
+
         if ($s = $request->query('status')) {
             $q->where('status', $s);
         }

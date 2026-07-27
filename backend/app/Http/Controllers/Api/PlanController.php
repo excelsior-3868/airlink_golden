@@ -34,14 +34,15 @@ class PlanController extends Controller
                       });
                 });
             } else if ($actor->isSeller()) {
-                $query->where(function ($q) use ($actor) {
-                    $q->whereNull('created_by')
-                      ->orWhere('created_by', $actor->id)
-                      ->orWhere('created_by', $actor->parent_id)
-                      ->orWhereIn('created_by', function ($sub) {
-                          $sub->select('id')->from('users')->where('role', 'admin');
+                $query->where('package_type', '!=', 'wallet')
+                      ->where(function ($q) use ($actor) {
+                          $q->whereNull('created_by')
+                            ->orWhere('created_by', $actor->id)
+                            ->orWhere('created_by', $actor->parent_id)
+                            ->orWhereIn('created_by', function ($sub) {
+                                $sub->select('id')->from('users')->where('role', 'admin');
+                            });
                       });
-                });
             }
         }
 
@@ -100,14 +101,20 @@ class PlanController extends Controller
             }
         }
         $data['created_by'] = $creatorId;
-        $data['package_type'] = $request->boolean('via_voucher') ? 'gb' : 'wallet';
+        $ownerObj = \App\Models\User::find($creatorId);
+        $isOwnerAdmin = $ownerObj && $ownerObj->role === 'admin';
+        if ($request->filled('package_type') && in_array($request->input('package_type'), ['wallet', 'gb'])) {
+            $data['package_type'] = ($isOwnerAdmin && $request->input('package_type') === 'wallet') ? 'wallet' : 'gb';
+        } else {
+            $data['package_type'] = ($isOwnerAdmin && !$request->boolean('via_voucher')) ? 'wallet' : 'gb';
+        }
 
         return $this->created(InternetPlan::create($data), 'Plan created.');
     }
 
     public function update(Request $request, InternetPlan $plan): JsonResponse
     {
-        if (!$request->user()->isAdmin() && $plan->created_by !== $request->user()->id) {
+        if (!$request->user()->isAdmin() && ($plan->package_type === 'wallet' || $plan->created_by !== $request->user()->id)) {
             return $this->fail('You do not have permission to modify this plan.', 403);
         }
 
@@ -148,6 +155,9 @@ class PlanController extends Controller
             }
         }
         $data['created_by'] = $creatorId;
+        if ($request->filled('package_type') && in_array($request->input('package_type'), ['wallet', 'gb'])) {
+            $data['package_type'] = ($request->user()->isAdmin() && $request->input('package_type') === 'wallet') ? 'wallet' : 'gb';
+        }
 
         $plan->update($data);
 
@@ -156,7 +166,7 @@ class PlanController extends Controller
 
     public function destroy(InternetPlan $plan): JsonResponse
     {
-        if (!request()->user()->isAdmin() && $plan->created_by !== request()->user()->id) {
+        if (!request()->user()->isAdmin() && ($plan->package_type === 'wallet' || $plan->created_by !== request()->user()->id)) {
             return $this->fail('You do not have permission to delete this plan.', 403);
         }
 
@@ -227,6 +237,7 @@ class PlanController extends Controller
             'base_price' => [$isHotspot ? 'nullable' : 'required', 'numeric', 'min:0'],
             'selling_price' => [$isHotspot ? 'nullable' : 'required', 'numeric', 'min:0'],
             'api_nas' => ['nullable', 'string', 'max:255'],
+            'package_type' => ['nullable', 'in:wallet,gb'],
             'status' => ['nullable', 'in:active,disabled'],
         ]);
     }

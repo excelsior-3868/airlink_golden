@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Ticket, AlertTriangle, Printer, Zap, Plus, Pencil, Loader2, Wallet, Database, ShieldCheck, Layers } from 'lucide-react'
+import { Ticket, AlertTriangle, Printer, Plus, Pencil, Loader2, Wallet, Database, Layers } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { rs, gb } from '../lib/format'
@@ -25,6 +25,7 @@ interface VoucherPackageCardProps {
   user: any
   allResellers: any[]
   allSellers: any[]
+  selectedOwnerId: string
   onEdit: (plan: any) => void
   onSuccess: (result: any, plan: any) => void
   cardTemplate: CardTemplate | null
@@ -36,6 +37,7 @@ function VoucherPackageCard({
   user,
   allResellers,
   allSellers,
+  selectedOwnerId,
   onEdit,
   onSuccess,
   cardTemplate,
@@ -48,14 +50,17 @@ function VoucherPackageCard({
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
 
-  // Auto-initialize delegation if the plan owner is a downline
+  // Generating on behalf of the reseller/seller selected in "Generate Packages for" takes
+  // priority; otherwise fall back to auto-detecting a downline plan owner.
   useEffect(() => {
-    if (p.creator && p.creator.id !== user?.id) {
+    if (selectedOwnerId && selectedOwnerId !== 'all') {
+      setDelegationId(selectedOwnerId)
+    } else if (p.creator && p.creator.id !== user?.id) {
       setDelegationId(`${p.creator.role}-${p.creator.id}`)
     } else {
       setDelegationId('')
     }
-  }, [p, user])
+  }, [p, user, selectedOwnerId])
 
   // Resolve delegation user
   const targetUser = useMemo(() => {
@@ -114,7 +119,9 @@ function VoucherPackageCard({
   }, [p.base_price, quantity])
 
   const isShortGb = totalGbRequired > targetGbBalance
-  const isShortWallet = false
+  const isShortWallet = totalWalletCost > targetWalletBalance
+  const isWallet = p.package_type === 'wallet'
+  const isShort = isWallet ? isShortWallet : isShortGb
 
   const handlePrint = async () => {
     if (!quantity || quantity <= 0) {
@@ -176,7 +183,7 @@ function VoucherPackageCard({
           )}
         </div>
 
-        {(user?.role === 'admin' || p.created_by === user?.id) && (
+        {(user?.role === 'admin' || (p.package_type !== 'wallet' && p.created_by === user?.id)) && (
           <button
             onClick={() => onEdit(p)}
             className="absolute top-2 right-2 text-white/70 hover:text-white hover:bg-white/10 p-1.5 rounded-lg transition-all"
@@ -235,20 +242,20 @@ function VoucherPackageCard({
         <div className="pt-2 border-t border-slate-100">
           <div className="flex justify-between items-center gap-2">
             <span className="inline-flex items-center gap-1 text-[10px] font-extrabold px-2.5 py-1 bg-slate-50 text-slate-500 rounded-lg border border-slate-200/50">
-              Required: <span className="text-slate-800">{gb(totalGbRequired)}</span>
+              Required: <span className="text-slate-800">{isWallet ? rs(totalWalletCost) : gb(totalGbRequired)}</span>
             </span>
             <span className={`inline-flex items-center gap-1 text-[10px] font-extrabold px-2.5 py-1 rounded-lg border ${
-              isShortGb 
-                ? 'bg-rose-50 text-rose-600 border-rose-100' 
+              isShort
+                ? 'bg-rose-50 text-rose-600 border-rose-100'
                 : 'bg-emerald-50 text-emerald-600 border-emerald-100/50'
             }`}>
-              Available: <span className={isShortGb ? 'text-rose-800' : 'text-emerald-800'}>{gb(targetGbBalance)}</span>
+              Available: <span className={isShort ? 'text-rose-800' : 'text-emerald-800'}>{isWallet ? rs(targetWalletBalance) : gb(targetGbBalance)}</span>
             </span>
           </div>
 
-          {isShortGb && (
+          {isShort && (
             <div className="mt-2 text-[10px] text-rose-500 font-bold flex items-center justify-center gap-1 bg-rose-50 py-1 rounded-lg border border-rose-100">
-              <AlertTriangle size={10} /> Insufficient GB Balance
+              <AlertTriangle size={10} /> {isWallet ? 'Insufficient Wallet Balance' : 'Insufficient GB Balance'}
             </div>
           )}
           {err && (
@@ -262,7 +269,7 @@ function VoucherPackageCard({
       {/* Print Footer Action button */}
       <button
         onClick={handlePrint}
-        disabled={busy || isShortGb || isShortWallet}
+        disabled={busy || isShort}
         className="bg-[#005FA3] hover:bg-[#004C83] disabled:bg-slate-200 disabled:text-slate-400 text-white font-extrabold py-2.5 text-center transition-all flex items-center justify-center gap-2 cursor-pointer border-t border-[#005FA3]/10 text-sm select-none"
       >
         <Printer size={15} /> Generate and Print
@@ -328,12 +335,9 @@ export default function VoucherGenerateTab({ plans, refetchPlans, onSuccess }: V
     return opts
   }, [allResellers, allSellers, user])
 
-  // Options for the main page Show Packages For filter
+  // Options for the main page Generate Packages for filter
   const ownerFilterOptions = useMemo(() => {
     const opts: SelectOption[] = []
-    if (user?.role === 'admin') {
-      opts.push({ value: 'all', label: 'All Packages' })
-    }
     opts.push({ value: '', label: 'Myself' })
     if (user?.role === 'admin' || user?.role === 'reseller') {
       allResellers.filter((r) => r.id !== user?.id).forEach((r) => {
@@ -357,12 +361,6 @@ export default function VoucherGenerateTab({ plans, refetchPlans, onSuccess }: V
   const [selectedOwnerId, setSelectedOwnerId] = useState('')
   const [packageTypeTab, setPackageTypeTab] = useState<'all' | 'gb' | 'wallet'>('all')
 
-  useEffect(() => {
-    if (user?.role === 'admin') {
-      setSelectedOwnerId('all')
-    }
-  }, [user])
-
   // Filter plans to show packages created by the selected owner + Admin global wallet packages
   const ownerFilteredPackages = useMemo(() => {
     const isSellerTarget = user?.role === 'seller' || selectedOwnerId.startsWith('seller-')
@@ -378,6 +376,9 @@ export default function VoucherGenerateTab({ plans, refetchPlans, onSuccess }: V
 
       if (selectedOwnerId === 'all') return true
       if (!selectedOwnerId) {
+        if (user?.role === 'admin') {
+          return !p.created_by || p.created_by === user?.id || p.creator?.role === 'admin'
+        }
         return p.created_by === user?.id
       } else {
         const [, idStr] = selectedOwnerId.split('-')
@@ -613,7 +614,7 @@ export default function VoucherGenerateTab({ plans, refetchPlans, onSuccess }: V
       <div className={`flex flex-wrap ${user?.role === 'seller' ? 'justify-end' : 'justify-between'} items-center gap-4 mb-2`}>
         {user?.role !== 'seller' && (
           <div className="flex items-center gap-3">
-            <span className="text-sm font-bold text-[#003164] whitespace-nowrap">Show Packages For:</span>
+            <span className="text-sm font-bold text-[#003164] whitespace-nowrap">Generate Packages for:</span>
             <CustomSelect
               value={selectedOwnerId}
               onChange={(val) => setSelectedOwnerId(val)}
@@ -630,6 +631,8 @@ export default function VoucherGenerateTab({ plans, refetchPlans, onSuccess }: V
           <Plus size={16} /> Create a Package
         </button>
       </div>
+
+
 
       {/* Category Sub-Tabs (Differentiate GB vs Wallet packages) */}
       {walletCount > 0 && (
@@ -678,6 +681,7 @@ export default function VoucherGenerateTab({ plans, refetchPlans, onSuccess }: V
             user={user}
             allResellers={allResellers}
             allSellers={allSellers}
+            selectedOwnerId={selectedOwnerId}
             onEdit={openEditModal}
             onSuccess={handleGenerationSuccess}
             cardTemplate={cardTemplate}
@@ -691,7 +695,9 @@ export default function VoucherGenerateTab({ plans, refetchPlans, onSuccess }: V
           <div className="p-4 bg-slate-50 text-[#003164]/60 rounded-full mb-4 border border-slate-100">
             <Ticket size={32} />
           </div>
-          <h3 className="text-base font-bold text-slate-800 tracking-tight">No Custom Packages Found</h3>
+          <h3 className="text-base font-bold text-slate-800 tracking-tight">
+            No Custom Packages Found
+          </h3>
           <p className="text-xs text-slate-400 font-medium max-w-sm mt-1 mb-2">
             {user?.role === 'seller'
               ? 'You do not have any custom packages configured yet.'

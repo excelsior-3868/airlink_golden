@@ -11,7 +11,6 @@ import Users from './pages/Users'
 import FundAllocation from './pages/FundAllocation'
 import Transactions from './pages/Transactions'
 import Vouchers from './pages/Vouchers'
-import Reports from './pages/Reports'
 import Nas from './pages/Nas'
 import LoginLogs from './pages/LoginLogs'
 import Permissions from './pages/Permissions'
@@ -48,11 +47,14 @@ function AccessDenied() {
 
 // Route-level gate — mirrors the sidebar's role/permission rules so a direct URL
 // cannot bypass a hidden menu item.
-function Guard({ perm, roles, children }: { perm?: string; roles?: Role[]; children: JSX.Element }) {
+function Guard({ perm, roles, children }: { perm?: string | string[]; roles?: Role[]; children: JSX.Element }) {
   const { user, can } = useAuth()
   if (!user) return null
   const roleOk = !roles || roles.includes(user.role)
-  if (!roleOk || !can(perm)) return <AccessDenied />
+  // A perm list means "any of these grants access" — used where one page now covers
+  // what used to be two separately-gated routes.
+  const permOk = !perm || (Array.isArray(perm) ? perm.some((p) => can(p)) : can(perm))
+  if (!roleOk || !permOk) return <AccessDenied />
   return children
 }
 
@@ -81,9 +83,9 @@ export default function App() {
         <Route path="/accounts/sales" element={<Navigate to="/ledger?tab=sales" replace />} />
         <Route path="/accounts/expenses" element={<Navigate to="/ledger?tab=expenses" replace />} />
         <Route path="/transactions" element={<Navigate to="/ledger?tab=transactions" replace />} />
-        <Route path="/vouchers" element={<Guard perm="generate_voucher"><Vouchers /></Guard>} />
+        <Route path="/vouchers" element={<Guard perm={['generate_voucher', 'reports']}><Vouchers /></Guard>} />
         <Route path="/vouchers/generate" element={<Guard perm="generate_voucher"><VoucherGenerator /></Guard>} />
-        <Route path="/reports" element={<Guard perm="reports"><Reports /></Guard>} />
+        <Route path="/reports" element={<Navigate to="/vouchers?tab=vouchers" replace />} />
         <Route path="/diagnostics" element={<Guard roles={['admin', 'reseller', 'seller']}><RadiusLogs /></Guard>} />
         <Route path="/nas" element={<Guard perm="view_settings" roles={['admin']}><Nas /></Guard>} />
         <Route path="/logs" element={<Guard perm="view_settings" roles={['admin']}><LoginLogs /></Guard>} />

@@ -418,8 +418,7 @@ export function CustomSelect({
             position: 'absolute',
             top: coords.top + 6,
             left: coords.left,
-            width: coords.width,
-            minWidth: 200
+            minWidth: Math.max(coords.width, 320)
           }}
           className="bg-white border border-slate-200/80 rounded-2xl shadow-xl z-[9999] flex flex-col overflow-hidden"
         >
@@ -467,7 +466,7 @@ export function CustomSelect({
                             {opt.icon}
                           </div>
                         )}
-                        <span className="truncate">{opt.label}</span>
+                        <span className="whitespace-nowrap pr-2">{opt.label}</span>
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
                         {opt.badge}

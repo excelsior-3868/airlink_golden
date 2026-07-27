@@ -68,6 +68,7 @@ export default function Gb() {
         open={fundOpen}
         onClose={() => setFundOpen(false)}
         onSuccess={() => { refetch(); invalidateCache('dashboard') }}
+        defaultAllocType="gb"
       />
     </div>
   )

@@ -8,6 +8,7 @@ use App\Models\Invoice;
 use App\Models\Party;
 use App\Models\Payment;
 use App\Models\User;
+use App\Models\Voucher;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -35,10 +36,9 @@ class AccountController extends Controller
             if ($targetUserId) {
                 $userQuery->where('id', (int) $targetUserId);
             } else {
-                $userQuery->whereIn('role', ['reseller', 'seller']);
-                if ($roleFilter) {
-                    $userQuery->where('role', $roleFilter);
-                }
+                // Admin transacts directly with resellers only — seller activity
+                // is the reseller's own downline business, not the admin's ledger.
+                $userQuery->where('role', $roleFilter ?: 'reseller');
             }
         } elseif ($actor->isReseller()) {
             if ($targetUserId) {
@@ -71,6 +71,8 @@ class AccountController extends Controller
         if ($actor->isAdmin()) {
             if ($targetUserId) {
                 $invoiceQuery->where(fn ($q) => $q->where('sender_id', $targetUserId)->orWhere('receiver_id', $targetUserId));
+            } else {
+                $invoiceQuery->where(fn ($q) => $q->where('sender_id', $actor->id)->orWhereIn('receiver_id', $userIds));
             }
         } elseif ($actor->isReseller()) {
             if ($targetUserId) {
@@ -96,6 +98,8 @@ class AccountController extends Controller
         if ($actor->isAdmin()) {
             if ($targetUserId) {
                 $paymentQuery->where(fn ($q) => $q->where('sender_id', $targetUserId)->orWhere('receiver_id', $targetUserId));
+            } else {
+                $paymentQuery->where(fn ($q) => $q->where('receiver_id', $actor->id)->orWhereIn('sender_id', $userIds));
             }
         } elseif ($actor->isReseller()) {
             if ($targetUserId) {
@@ -116,14 +120,40 @@ class AccountController extends Controller
 
         $payments = $paymentQuery->with(['sender:id,name,username', 'receiver:id,name,username'])->latest()->get();
 
+        // Voucher Sales Query — cards sold by a reseller directly, or by one of
+        // their sellers. Attributed to seller_id when set, else reseller_id.
+        // Vouchers are treated as fully paid at sale (cash collected from the
+        // end customer up front), so they add straight to invoiced + paid,
+        // never to wallet_due.
+        $voucherQuery = Voucher::query()
+            ->whereIn('status', ['sold', 'active', 'used', 'expired'])
+            ->where(function ($q) use ($userIds) {
+                $q->whereIn('seller_id', $userIds)
+                  ->orWhere(function ($q2) use ($userIds) {
+                      $q2->whereNull('seller_id')->whereIn('reseller_id', $userIds);
+                  });
+            });
+
+        if ($fromDate) {
+            $voucherQuery->whereRaw('COALESCE(sold_at, created_at) >= ?', [$fromDate]);
+        }
+        if ($toDate) {
+            $voucherQuery->whereRaw('COALESCE(sold_at, created_at) <= ?', [$toDate . ' 23:59:59']);
+        }
+
+        $vouchers = $voucherQuery->with(['plan:id,name', 'seller:id,name,username', 'reseller:id,name,username'])->latest('sold_at')->get();
+
         // Calculate User Summaries
-        $userSummaries = $users->map(function ($u) use ($invoices, $payments) {
+        $userSummaries = $users->map(function ($u) use ($invoices, $payments, $vouchers) {
             $uInvoices = $invoices->filter(fn ($i) => $i->receiver_id === $u->id || $i->sender_id === $u->id);
             $uPayments = $payments->filter(fn ($p) => $p->sender_id === $u->id || $p->receiver_id === $u->id);
+            $uVouchers = $vouchers->filter(fn ($v) => ($v->seller_id ?? $v->reseller_id) === $u->id);
 
             $totalInvoiced = (float) $uInvoices->sum('total_amount');
             $totalGb = (float) $uInvoices->sum('gb_amount');
             $totalPaid = (float) $uPayments->sum('amount');
+            $totalVoucherSales = (float) $uVouchers->sum('price');
+            $totalVoucherGb = (float) $uVouchers->sum('data_gb');
             $due = (float) $u->wallet_due;
 
             return [
@@ -133,12 +163,14 @@ class AccountController extends Controller
                 'role' => $u->role,
                 'parent_id' => $u->parent_id,
                 'gb_rate' => (float) $u->gb_rate,
-                'total_gb_sales' => $totalGb,
-                'total_invoiced' => $totalInvoiced,
-                'total_paid' => $totalPaid,
+                'total_gb_sales' => $totalGb + $totalVoucherGb,
+                'total_voucher_sales' => $totalVoucherSales,
+                'total_invoiced' => $totalInvoiced + $totalVoucherSales,
+                'total_paid' => $totalPaid + $totalVoucherSales,
                 'wallet_due' => $due,
                 'invoices_count' => $uInvoices->count(),
                 'payments_count' => $uPayments->count(),
+                'vouchers_sold_count' => $uVouchers->count(),
             ];
         });
 
@@ -189,15 +221,40 @@ class AccountController extends Controller
             ]);
         }
 
-        // Calculate running balance chronologically
+        foreach ($vouchers as $v) {
+            $owner = $v->seller ?? $v->reseller;
+            $ownerId = $v->seller_id ?? $v->reseller_id;
+            $planName = $v->plan->name ?? 'Package';
+            $customer = $v->customer_username ?: 'Walk-in Customer';
+
+            $ledgerItems->push([
+                'id' => "vch-{$v->id}",
+                'type' => 'voucher_sale',
+                'title' => "Voucher Sale ({$planName})",
+                'reference' => $v->code,
+                'party_name' => $owner->name ?? $owner->username ?? 'User',
+                'user_name' => $owner->name ?? $owner->username ?? 'User',
+                'user_role' => $owner->role ?? '',
+                'user_id' => $ownerId,
+                'amount' => (float) $v->price,
+                'invoiced' => (float) $v->price,
+                'paid' => (float) $v->price,
+                'paid_amount' => (float) $v->price,
+                'due_amount' => 0.00,
+                'status' => 'PAID',
+                'date' => ($v->sold_at ?? $v->created_at)->toIso8601String(),
+                'created_at' => ($v->sold_at ?? $v->created_at)->toIso8601String(),
+                'note' => "Voucher Sale ({$planName}) to {$customer}",
+            ]);
+        }
+
+        // Calculate running balance chronologically. Every item now carries both
+        // 'invoiced' and 'paid' (zero where not applicable), so a fully-settled
+        // item (invoiced === paid, e.g. a voucher sale) nets to no due change.
         $chronologicalItems = $ledgerItems->sortBy('created_at')->values();
         $running = 0.0;
         $itemsWithBalance = $chronologicalItems->map(function ($item) use (&$running) {
-            if ($item['type'] === 'invoice') {
-                $running += $item['invoiced'];
-            } else {
-                $running -= $item['paid'];
-            }
+            $running += $item['invoiced'] - $item['paid'];
             $item['running_balance'] = max(0.0, $running);
             return $item;
         });
