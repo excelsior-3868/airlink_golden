@@ -15,16 +15,44 @@ server default {
     authorize {
         preprocess
 
+        # Refresh + reset the daily counter for daily-quota vouchers only.
+        # Always recomputed from radacct (never incremented), so a lost
+        # accounting packet can't cause permanent under/over-counting — the
+        # reset is implicit in re-summing "today"'s rows on every login.
+        # Must run before the lifecycle check below so it sees a fresh value.
+        update control {
+            Tmp-String-2 := "%{sql: UPDATE vouchers SET \
+                daily_used_bytes = ( \
+                    SELECT IFNULL(SUM(AcctInputOctets + AcctOutputOctets), 0) \
+                    FROM radacct WHERE UserName = '%{User-Name}' AND DATE(AcctStartTime) = CURDATE() \
+                ), \
+                daily_reset_date = CURDATE() \
+                WHERE username = '%{User-Name}' AND daily_data_gb IS NOT NULL AND daily_data_gb > 0}"
+        }
+
         # Voucher lifecycle check, straight from the `vouchers` table (not
         # radcheck) so it's correct even if the 5-min status-sync job
-        # hasn't caught up yet: reject expired/already-used vouchers with
-        # a distinct Reply-Message before ever touching Cleartext-Password.
+        # hasn't caught up yet: reject expired/used/quota-exhausted vouchers
+        # with a distinct Reply-Message before ever touching Cleartext-Password.
+        # Volume is summed across all radacct rows for this username so a
+        # voucher can be reconnected on repeatedly until its cap is hit —
+        # activation/expiry are lazy (see post-auth) so first login is what
+        # starts the clock, not voucher generation.
         update control {
             Tmp-String-0 := "%{sql: SELECT \
                 CASE \
                     WHEN status = 'used' THEN 'used' \
                     WHEN status = 'expired' THEN 'expired' \
                     WHEN expires_at IS NOT NULL AND expires_at < NOW() THEN 'expired' \
+                    WHEN data_gb IS NOT NULL AND data_gb > 0 AND ( \
+                        SELECT IFNULL(SUM(AcctInputOctets + AcctOutputOctets), 0) \
+                        FROM radacct WHERE UserName = '%{User-Name}' \
+                    ) >= (data_gb * 1073741824) THEN 'quota' \
+                    WHEN daily_data_gb IS NOT NULL AND daily_data_gb > 0 \
+                        AND daily_used_bytes >= (daily_data_gb * 1073741824) THEN 'daily_quota' \
+                    WHEN nas_ip IS NOT NULL AND nas_ip <> '' AND nas_ip <> '%{NAS-IP-Address}' THEN 'nas_mismatch' \
+                    WHEN mac_bind = 1 AND mac_address IS NOT NULL AND mac_address <> '' \
+                        AND mac_address <> '%{Calling-Station-Id}' THEN 'mac_mismatch' \
                     ELSE 'ok' \
                 END \
                 FROM vouchers WHERE username = '%{User-Name}' LIMIT 1}"
@@ -40,6 +68,30 @@ server default {
             case "used" {
                 update reply {
                     Reply-Message := "This voucher has already been used."
+                }
+                reject
+            }
+            case "quota" {
+                update reply {
+                    Reply-Message := "Data quota exceeded. Please purchase a new voucher."
+                }
+                reject
+            }
+            case "daily_quota" {
+                update reply {
+                    Reply-Message := "Daily data quota exceeded. Please try again after midnight."
+                }
+                reject
+            }
+            case "nas_mismatch" {
+                update reply {
+                    Reply-Message := "Voucher not valid on this hotspot."
+                }
+                reject
+            }
+            case "mac_mismatch" {
+                update reply {
+                    Reply-Message := "This voucher is locked to a different device."
                 }
                 reject
             }
@@ -64,15 +116,22 @@ server default {
     }
 
     session {
+        sql          # enforce Simultaneous-Use via simul_count_query/simul_verify_query
     }
 
     post-auth {
-        # Mark the voucher used the instant login succeeds, instead of
-        # waiting on the 5-min vouchers:sync-status cron job — closes the
-        # window where a still-"active" voucher could be reused on
-        # another device before the job caught up.
+        # First login starts the clock: stamp activated_at and derive
+        # expires_at from validity_days, but only the first time (IFNULL) —
+        # status is left alone so the voucher can be reconnected until it
+        # actually expires or hits its data cap (see authorize, above). For
+        # MAC-bind vouchers, also capture the client's MAC on this same first
+        # login (IFNULL again) — every later login just compares against it.
         update control {
-            Tmp-String-1 := "%{sql: UPDATE vouchers SET status = 'used', activated_at = IFNULL(activated_at, NOW()) WHERE username = '%{User-Name}' AND status IN ('active','sold')}"
+            Tmp-String-1 := "%{sql: UPDATE vouchers SET \
+                activated_at = IFNULL(activated_at, NOW()), \
+                expires_at = IFNULL(expires_at, DATE_ADD(NOW(), INTERVAL validity_days DAY)), \
+                mac_address = CASE WHEN mac_bind = 1 THEN IFNULL(mac_address, NULLIF('%{Calling-Station-Id}', '')) ELSE mac_address END \
+                WHERE username = '%{User-Name}' AND status IN ('active','sold')}"
         }
 
         sql          # write radpostauth

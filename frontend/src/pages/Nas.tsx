@@ -1,13 +1,13 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Plus, Router, Server, Activity, ShieldCheck, ShieldAlert, Wifi, Eye, EyeOff } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useQuery } from '../lib/cache'
 import { useAuth } from '../lib/auth'
-import { GlassCard, PageTitle, Modal, Pill, EmptyState, CustomSelect, Pagination, ConfirmModal, Spinner } from '../components/ui'
+import { GlassCard, PageTitle, Modal, Pill, EmptyState, CustomSelect, SelectOption, Pagination, ConfirmModal, Spinner } from '../components/ui'
 import { num } from '../lib/format'
 
-const blank = { name: '', nasname: '', shortname: '', type: 'mikrotik', secret: '', description: '', status: 'active', require_message_authenticator: 'auto' }
+const blank = { name: '', nasname: '', shortname: '', type: 'mikrotik', secret: '', description: '', status: 'active', require_message_authenticator: 'auto', owner_id: '' }
 
 export default function Nas() {
   const { user } = useAuth()
@@ -47,6 +47,35 @@ export default function Nas() {
   // Clients config state
   const [clients, setClients] = useState<any[]>([])
   const [clientsLoading, setClientsLoading] = useState(false)
+
+  // Reseller/seller lists for assigning NAS ownership (admin only)
+  const [allResellers, setAllResellers] = useState<any[]>([])
+  const [allSellers, setAllSellers] = useState<any[]>([])
+
+  useEffect(() => {
+    if (!isAdmin) return
+    api.get('/users', { params: { role: 'reseller', per_page: 100 } }).then((r) => setAllResellers(r.data.data.data))
+    api.get('/users', { params: { role: 'seller', per_page: 500 } }).then((r) => setAllSellers(r.data.data.data))
+  }, [isAdmin])
+
+  const ownerOptions = useMemo(() => {
+    const opts: SelectOption[] = [{ value: '', label: '— Admin (Unowned) —' }]
+    allResellers.forEach((r) => {
+      opts.push({
+        value: String(r.id),
+        label: r.name,
+        badge: <span className="text-[10px] bg-purple-50 text-purple-600 font-bold px-2 py-0.5 rounded-full border border-purple-100/50">Reseller</span>
+      })
+    })
+    allSellers.forEach((s) => {
+      opts.push({
+        value: String(s.id),
+        label: s.name,
+        badge: <span className="text-[10px] bg-amber-50 text-amber-600 font-bold px-2 py-0.5 rounded-full border border-amber-100/50">Seller</span>
+      })
+    })
+    return opts
+  }, [allResellers, allSellers])
 
   const { data: rows = [], loading: rowsLoading, refetch: load } = useQuery<any[]>('nas', () => api.get('/nas').then((r) => r.data.data))
   
@@ -109,13 +138,14 @@ export default function Nas() {
   }, [activeTab, logUserSearch, logReplyFilter])
 
   const openNew = () => { setForm(blank); setEditId(null); setErr(''); setOpen(true) }
-  const openEdit = (n: any) => { setForm({ ...blank, ...n }); setEditId(n.id); setErr(''); setOpen(true) }
+  const openEdit = (n: any) => { setForm({ ...blank, ...n, owner_id: n.owner_id ? String(n.owner_id) : '' }); setEditId(n.id); setErr(''); setOpen(true) }
 
   const save = async () => {
     setBusy(true); setErr('')
     try {
-      if (editId) await api.put(`/nas/${editId}`, form)
-      else await api.post('/nas', form)
+      const payload = { ...form, owner_id: form.owner_id ? +form.owner_id : null }
+      if (editId) await api.put(`/nas/${editId}`, payload)
+      else await api.post('/nas', payload)
       setOpen(false); load()
     } catch (e) { setErr(apiError(e)) } finally { setBusy(false) }
   }
@@ -186,13 +216,14 @@ export default function Nas() {
           {rowsLoading && rows.length === 0 ? <Spinner /> : null}
           <div className={`overflow-x-auto ${rowsLoading && rows.length === 0 ? 'hidden' : ''}`}>
             <table className="w-full">
-              <thead><tr><th>Name</th><th>NAS Address</th><th>Type</th><th>Status</th>{isAdmin && <th></th>}</tr></thead>
+              <thead><tr><th>Name</th><th>NAS Address</th><th>Type</th><th>Owner</th><th>Status</th>{isAdmin && <th></th>}</tr></thead>
               <tbody>
                 {rows.map((n, idx) => (
                   <motion.tr key={n.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: idx * 0.03 }} className="hover:bg-secondary/30">
                     <td className="font-semibold flex items-center gap-2"><Router size={15} className="text-primary" /> {n.name}</td>
                     <td className="font-mono text-xs">{n.nasname}</td>
                     <td className="capitalize">{n.type}</td>
+                    <td className="text-xs font-semibold text-slate-600">{n.owner?.name || 'Admin (Unowned)'}</td>
                     <td><Pill tone={n.status === 'active' ? 'success' : 'secondary'}>{n.status}</Pill></td>
                     {isAdmin && (
                       <td className="text-right whitespace-nowrap">
@@ -491,6 +522,15 @@ export default function Nas() {
                   { value: 'yes', label: 'Message-Authenticator: Always require' },
                   { value: 'no', label: 'Message-Authenticator: Never require' }
                 ]}
+              />
+            </div>
+            <div className="flex flex-col col-span-2">
+              <label className="text-xs font-bold text-slate-600 block mb-1">Owner (Reseller/Seller)</label>
+              <CustomSelect
+                value={form.owner_id}
+                onChange={(val) => setForm({ ...form, owner_id: val })}
+                options={ownerOptions}
+                searchable={true}
               />
             </div>
           </div>

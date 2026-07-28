@@ -33,4 +33,9 @@ class InternetPlan extends Model
     {
         return $this->belongsTo(User::class, 'created_by');
     }
+
+    public function nasDevice(): BelongsTo
+    {
+        return $this->belongsTo(NasDevice::class, 'nas_device_id');
+    }
 }

@@ -181,7 +181,8 @@ export function Modal({
   icon,
   children,
   bodyClassName = 'overflow-y-auto max-h-[calc(85vh-8rem)]',
-  widthClassName = 'max-w-2xl'
+  widthClassName = 'max-w-2xl',
+  tone = 'light'
 }: {
   open: boolean;
   onClose: () => void;
@@ -191,9 +192,11 @@ export function Modal({
   children: ReactNode;
   bodyClassName?: string;
   widthClassName?: string;
+  tone?: 'light' | 'brand';
 }) {
   const backdropMouseDown = useRef(false)
   if (!open) return null
+  const isBrand = tone === 'brand'
   return createPortal(
     <div
       className="fixed inset-0 z-[9990] flex items-center justify-center p-4 bg-slate-950/45 backdrop-blur-sm animate-fade-in"
@@ -208,22 +211,22 @@ export function Modal({
         onMouseDown={(e) => e.stopPropagation()}
       >
         {/* Modal Header */}
-        <div className="flex items-center justify-between p-5 sm:p-6 border-b border-slate-100 bg-white rounded-t-[28px] select-none">
+        <div className={`flex items-center justify-between p-5 sm:p-6 border-b rounded-t-[28px] select-none ${isBrand ? 'bg-[#003164] border-[#003164]' : 'bg-white border-slate-100'}`}>
           <div className="flex items-center gap-3.5 min-w-0">
             {icon && (
-              <div className="bg-blue-50 text-[#003164] p-3 rounded-2xl shrink-0 border border-blue-100/50 flex items-center justify-center shadow-sm">
+              <div className={`p-3 rounded-2xl shrink-0 flex items-center justify-center shadow-sm ${isBrand ? 'bg-white/10 text-white border border-white/20' : 'bg-blue-50 text-[#003164] border border-blue-100/50'}`}>
                 {icon}
               </div>
             )}
             <div className="min-w-0">
-              <h2 className="text-lg font-bold text-slate-800 tracking-tight leading-none truncate">{title}</h2>
-              {subtitle && <p className="text-xs text-slate-400 font-semibold mt-1.5 leading-normal tracking-wide truncate max-w-lg">{subtitle}</p>}
+              <h2 className={`text-lg font-bold tracking-tight leading-none truncate ${isBrand ? 'text-white' : 'text-slate-800'}`}>{title}</h2>
+              {subtitle && <p className={`text-xs font-semibold mt-1.5 leading-normal tracking-wide truncate max-w-lg ${isBrand ? 'text-blue-100/70' : 'text-slate-400'}`}>{subtitle}</p>}
             </div>
           </div>
-          
+
           <button
             onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-50 border border-slate-100 text-slate-400 hover:text-slate-700 transition-all cursor-pointer shrink-0 ml-4"
+            className={`w-8 h-8 flex items-center justify-center rounded-full border transition-all cursor-pointer shrink-0 ml-4 ${isBrand ? 'border-white/20 text-white/70 hover:text-white hover:bg-white/10' : 'border-slate-100 text-slate-400 hover:text-slate-700 hover:bg-slate-50'}`}
           >
             <span className="text-lg font-light leading-none">&times;</span>
           </button>

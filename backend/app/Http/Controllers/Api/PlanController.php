@@ -16,7 +16,7 @@ class PlanController extends Controller
             return $this->fail("This API token does not have the 'plans.read' ability.", 403);
         }
 
-        $query = InternetPlan::query()->with('creator:id,name,username,role,gb_balance')->orderBy('name');
+        $query = InternetPlan::query()->with(['creator:id,name,username,role,gb_balance', 'nasDevice:id,name'])->orderBy('name');
         if ($request->boolean('active_only')) {
             $query->where('status', 'active');
         }
@@ -124,6 +124,17 @@ class PlanController extends Controller
             $data['package_type'] = ($isOwnerAdmin && !$request->boolean('via_voucher')) ? 'wallet' : 'gb';
         }
 
+        // A GB package's NAS restriction must be one of its delegated owner's own
+        // devices — admin-owned Wallet packages may pin to any device.
+        if (!empty($data['nas_device_id']) && !$isOwnerAdmin) {
+            $nas = \App\Models\NasDevice::find($data['nas_device_id']);
+            if (!$nas || $nas->owner_id !== $creatorId) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'nas_device_id' => 'You can only restrict a plan to a NAS device you own.'
+                ]);
+            }
+        }
+
         return $this->created(InternetPlan::create($data), 'Plan created.');
     }
 
@@ -176,6 +187,19 @@ class PlanController extends Controller
         $data['created_by'] = $creatorId;
         if ($request->filled('package_type') && in_array($request->input('package_type'), ['wallet', 'gb'])) {
             $data['package_type'] = ($request->user()->isAdmin() && $request->input('package_type') === 'wallet') ? 'wallet' : 'gb';
+        }
+
+        // A GB package's NAS restriction must be one of its delegated owner's own
+        // devices — admin-owned Wallet packages may pin to any device.
+        $ownerObj = \App\Models\User::find($creatorId);
+        $isOwnerAdmin = $ownerObj && $ownerObj->role === 'admin';
+        if (!empty($data['nas_device_id']) && !$isOwnerAdmin) {
+            $nas = \App\Models\NasDevice::find($data['nas_device_id']);
+            if (!$nas || $nas->owner_id !== $creatorId) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'nas_device_id' => 'You can only restrict a plan to a NAS device you own.'
+                ]);
+            }
         }
 
         $plan->update($data);
@@ -251,12 +275,16 @@ class PlanController extends Controller
         return $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'type' => ['nullable', 'in:hotspot,pppoe'],
-            'plan_type' => ['required', 'in:data,time,unlimited'],
+            'plan_type' => ['required', 'in:data,time,unlimited,daily_data'],
             'bandwidth_id' => ['nullable', 'exists:bandwidths,id'],
             'bandwidth' => ['nullable', 'string', 'max:255'],
+            'nas_device_id' => ['nullable', 'exists:nas_devices,id'],
+            'mac_bind' => ['nullable', 'boolean'],
             'data_gb' => ['nullable', 'numeric', 'min:0'],
+            'daily_data_gb' => ['nullable', 'numeric', 'min:0'],
             'time_limit' => ['nullable', 'integer', 'min:0'],
             'validity_days' => ['required', 'integer', 'min:0'],
+            'simultaneous_use' => ['nullable', 'integer', 'min:1', 'max:10'],
             'base_price' => [$isHotspot ? 'nullable' : 'required', 'numeric', 'min:0'],
             'selling_price' => [$isHotspot ? 'nullable' : 'required', 'numeric', 'min:0'],
             'api_nas' => ['nullable', 'string', 'max:255'],

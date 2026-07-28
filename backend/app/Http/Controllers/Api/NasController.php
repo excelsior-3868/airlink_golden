@@ -22,7 +22,7 @@ class NasController extends Controller
 
     public function index(): JsonResponse
     {
-        return $this->ok(NasDevice::orderBy('name')->get());
+        return $this->ok(NasDevice::with('owner')->orderBy('name')->get());
     }
 
     public function store(Request $request): JsonResponse
@@ -69,6 +69,7 @@ class NasController extends Controller
             'description' => ['nullable', 'string', 'max:255'],
             'status' => ['nullable', 'in:active,disabled'],
             'require_message_authenticator' => ['nullable', 'in:auto,yes,no'],
+            'owner_id' => ['nullable', 'exists:users,id'],
         ]);
     }
 }

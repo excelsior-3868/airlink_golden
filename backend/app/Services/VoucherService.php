@@ -103,7 +103,9 @@ class VoucherService
 
             $codes = $this->uniqueCodes($quantity);
             $now = now();
-            $expiresAt = $validity > 0 ? $now->copy()->addDays($validity) : null;
+            // Activation/expiry are lazy: both stay null until the voucher's first
+            // successful RADIUS login, at which point FreeRADIUS post-auth stamps
+            // activated_at and derives expires_at from validity_days itself.
 
             $voucherRows = [];
             $checkRows = [];
@@ -113,9 +115,19 @@ class VoucherService
                     'code' => $code, 'username' => $code, 'password' => $code,
                     'plan_id' => $plan->id, 'batch_id' => $batch->id,
                     'owner_id' => $owner->id, 'reseller_id' => $resellerId, 'seller_id' => $sellerId,
-                    'data_gb' => $gbPer ?: null, 'validity_days' => $validity, 'price' => $pricePer,
+                    // Only a real 'data' plan's cap belongs on data_gb — $gbPer below is a
+                    // cost-derived GB-equivalent for balance deduction, not an enforced cap,
+                    // and would otherwise impose a phantom total-volume cutoff on
+                    // unlimited/time/daily_data vouchers (whose $plan->data_gb is null).
+                    'data_gb' => $plan->plan_type === 'data' ? ($gbPer ?: null) : null,
+                    'daily_data_gb' => $plan->plan_type === 'daily_data' ? ($plan->daily_data_gb ?: null) : null,
+                    'nas_ip' => $plan->nasDevice?->nasname ?: null,
+                    'mac_bind' => (bool) $plan->mac_bind,
+                    'validity_days' => $validity,
+                    'simultaneous_use' => (int) ($plan->simultaneous_use ?: 1),
+                    'price' => $pricePer,
                     'base_price' => $basePricePer,
-                    'status' => 'active', 'expires_at' => $expiresAt,
+                    'status' => 'active', 'expires_at' => null,
                     'created_at' => $now, 'updated_at' => $now,
                 ];
                 $r = $this->radius->rows($code, $code, $plan);

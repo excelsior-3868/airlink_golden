@@ -17,6 +17,8 @@ class RadiusService
     {
         $check = [[
             'username' => $username, 'attribute' => 'Cleartext-Password', 'op' => ':=', 'value' => $password,
+        ], [
+            'username' => $username, 'attribute' => 'Simultaneous-Use', 'op' => ':=', 'value' => (string) ($plan->simultaneous_use ?: 1),
         ]];
 
         $reply = [];

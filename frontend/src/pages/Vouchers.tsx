@@ -373,7 +373,6 @@ export default function Vouchers() {
                     <th>Used</th>
                     <th>Price</th>
                     <th>Status</th>
-                    <th>Expires</th>
                     {canSeeReports && <th>Login Date</th>}
                     {canSeeReports && <th>Customer</th>}
                     {canSeeReports && user?.role !== 'seller' && <th>Reseller</th>}
@@ -405,7 +404,6 @@ export default function Vouchers() {
                       <td>{v.data_gb ? `${gb(v.used_gb || 0)} / ${gb(v.data_gb)}` : (v.used_gb ? gb(v.used_gb) : '—')}</td>
                       <td>{rs(v.price)}</td>
                       <td><Pill tone={statusPill[v.status] || 'secondary'}>{v.status}</Pill></td>
-                      <td className="text-xs">{date(v.expires_at)}</td>
                       {canSeeReports && <td className="text-xs">{v.activated_at ? date(v.activated_at) : '—'}</td>}
                       {canSeeReports && <td className="font-semibold text-slate-700">{v.customer_username || '—'}</td>}
                       {canSeeReports && user?.role !== 'seller' && <td>{v.reseller?.username || '—'}</td>}

@@ -1,13 +1,13 @@
 import { useState, useEffect, useMemo } from 'react'
 import { motion } from 'framer-motion'
-import { Plus, Package, Pencil, Trash2 } from 'lucide-react'
+import { Plus, Package, Pencil, Trash2, Wifi } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useQuery, invalidateCache } from '../lib/cache'
 import { useAuth } from '../lib/auth'
 import { rs, gb } from '../lib/format'
 import { GlassCard, PageTitle, Modal, Pill, EmptyState, ConfirmModal, Spinner, CustomSelect, SelectOption } from '../components/ui'
 
-const blank = { name: '', type: 'hotspot', package_type: 'wallet', plan_type: 'unlimited', bandwidth_id: '', data_gb: '', validity_days: 1, base_price: 0, selling_price: 0, status: 'active', delegation_id: '' }
+const blank = { name: '', type: 'hotspot', package_type: 'wallet', plan_type: 'unlimited', bandwidth_id: '', data_gb: '', daily_data_gb: '', validity_days: 1, simultaneous_use: 1, base_price: 0, selling_price: 0, status: 'active', delegation_id: '', nas_device_id: '', mac_bind: false }
 
 export default function HotspotPlans() {
   const { user } = useAuth()
@@ -18,9 +18,11 @@ export default function HotspotPlans() {
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
   const [activeTab, setActiveTab] = useState<'my' | 'admin' | 'seller'>('my')
+  const [modalTab, setModalTab] = useState<'basic' | 'quota' | 'access'>('basic')
 
   const { data: plans = [], loading: plansLoading, refetch: refetchPlans } = useQuery<any[]>('plans?type=hotspot', () => api.get('/plans?type=hotspot').then((r) => r.data.data))
   const { data: bandwidths = [] } = useQuery<any[]>('bandwidths', () => api.get('/bandwidths').then((r) => r.data.data))
+  const { data: allNas = [] } = useQuery<any[]>('nas', () => api.get('/nas').then((r) => r.data.data))
 
   // Users lists for delegation when creating a GB Package on behalf of a reseller or seller
   const [allResellers, setAllResellers] = useState<any[]>([])
@@ -60,6 +62,19 @@ export default function HotspotPlans() {
     return opts
   }, [allResellers, allSellers, user])
 
+  // NAS restriction options: GB packages with a delegate chosen narrow to that
+  // delegate's own devices; Wallet packages (or GB with no delegate yet) list all.
+  const nasOptions = useMemo(() => {
+    const opts: SelectOption[] = [{ value: '', label: '— No restriction —' }]
+    const delId = form.delegation_id as string
+    const delegatedOwnerId = delId ? +delId.split('-')[1] : null
+    const pool = (form.package_type === 'gb' && delegatedOwnerId)
+      ? allNas.filter((n: any) => n.owner_id === delegatedOwnerId)
+      : allNas
+    pool.forEach((n: any) => opts.push({ value: String(n.id), label: `${n.name} (${n.nasname})` }))
+    return opts
+  }, [allNas, form.package_type, form.delegation_id])
+
   const [ownerFilter, setOwnerFilter] = useState('all')
 
   const filterOwnerOptions = useMemo(() => {
@@ -84,6 +99,44 @@ export default function HotspotPlans() {
     return opts
   }, [allResellers, allSellers, user, isAdmin])
 
+  // List-page filters
+  const [typeFilter, setTypeFilter] = useState('all')
+  const [nasFilter, setNasFilter] = useState('all')
+  const [macFilter, setMacFilter] = useState('all')
+  const [bandwidthFilter, setBandwidthFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [validityFilter, setValidityFilter] = useState('all')
+
+  const typeFilterOptions: SelectOption[] = [
+    { value: 'all', label: 'All Types' },
+    { value: 'data', label: 'Data' },
+    { value: 'time', label: 'Time' },
+    { value: 'unlimited', label: 'Unlimited' },
+    { value: 'daily_data', label: 'Daily Data' }
+  ]
+
+  const yesNoOptions = (label: string): SelectOption[] => [
+    { value: 'all', label: `All (${label})` },
+    { value: 'yes', label: 'Yes' },
+    { value: 'no', label: 'No' }
+  ]
+
+  const bandwidthFilterOptions = useMemo<SelectOption[]>(() => [
+    { value: 'all', label: 'All Bandwidths' },
+    ...bandwidths.map((bw) => ({ value: String(bw.id), label: bw.name }))
+  ], [bandwidths])
+
+  const statusFilterOptions: SelectOption[] = [
+    { value: 'all', label: 'All Statuses' },
+    { value: 'active', label: 'Active' },
+    { value: 'disabled', label: 'Disabled' }
+  ]
+
+  const validityFilterOptions = useMemo<SelectOption[]>(() => {
+    const days = Array.from(new Set(plans.map((p) => p.validity_days))).sort((a, b) => a - b)
+    return [{ value: 'all', label: 'All Validity' }, ...days.map((d) => ({ value: String(d), label: `${d}d` }))]
+  }, [plans])
+
   // Refresh this page's plans and drop other cached plan lists after a change.
   const load = () => { refetchPlans(); invalidateCache('plans'); invalidateCache('reports/plans') }
 
@@ -100,6 +153,7 @@ export default function HotspotPlans() {
     })
     setEditId(null)
     setErr('')
+    setModalTab('basic')
     setOpen(true)
   }
 
@@ -113,14 +167,19 @@ export default function HotspotPlans() {
       ...p,
       bandwidth_id: p.bandwidth_id ?? '',
       data_gb: p.data_gb ?? '',
+      daily_data_gb: p.daily_data_gb ?? '',
+      simultaneous_use: p.simultaneous_use ?? 1,
       package_type: pkgType,
       plan_type: p.plan_type === 'time' ? 'unlimited' : (p.plan_type || (pkgType === 'wallet' ? 'unlimited' : 'data')),
       base_price: p.base_price ?? 0,
       selling_price: p.selling_price ?? 0,
-      delegation_id: delId
+      delegation_id: delId,
+      nas_device_id: p.nas_device_id ?? '',
+      mac_bind: !!p.mac_bind
     })
     setEditId(p.id)
     setErr('')
+    setModalTab('basic')
     setOpen(true)
   }
 
@@ -129,10 +188,15 @@ export default function HotspotPlans() {
     setErr('')
     try {
       const pkgType = isAdmin ? (form.package_type || 'wallet') : 'gb'
-      const quotaType = pkgType === 'wallet' ? 'unlimited' : 'data'
+      const quotaType = pkgType === 'gb' ? 'data' : (form.plan_type || 'unlimited')
 
-      if (pkgType === 'gb' && (!form.data_gb || +form.data_gb <= 0)) {
-        setErr('Please enter a valid Data GB amount greater than 0 for a GB Package.')
+      if (quotaType === 'data' && (!form.data_gb || +form.data_gb <= 0)) {
+        setErr('Please enter a valid Data GB amount greater than 0.')
+        setBusy(false)
+        return
+      }
+      if (quotaType === 'daily_data' && (!form.daily_data_gb || +form.daily_data_gb <= 0)) {
+        setErr('Please enter a valid Daily Data GB amount greater than 0.')
         setBusy(false)
         return
       }
@@ -144,6 +208,10 @@ export default function HotspotPlans() {
         plan_type: quotaType,
         bandwidth_id: form.bandwidth_id || null,
         data_gb: quotaType === 'data' ? +form.data_gb || null : null,
+        daily_data_gb: quotaType === 'daily_data' ? +form.daily_data_gb || null : null,
+        nas_device_id: form.nas_device_id || null,
+        mac_bind: !!form.mac_bind,
+        simultaneous_use: +form.simultaneous_use || 1,
         base_price: +form.base_price || 0,
         selling_price: +form.selling_price || 0
       }
@@ -192,6 +260,14 @@ export default function HotspotPlans() {
       const idStr = ownerFilter.split('-')[1]
       if (p.created_by !== +idStr) return false
     }
+    if (typeFilter !== 'all' && p.plan_type !== typeFilter) return false
+    if (nasFilter === 'yes' && !p.nas_device_id) return false
+    if (nasFilter === 'no' && p.nas_device_id) return false
+    if (macFilter === 'yes' && !p.mac_bind) return false
+    if (macFilter === 'no' && p.mac_bind) return false
+    if (bandwidthFilter !== 'all' && String(p.bandwidth_id) !== bandwidthFilter) return false
+    if (statusFilter !== 'all' && p.status !== statusFilter) return false
+    if (validityFilter !== 'all' && String(p.validity_days) !== validityFilter) return false
     return true
   })
 
@@ -263,6 +339,15 @@ export default function HotspotPlans() {
         </div>
       )}
 
+      <div className="mb-6 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 bg-slate-50/70 p-3.5 rounded-xl border border-slate-200/60">
+        <CustomSelect value={typeFilter} onChange={setTypeFilter} options={typeFilterOptions} />
+        <CustomSelect value={nasFilter} onChange={setNasFilter} options={yesNoOptions('NAS')} />
+        <CustomSelect value={macFilter} onChange={setMacFilter} options={yesNoOptions('MAC Bind')} />
+        <CustomSelect value={bandwidthFilter} onChange={setBandwidthFilter} options={bandwidthFilterOptions} />
+        <CustomSelect value={statusFilter} onChange={setStatusFilter} options={statusFilterOptions} />
+        <CustomSelect value={validityFilter} onChange={setValidityFilter} options={validityFilterOptions} />
+      </div>
+
       <GlassCard className="!p-0 overflow-hidden">
         {plansLoading ? (
           <Spinner />
@@ -279,6 +364,8 @@ export default function HotspotPlans() {
                   <th>Data</th>
                   <th>Validity</th>
                   <th>Price</th>
+                  <th>NAS</th>
+                  <th>MAC Bind</th>
                   {user?.role === 'reseller' && activeTab === 'seller' && (
                     <th>Seller GB Balance</th>
                   )}
@@ -320,9 +407,17 @@ export default function HotspotPlans() {
                       )}
                     </td>
                     <td>{p.bandwidth || '—'}</td>
-                    <td>{p.data_gb ? gb(p.data_gb) : '—'}</td>
+                    <td>
+                      {p.data_gb
+                        ? gb(p.data_gb)
+                        : (p.plan_type === 'daily_data' && p.daily_data_gb ? `(${gb(p.daily_data_gb)})` : '—')}
+                    </td>
                     <td>{p.validity_days}d</td>
                     <td>{rs(p.selling_price)}</td>
+                    <td>{p.nas_device?.name || '—'}</td>
+                    <td>
+                      <Pill tone={p.mac_bind ? 'success' : 'secondary'}>{p.mac_bind ? 'Enabled' : 'Disabled'}</Pill>
+                    </td>
                     {user?.role === 'reseller' && activeTab === 'seller' && (
                       <td className="font-medium text-cyan-600">
                         {p.creator ? gb(p.creator.gb_balance) : '—'}
@@ -352,139 +447,215 @@ export default function HotspotPlans() {
         )}
       </GlassCard>
 
-      <Modal open={open} onClose={() => setOpen(false)} title={editId ? 'Edit Hotspot Plan' : 'New Hotspot Plan'}>
+      <Modal open={open} onClose={() => setOpen(false)} title={editId ? 'Edit Hotspot Plan' : 'New Hotspot Plan'} icon={<Wifi size={20} />}>
         <div className="space-y-3">
-          <div>
-            <label className="text-xs font-bold text-slate-600 block mb-1">Plan Name</label>
-            <input
-              className="input"
-              placeholder="e.g. 5GB Voucher"
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-            />
+          <div className="flex gap-2 border-b border-slate-200/80 mb-1">
+            {(['basic', 'quota', 'access'] as const).map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setModalTab(tab)}
+                className={`pb-2.5 px-3 text-sm font-bold border-b-2 transition-all ${
+                  modalTab === tab
+                    ? 'border-primary text-primary'
+                    : 'border-transparent text-slate-400 hover:text-slate-600'
+                }`}
+              >
+                {tab === 'basic' ? 'Basic Info' : tab === 'quota' ? 'Quota & Validity' : 'Access Restriction'}
+              </button>
+            ))}
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-bold text-slate-600 block mb-1">Package Category</label>
-              <CustomSelect
-                value={form.package_type || (isAdmin ? 'wallet' : 'gb')}
-                onChange={(val) => {
-                  const newQuota = val === 'wallet' ? 'unlimited' : 'data'
-                  const defaultDelegation = val === 'gb' ? (form.delegation_id || delegationOptions[0]?.value || '') : ''
-                  setForm({ ...form, package_type: val, plan_type: newQuota, delegation_id: defaultDelegation })
-                }}
-                disabled={!isAdmin || (editId !== null && !isAdmin)}
-                options={[
-                  ...(isAdmin ? [{ value: 'wallet', label: 'Wallet Package' }] : []),
-                  { value: 'gb', label: 'GB Package' }
-                ]}
-              />
-            </div>
+          {modalTab === 'basic' && (
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-bold text-slate-600 block mb-1">Plan Name</label>
+                <input
+                  className="input"
+                  placeholder="e.g. 5GB Voucher"
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                />
+              </div>
 
-            <div>
-              <label className="text-xs font-bold text-slate-600 block mb-1">Quota Type</label>
-              <CustomSelect
-                value={form.plan_type === 'time' ? 'unlimited' : form.plan_type}
-                onChange={(val) => setForm({ ...form, plan_type: val })}
-                disabled={true}
-                options={
-                  (form.package_type || (isAdmin ? 'wallet' : 'gb')) === 'wallet'
-                    ? [{ value: 'unlimited', label: 'Unlimited' }]
-                    : [{ value: 'data', label: 'Data' }]
-                }
-              />
-            </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-600 block mb-1">Retail Price (Rs)</label>
+                  <input
+                    className="input"
+                    type="number"
+                    min="0"
+                    step="any"
+                    placeholder="e.g. 100"
+                    value={form.selling_price}
+                    onChange={(e) => setForm({ ...form, selling_price: e.target.value })}
+                  />
+                </div>
 
-            {(form.package_type || (isAdmin ? 'wallet' : 'gb')) === 'gb' && canDelegate && (
-              <div className="col-span-2">
-                <label className="text-xs font-bold text-slate-600 block mb-1">On Behalf Of (Reseller/Seller)</label>
+                <div>
+                  <label className="text-xs font-bold text-slate-600 block mb-1">Wholesale Cost (Rs)</label>
+                  <input
+                    className="input"
+                    type="number"
+                    min="0"
+                    step="any"
+                    placeholder="e.g. 80"
+                    value={form.base_price}
+                    onChange={(e) => setForm({ ...form, base_price: e.target.value })}
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-600 block mb-1">Bandwidth Limit</label>
+                  <CustomSelect
+                    value={form.bandwidth_id ? String(form.bandwidth_id) : ''}
+                    onChange={(val) => setForm({ ...form, bandwidth_id: val })}
+                    options={[
+                      { value: '', label: '— Select Bandwidth —' },
+                      ...bandwidths.map((bw) => ({
+                        value: String(bw.id),
+                        label: bw.name
+                      }))
+                    ]}
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-600 block mb-1">Status</label>
+                  <CustomSelect
+                    value={form.status}
+                    onChange={(val) => setForm({ ...form, status: val })}
+                    options={[
+                      { value: 'active', label: 'Active' },
+                      { value: 'disabled', label: 'Disabled' }
+                    ]}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {modalTab === 'quota' && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-bold text-slate-600 block mb-1">Package Category</label>
                 <CustomSelect
-                  value={form.delegation_id || delegationOptions[0]?.value || ''}
-                  onChange={(val) => setForm({ ...form, delegation_id: val })}
-                  options={delegationOptions}
+                  value={form.package_type || (isAdmin ? 'wallet' : 'gb')}
+                  onChange={(val) => {
+                    const newQuota = val === 'wallet' ? 'unlimited' : 'data'
+                    const defaultDelegation = val === 'gb' ? (form.delegation_id || delegationOptions[0]?.value || '') : ''
+                    setForm({ ...form, package_type: val, plan_type: newQuota, delegation_id: defaultDelegation })
+                  }}
+                  disabled={!isAdmin || (editId !== null && !isAdmin)}
+                  options={[
+                    ...(isAdmin ? [{ value: 'wallet', label: 'Wallet Package' }] : []),
+                    { value: 'gb', label: 'GB Package' }
+                  ]}
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-600 block mb-1">Quota Type</label>
+                <CustomSelect
+                  value={form.plan_type === 'time' ? 'unlimited' : form.plan_type}
+                  onChange={(val) => setForm({ ...form, plan_type: val })}
+                  disabled={(form.package_type || (isAdmin ? 'wallet' : 'gb')) === 'gb'}
+                  options={
+                    (form.package_type || (isAdmin ? 'wallet' : 'gb')) === 'wallet'
+                      ? [{ value: 'unlimited', label: 'Unlimited' }, { value: 'data', label: 'Data' }, { value: 'daily_data', label: 'Daily Data' }]
+                      : [{ value: 'data', label: 'Data' }]
+                  }
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-600 block mb-1">Validity Days</label>
+                <input
+                  className="input"
+                  type="number"
+                  placeholder="Validity days"
+                  value={form.validity_days}
+                  onChange={(e) => setForm({ ...form, validity_days: +e.target.value })}
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-600 block mb-1">Data GB</label>
+                <input
+                  className="input"
+                  type="number"
+                  placeholder="Data GB"
+                  value={form.data_gb}
+                  disabled={form.plan_type !== 'data'}
+                  onChange={(e) => setForm({ ...form, data_gb: e.target.value })}
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-600 block mb-1">Daily Data GB (per day)</label>
+                <input
+                  className="input"
+                  type="number"
+                  placeholder="e.g. 2"
+                  value={form.daily_data_gb}
+                  disabled={form.plan_type !== 'daily_data'}
+                  onChange={(e) => setForm({ ...form, daily_data_gb: e.target.value })}
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-600 block mb-1">Concurrent Sessions</label>
+                <input
+                  className="input"
+                  type="number"
+                  min="1"
+                  placeholder="e.g. 1"
+                  value={form.simultaneous_use}
+                  onChange={(e) => setForm({ ...form, simultaneous_use: +e.target.value })}
+                />
+              </div>
+            </div>
+          )}
+
+          {modalTab === 'access' && (
+            <div className="grid grid-cols-2 gap-3">
+              {(form.package_type || (isAdmin ? 'wallet' : 'gb')) === 'gb' && canDelegate && (
+                <div className="col-span-2">
+                  <label className="text-xs font-bold text-slate-600 block mb-1">On Behalf Of (Reseller/Seller)</label>
+                  <CustomSelect
+                    value={form.delegation_id || delegationOptions[0]?.value || ''}
+                    onChange={(val) => setForm({ ...form, delegation_id: val, nas_device_id: '' })}
+                    options={delegationOptions}
+                    className="w-full"
+                  />
+                </div>
+              )}
+
+              <div className="col-span-2">
+                <label className="text-xs font-bold text-slate-600 block mb-1">Restrict to NAS Device</label>
+                <CustomSelect
+                  value={form.nas_device_id ? String(form.nas_device_id) : ''}
+                  onChange={(val) => setForm({ ...form, nas_device_id: val })}
+                  options={nasOptions}
+                  className="w-full"
+                  searchable={true}
+                />
+              </div>
+
+              <div className="col-span-2">
+                <label className="text-xs font-bold text-slate-600 block mb-1">Bind to First-Used MAC Address</label>
+                <CustomSelect
+                  value={form.mac_bind ? '1' : '0'}
+                  onChange={(val) => setForm({ ...form, mac_bind: val === '1' })}
+                  options={[
+                    { value: '0', label: 'Disabled' },
+                    { value: '1', label: 'Enabled' }
+                  ]}
                   className="w-full"
                 />
               </div>
-            )}
-
-            <div>
-              <label className="text-xs font-bold text-slate-600 block mb-1">Retail Price (Rs)</label>
-              <input
-                className="input"
-                type="number"
-                min="0"
-                step="any"
-                placeholder="e.g. 100"
-                value={form.selling_price}
-                onChange={(e) => setForm({ ...form, selling_price: e.target.value })}
-              />
             </div>
-
-            <div>
-              <label className="text-xs font-bold text-slate-600 block mb-1">Wholesale Cost (Rs)</label>
-              <input
-                className="input"
-                type="number"
-                min="0"
-                step="any"
-                placeholder="e.g. 80"
-                value={form.base_price}
-                onChange={(e) => setForm({ ...form, base_price: e.target.value })}
-              />
-            </div>
-
-            <div>
-              <label className="text-xs font-bold text-slate-600 block mb-1">Bandwidth Limit</label>
-              <CustomSelect
-                value={form.bandwidth_id ? String(form.bandwidth_id) : ''}
-                onChange={(val) => setForm({ ...form, bandwidth_id: val })}
-                options={[
-                  { value: '', label: '— Select Bandwidth —' },
-                  ...bandwidths.map((bw) => ({
-                    value: String(bw.id),
-                    label: bw.name
-                  }))
-                ]}
-              />
-            </div>
-
-            <div>
-              <label className="text-xs font-bold text-slate-600 block mb-1">Validity Days</label>
-              <input
-                className="input"
-                type="number"
-                placeholder="Validity days"
-                value={form.validity_days}
-                onChange={(e) => setForm({ ...form, validity_days: +e.target.value })}
-              />
-            </div>
-
-            <div>
-              <label className="text-xs font-bold text-slate-600 block mb-1">Data GB</label>
-              <input
-                className="input"
-                type="number"
-                placeholder="Data GB"
-                value={form.data_gb}
-                disabled={(form.package_type || (isAdmin ? 'wallet' : 'gb')) === 'wallet' || form.plan_type === 'unlimited'}
-                onChange={(e) => setForm({ ...form, data_gb: e.target.value })}
-              />
-            </div>
-
-            <div>
-              <label className="text-xs font-bold text-slate-600 block mb-1">Status</label>
-              <CustomSelect
-                value={form.status}
-                onChange={(val) => setForm({ ...form, status: val })}
-                options={[
-                  { value: 'active', label: 'Active' },
-                  { value: 'disabled', label: 'Disabled' }
-                ]}
-              />
-            </div>
-
-          </div>
+          )}
 
           {err && <div className="pill danger w-full justify-center py-2">{err}</div>}
 
