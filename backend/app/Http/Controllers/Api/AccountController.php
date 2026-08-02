@@ -142,7 +142,7 @@ class AccountController extends Controller
             $voucherQuery->whereRaw('COALESCE(sold_at, created_at) <= ?', [$toDate . ' 23:59:59']);
         }
 
-        $vouchers = $voucherQuery->with(['plan:id,name', 'seller:id,name,username', 'reseller:id,name,username'])->latest('sold_at')->get();
+        $vouchers = $voucherQuery->with(['plan:id,name,package_type', 'seller:id,name,username', 'reseller:id,name,username'])->latest('sold_at')->get();
 
         // Calculate User Summaries
         $userSummaries = $users->map(function ($u) use ($invoices, $payments, $vouchers) {
@@ -155,11 +155,15 @@ class AccountController extends Controller
             $totalPaid = (float) $uPayments->sum('amount');
             $totalVoucherSales = (float) $uVouchers->sum('price');
             $totalVoucherGb = (float) $uVouchers->sum('data_gb');
+            $isGbVoucher = fn ($v) => ($v->plan->package_type ?? null) === 'gb';
             // Commission columns are null for vouchers sold before this feature —
             // fall back to the full price going to the reseller/seller (0% admin cut),
-            // matching what actually happened for those historical sales.
-            $totalAdminShare = (float) $uVouchers->sum(fn ($v) => $v->admin_share ?? 0.0);
-            $totalResellerShare = (float) $uVouchers->sum(fn ($v) => $v->reseller_share ?? (float) $v->price);
+            // matching what actually happened for those historical sales. GB Package
+            // vouchers never carry a commission split at all — their full price is a
+            // direct due (see total_gb_due below), not a reseller/admin split.
+            $totalAdminShare = (float) $uVouchers->sum(fn ($v) => $isGbVoucher($v) ? 0.0 : ($v->admin_share ?? 0.0));
+            $totalResellerShare = (float) $uVouchers->sum(fn ($v) => $isGbVoucher($v) ? 0.0 : ($v->reseller_share ?? (float) $v->price));
+            $totalGbDue = (float) $uVouchers->sum(fn ($v) => $isGbVoucher($v) ? (float) ($v->gb_due_amount ?? 0.0) : 0.0);
             // The reseller/seller's own cut never touches the admin's books at all —
             // it's their retail profit, not something owed to or collected by admin.
             // Only admin_share is a receivable. Outstanding commission is read from
@@ -168,7 +172,6 @@ class AccountController extends Controller
             // this request's date-filtered vouchers/payments, which would drift
             // whenever a from/to date filter is applied.
             $totalInvoicedAll = $totalInvoiced + $totalVoucherSales;
-            $due = (float) $u->commission_due;
 
             return [
                 'id' => $u->id,
@@ -182,9 +185,14 @@ class AccountController extends Controller
                 'total_voucher_sales' => $totalVoucherSales,
                 'total_admin_share' => $totalAdminShare,
                 'total_reseller_share' => $totalResellerShare,
+                'total_gb_due' => $totalGbDue,
                 'total_invoiced' => $totalInvoicedAll,
                 'total_paid' => $totalPaid,
-                'wallet_due' => $due,
+                // Real GB/wallet due (allocations + settled GB voucher sales) — was
+                // previously mislabeled here as $u->commission_due, which made the
+                // ledger's "Outstanding Balance" show the wrong number entirely.
+                'wallet_due' => (float) $u->wallet_due,
+                'commission_due' => (float) $u->commission_due,
                 'invoices_count' => $uInvoices->count(),
                 'payments_count' => $uPayments->count(),
                 'vouchers_sold_count' => $uVouchers->count(),
@@ -243,6 +251,42 @@ class AccountController extends Controller
             $ownerId = $v->seller_id ?? $v->reseller_id;
             $planName = $v->plan->name ?? 'Package';
             $customer = $v->customer_username ?: 'Walk-in Customer';
+
+            if (($v->plan->package_type ?? null) === 'gb') {
+                // GB Package accounting is not commission-based. Nothing is
+                // "kept" by the reseller/seller the way reseller_share works for
+                // Wallet Packages — the full price becomes a direct due the
+                // moment the voucher is sold or first used. Until then
+                // (gb_due_amount still null, voucher still 'active') nothing
+                // has actually happened yet, so it contributes no invoiced/due
+                // amount to the running balance.
+                $settled = $v->gb_due_amount !== null;
+                $dueAmount = $settled ? (float) $v->gb_due_amount : 0.0;
+
+                $ledgerItems->push([
+                    'id' => "vch-{$v->id}",
+                    'type' => 'gb_voucher_sale',
+                    'title' => "GB Voucher Sale ({$planName})",
+                    'reference' => $v->code,
+                    'party_name' => $owner->name ?? $owner->username ?? 'User',
+                    'user_name' => $owner->name ?? $owner->username ?? 'User',
+                    'user_role' => $owner->role ?? '',
+                    'user_id' => $ownerId,
+                    'amount' => (float) $v->price,
+                    'invoiced' => $settled ? (float) $v->price : 0.0,
+                    'paid' => 0.00,
+                    'paid_amount' => 0.00,
+                    'due_amount' => $dueAmount,
+                    'commission_percent' => 0.0,
+                    'status' => $settled ? 'DUE' : 'PENDING',
+                    'date' => ($v->sold_at ?? $v->activated_at ?? $v->created_at)->toIso8601String(),
+                    'created_at' => ($v->sold_at ?? $v->activated_at ?? $v->created_at)->toIso8601String(),
+                    'note' => "GB Voucher Sale ({$planName}) to {$customer}",
+                ]);
+
+                continue;
+            }
+
             // Null on vouchers sold before this feature — treat as 0% admin cut,
             // matching what actually happened for those historical sales.
             $adminShare = (float) ($v->admin_share ?? 0.0);
@@ -296,11 +340,31 @@ class AccountController extends Controller
         $pagedData = $sortedItems->slice(($page - 1) * $perPage, $perPage)->values();
 
         $overallTotalInvoiced = (float) $userSummaries->sum('total_invoiced');
-        $overallTotalPaid = (float) $userSummaries->sum('total_paid');
-        $overallTotalDue = (float) $userSummaries->sum('wallet_due');
+        // Summing each user's own total_paid double-counts every payment that
+        // occurs BETWEEN two users who are both in scope (e.g. a seller paying
+        // their reseller shows up once as the seller's payment and again as the
+        // reseller's) — sum the underlying unique $payments collection instead.
+        // Commission settlements are excluded here: this figure is specifically
+        // GB/wallet-due collections, and commission has its own due/report.
+        $overallTotalPaid = (float) $payments->where('type', '!=', 'commission')->sum('amount');
+        // Outstanding Balance is a receivable — what the actor's downline still
+        // owes THEM — not a net of two different debt directions. Summing every
+        // row including the actor's own would add the actor's own payable to
+        // their parent (e.g. a reseller's due to admin) on top of what their
+        // sellers owe the reseller, overstating it. Admin is never in $users
+        // here (it queries resellers, not itself), so this exclusion only
+        // matters for a reseller/seller viewing their own scope.
+        $overallTotalDue = (float) $userSummaries->where('id', '!=', $actor->id)->sum('wallet_due');
         $overallTotalGb = (float) $userSummaries->sum('total_gb_sales');
         $overallAdminCommission = (float) $userSummaries->sum('total_admin_share');
         $overallResellerCommission = (float) $userSummaries->sum('total_reseller_share');
+        $overallCommissionDue = (float) $userSummaries->sum('commission_due');
+        // Cash a reseller/seller actually collected from end customers by selling
+        // GB Package vouchers directly (settled sold/used ones — see gb_due_amount).
+        // Distinct from total_paid: that's Payment records for GB allocations
+        // between hierarchy levels, this is retail cash at the point of sale that
+        // hasn't been remitted upward yet (it sits in wallet_due until it is).
+        $overallGbVoucherSales = (float) $userSummaries->sum('total_gb_due');
 
         return $this->ok([
             'summary' => [
@@ -310,6 +374,8 @@ class AccountController extends Controller
                 'total_gb' => $overallTotalGb,
                 'total_admin_commission' => $overallAdminCommission,
                 'total_reseller_commission' => $overallResellerCommission,
+                'total_commission_due' => $overallCommissionDue,
+                'total_gb_voucher_sales' => $overallGbVoucherSales,
                 'reseller_count' => $userSummaries->where('role', 'reseller')->count(),
                 'seller_count' => $userSummaries->where('role', 'seller')->count(),
             ],

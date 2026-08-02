@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
 import { api } from './api'
+import { invalidateCache } from './cache'
 
 export type Role = 'admin' | 'reseller' | 'seller'
 
@@ -54,6 +55,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (username: string, password: string) => {
     const { data } = await api.post('/login', { username, password })
+    // The page-data cache (lib/cache.ts) keys entries by resource name only, not
+    // by user — without this, switching accounts without a full reload would
+    // flash the previous user's cached dashboard/lists (wrong balances, wrong
+    // role's cards) until each query's staleTime happened to expire.
+    invalidateCache()
     localStorage.setItem('airlink_token', data.data.token)
     setUser(data.data.user)
   }
@@ -66,6 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     localStorage.removeItem('airlink_token')
     setUser(null)
+    invalidateCache()
   }
 
   // Feature-level gate driven by the server permission matrix. No feature => always

@@ -18,6 +18,8 @@ class Voucher extends Model
             'commission_percent' => 'decimal:2',
             'admin_share' => 'decimal:2',
             'reseller_share' => 'decimal:2',
+            'gb_cost' => 'decimal:3',
+            'gb_due_amount' => 'decimal:2',
             'sold_at' => 'datetime',
             'activated_at' => 'datetime',
             'expires_at' => 'datetime',

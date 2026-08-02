@@ -24,6 +24,7 @@ class VoucherController extends Controller
         private RadiusService $radius,
         private VoucherCardService $cards,
         private WalletService $wallet,
+        private \App\Services\GbService $gb,
     ) {}
 
     public function generate(Request $request): JsonResponse
@@ -365,7 +366,25 @@ class VoucherController extends Controller
             'customer_username' => ['nullable', 'string', 'max:255'],
         ]);
 
-        DB::transaction(function () use ($voucher, $data) {
+        $voucher->loadMissing('plan:id,package_type');
+        $isGbPackage = $voucher->plan?->package_type === 'gb';
+
+        DB::transaction(function () use ($voucher, $data, $isGbPackage) {
+            if ($isGbPackage) {
+                // GB Package accounting is not commission-based: no admin_share/
+                // reseller_share split. The owner's GB allocation is only spent
+                // now (deferred from generation), and the full price becomes a
+                // direct due up the hierarchy (Seller→Reseller, Reseller→Admin).
+                $voucher->update([
+                    'status' => 'sold',
+                    'sold_at' => now(),
+                    'customer_username' => $data['customer_username'] ?? $voucher->customer_username,
+                ]);
+                $this->gb->settleVoucherConsumption($voucher->fresh());
+
+                return;
+            }
+
             $reseller = $voucher->reseller_id ? User::find($voucher->reseller_id) : null;
             $percent = $reseller ? (float) $reseller->commission_percent : 0.0;
             $price = (float) $voucher->price;

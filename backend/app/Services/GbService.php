@@ -6,6 +6,7 @@ use App\Models\GbTransaction;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\User;
+use App\Models\Voucher;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -126,5 +127,58 @@ class GbService
             'user_id' => $u->id, 'type' => 'deduct', 'gb_amount' => $gb,
             'balance_after' => $u->gb_balance, 'reference' => $reference, 'note' => $note,
         ]);
+    }
+
+    /**
+     * Settle a GB Package voucher's consumption of its owner's GB allocation —
+     * called the moment a voucher is either sold or first used (whichever
+     * happens first), never at generation time.
+     *
+     * GB Package accounting is not commission-based: the full voucher price
+     * becomes a direct due owed by the owner (reseller/seller) to their
+     * parent (admin/reseller), and the owner's gb_balance is only actually
+     * spent now — generation only reserved it.
+     *
+     * Idempotent via voucher.gb_due_amount: a voucher is only ever settled
+     * once, whichever of sell() or the vouchers:settle-gb poller gets there
+     * first. Legacy vouchers generated before this deferred-settlement model
+     * existed have gb_cost = null (their GB was already deducted at
+     * generation under the old code), so only the due is assessed for them —
+     * no second deduction.
+     */
+    public function settleVoucherConsumption(Voucher $voucher): void
+    {
+        if ($voucher->gb_due_amount !== null) {
+            return;
+        }
+
+        DB::transaction(function () use ($voucher) {
+            $v = Voucher::whereKey($voucher->id)->lockForUpdate()->first();
+            if ($v->gb_due_amount !== null) {
+                return;
+            }
+
+            $owner = User::whereKey($v->owner_id)->lockForUpdate()->first();
+            if (! $owner) {
+                return;
+            }
+
+            if ($v->gb_cost !== null && (float) $v->gb_cost > 0) {
+                $owner->decrement('gb_balance', (float) $v->gb_cost);
+                $owner->refresh();
+                GbTransaction::create([
+                    'user_id' => $owner->id, 'type' => 'deduct', 'gb_amount' => (float) $v->gb_cost,
+                    'balance_after' => $owner->gb_balance, 'reference' => 'voucher:'.$v->code,
+                    'note' => "GB consumed by sold/used voucher {$v->code}",
+                ]);
+            }
+
+            $price = (float) $v->price;
+            if ($price > 0) {
+                $owner->increment('wallet_due', $price);
+            }
+
+            $v->update(['gb_due_amount' => $price]);
+        });
     }
 }

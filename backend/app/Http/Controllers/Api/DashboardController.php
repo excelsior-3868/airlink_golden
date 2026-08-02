@@ -61,21 +61,29 @@ class DashboardController extends Controller
         $invoiceToday = (float) Invoice::where('sender_id', $reseller->id)->whereDate('created_at', now()->toDateString())->sum('total_amount');
         $invoiceMonth = (float) Invoice::where('sender_id', $reseller->id)->whereMonth('created_at', now()->month)->whereYear('created_at', now()->year)->sum('total_amount');
 
-        // 2. Direct Voucher Sales (Reseller direct)
-        $voucherTotal = (float) Voucher::where('reseller_id', $reseller->id)
+        // 2. Direct Voucher Sales (Reseller direct) — a voucher only counts once it's
+        // actually been sold or used (whichever happens first), never while merely
+        // 'active' and untouched. sold_at covers an explicit sale; activated_at
+        // covers a GB Package voucher consumed via first login without ever being
+        // marked sold (see GbService::settleVoucherConsumption). Gating on these
+        // timestamps instead of `status` also naturally includes 'used'/'expired'
+        // vouchers that were genuinely sold/used before moving to that status.
+        $directVoucherSales = fn () => Voucher::where('reseller_id', $reseller->id)
             ->whereNull('seller_id')
-            ->whereIn('status', ['sold', 'active', 'expired'])
+            ->where(fn ($q) => $q->whereNotNull('sold_at')->orWhereNotNull('activated_at'));
+
+        // "Voucher Sales" specifically means GB Package vouchers the reseller sold
+        // himself. Wallet Package direct sales are already fully represented via
+        // commission_due/commission_net_earnings below — folding them in here too
+        // would double-count that same revenue under a second framing.
+        $gbVoucherSales = fn () => $directVoucherSales()->whereHas('plan', fn ($q) => $q->where('package_type', 'gb'));
+
+        $voucherTotal = (float) $gbVoucherSales()->sum('price');
+        $voucherToday = (float) $gbVoucherSales()
+            ->whereRaw('COALESCE(sold_at, activated_at) >= ?', [now()->startOfDay()])
             ->sum('price');
-        $voucherToday = (float) Voucher::where('reseller_id', $reseller->id)
-            ->whereNull('seller_id')
-            ->whereIn('status', ['sold', 'active', 'expired'])
-            ->whereDate('sold_at', now()->toDateString())
-            ->sum('price');
-        $voucherMonth = (float) Voucher::where('reseller_id', $reseller->id)
-            ->whereNull('seller_id')
-            ->whereIn('status', ['sold', 'active', 'expired'])
-            ->whereMonth('sold_at', now()->month)
-            ->whereYear('sold_at', now()->year)
+        $voucherMonth = (float) $gbVoucherSales()
+            ->whereRaw('COALESCE(sold_at, activated_at) >= ?', [now()->startOfMonth()])
             ->sum('price');
 
         $totalSales = $invoiceTotal + $voucherTotal;
@@ -112,13 +120,10 @@ class DashboardController extends Controller
                 'created_at' => $inv->created_at,
             ]);
 
-        // C. Direct Voucher Sales
-        $vouchersTx = Voucher::with('plan')
-            ->where('reseller_id', $reseller->id)
-            ->whereNull('seller_id')
-            ->whereIn('status', ['sold', 'active', 'expired'])
-            ->whereNotNull('sold_at')
-            ->latest('sold_at')
+        // C. Direct Voucher Sales — sold or used, same gate as $directVoucherSales above.
+        $vouchersTx = $directVoucherSales()
+            ->with('plan')
+            ->orderByRaw('COALESCE(sold_at, activated_at) DESC')
             ->limit(5)
             ->get()
             ->map(fn($v) => [
@@ -127,7 +132,7 @@ class DashboardController extends Controller
                 'amount' => (float) $v->price,
                 'note' => "Sold " . ($v->plan?->name ?? 'Voucher') . " (" . $v->code . ")" . ($v->customer_username ? " to {$v->customer_username}" : ""),
                 'is_positive' => true,
-                'created_at' => $v->sold_at,
+                'created_at' => $v->sold_at ?? $v->activated_at,
             ]);
 
         // Merge, sort descending by transaction date, take 5
@@ -148,18 +153,18 @@ class DashboardController extends Controller
             ->values()
             ->all();
 
-        $directVouchers = Voucher::where('reseller_id', $reseller->id)
-            ->whereNull('seller_id')
-            ->whereIn('status', ['sold', 'active', 'expired'])
-            ->get();
-
-        $retailProfit = $directVouchers->sum(function ($v) {
+        $retailProfit = $directVoucherSales()->get()->sum(function ($v) {
             return (float) $v->price - (float) $v->base_price;
         });
 
         $gbPurchased = (float) Invoice::where('receiver_id', $reseller->id)->sum('gb_amount');
         $gbAllocated = (float) Invoice::where('sender_id', $reseller->id)->sum('gb_amount');
         $revenueSellers = (float) Invoice::where('sender_id', $reseller->id)->sum('total_amount');
+        // Actually paid, not just invoiced — Invoice.paid_amount accrues both the
+        // upfront paidAmount recorded at allocation time (GbService::allocate) and
+        // any later payoff via PaymentService::collect(). total_amount - this is
+        // exactly what outstanding_due (sum of sellers' wallet_due) represents.
+        $collectedFromSellers = (float) Invoice::where('sender_id', $reseller->id)->sum('paid_amount');
         $packagesCount = \App\Models\InternetPlan::where('created_by', $reseller->id)->count();
 
         return [
@@ -172,6 +177,7 @@ class DashboardController extends Controller
             'gb_purchased' => $gbPurchased,
             'gb_allocated' => $gbAllocated,
             'revenue_sellers' => $revenueSellers,
+            'collected_from_sellers' => $collectedFromSellers,
             'voucher_sales' => $voucherTotal,
             'retail_profit' => (float) $retailProfit,
             'today_sales' => $todaySales,
@@ -180,6 +186,10 @@ class DashboardController extends Controller
             'sales' => $totalSales,
             'outstanding_due' => (float) User::where('parent_id', $reseller->id)->sum('wallet_due'),
             'commission_percent' => (float) $reseller->commission_percent,
+            // Live outstanding balance (mirrors PaymentService::collectCommission
+            // settlements) — not a raw historical sum of admin_share, which would
+            // never decrease even after the reseller pays the admin.
+            'commission_due' => (float) $reseller->commission_due,
             'commission_paid' => (float) Voucher::where('reseller_id', $reseller->id)->whereNotNull('admin_share')->sum('admin_share'),
             'commission_net_earnings' => (float) Voucher::where('reseller_id', $reseller->id)->whereNotNull('reseller_share')->sum('reseller_share'),
             'top_sellers' => $this->topByVoucherSales('seller_id', $sellerIds),

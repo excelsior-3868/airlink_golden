@@ -192,7 +192,7 @@ function SalesLedgerView() {
     setPage(1)
   }, [roleFilter, targetUserId, fromDate, toDate, search])
 
-  const summary = ledgerData?.summary || { total_invoiced: 0, total_paid: 0, total_due: 0, total_gb: 0, total_admin_commission: 0, total_reseller_commission: 0 }
+  const summary = ledgerData?.summary || { total_invoiced: 0, total_paid: 0, total_due: 0, total_gb: 0, total_admin_commission: 0, total_reseller_commission: 0, total_gb_voucher_sales: 0 }
   const userSummaries = ledgerData?.user_summaries || []
   const ledger = ledgerData?.ledger || { data: [], current_page: 1, last_page: 1, total: 0 }
 
@@ -209,22 +209,33 @@ function SalesLedgerView() {
     <div className="space-y-6">
       {/* Summary KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <GlassCard className="p-4 flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold text-slate-400">Commission Earned</p>
-            <p className="text-xl font-extrabold text-indigo-600 mt-1">
-              {rs(user?.role === 'admin' ? summary.total_admin_commission : (summary.total_reseller_commission ?? summary.total_admin_commission ?? 0))}
-            </p>
-            <p className="text-[11px] text-slate-400 mt-1 font-medium">{gb(summary.total_gb)} Allocated</p>
-          </div>
-          <div className="w-12 h-12 rounded-2xl bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center shrink-0">
-            <DollarSign size={22} />
-          </div>
-        </GlassCard>
+        {user?.role === 'admin' ? (
+          <GlassCard className="p-4 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold text-slate-400">Commission Earned</p>
+              <p className="text-xl font-extrabold text-indigo-600 mt-1">{rs(summary.total_admin_commission)}</p>
+              <p className="text-[11px] text-slate-400 mt-1 font-medium">{gb(summary.total_gb)} Allocated</p>
+            </div>
+            <div className="w-12 h-12 rounded-2xl bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center shrink-0">
+              <DollarSign size={22} />
+            </div>
+          </GlassCard>
+        ) : (
+          <GlassCard className="p-4 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold text-slate-400">Payment from GB Voucher Sales</p>
+              <p className="text-xl font-extrabold text-cyan-600 mt-1">{rs(summary.total_gb_voucher_sales)}</p>
+              <p className="text-[11px] text-slate-400 mt-1 font-medium">Collected from customers at sale</p>
+            </div>
+            <div className="w-12 h-12 rounded-2xl bg-cyan-50 border border-cyan-100 text-cyan-600 flex items-center justify-center shrink-0">
+              <Database size={22} />
+            </div>
+          </GlassCard>
+        )}
 
         <GlassCard className="p-4 flex items-center justify-between">
           <div>
-            <p className="text-xs font-semibold text-slate-400">Payments Collected</p>
+            <p className="text-xs font-semibold text-slate-400">Payment Collected from {user?.role === 'admin' ? 'Resellers' : 'Sellers'}</p>
             <p className="text-xl font-extrabold text-emerald-600 mt-1">{rs(summary.total_paid)}</p>
             <p className="text-[11px] text-emerald-600 mt-1 font-medium">Received in Cash/Bank</p>
           </div>
@@ -235,7 +246,7 @@ function SalesLedgerView() {
 
         <GlassCard className="p-4 flex items-center justify-between">
           <div>
-            <p className="text-xs font-semibold text-slate-400">Outstanding Balance</p>
+            <p className="text-xs font-semibold text-slate-400">Outstanding Balance from {user?.role === 'admin' ? 'Resellers' : 'Sellers'}</p>
             <p className={`text-xl font-extrabold mt-1 ${summary.total_due > 0 ? 'text-amber-600' : 'text-slate-700'}`}>
               {rs(summary.total_due)}
             </p>
@@ -342,6 +353,10 @@ function SalesLedgerView() {
                       ) : row.type === 'voucher_sale' ? (
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-50 text-purple-600 border border-purple-100 flex items-center gap-1 w-max">
                           <Tag size={11} /> Voucher Sale
+                        </span>
+                      ) : row.type === 'gb_voucher_sale' ? (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-50 text-cyan-600 border border-cyan-100 flex items-center gap-1 w-max">
+                          <Tag size={11} /> GB Voucher Sale
                         </span>
                       ) : (
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center gap-1 w-max">

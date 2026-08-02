@@ -71,10 +71,29 @@ class VoucherService
             $gbPer = $rate > 0 ? round($basePricePer / $rate, 3) : 0.000;
         }
 
+        // GB Package plans defer the actual balance spend to sell/first-use
+        // time (see GbService::settleVoucherConsumption) — generation only
+        // reserves capacity against gb_balance, it never spends it. So the
+        // check here has to account for GB already reserved by other
+        // not-yet-settled vouchers, not just the raw current balance.
+        $isGbPackage = $plan->package_type === 'gb';
+
         // Fail fast with a clear message before touching anything.
         if ($purchaseSource === 'wallet') {
             if ($totalCost > 0 && (float) $owner->wallet_balance < $totalCost) {
                 throw ValidationException::withMessages(['wallet' => "Not enough wallet balance. Need Rs. {$totalCost}."]);
+            }
+        } elseif ($isGbPackage) {
+            if ($totalGb > 0) {
+                $reserved = (float) Voucher::where('owner_id', $owner->id)
+                    ->whereIn('status', ['active', 'sold'])
+                    ->whereNotNull('gb_cost')
+                    ->whereNull('gb_due_amount')
+                    ->sum('gb_cost');
+                $available = (float) $owner->gb_balance - $reserved;
+                if ($available < $totalGb) {
+                    throw ValidationException::withMessages(['gb' => "Not enough available GB balance. Available: {$available} GB (balance ".(float) $owner->gb_balance." minus {$reserved} GB already reserved by unsold vouchers), need {$totalGb} GB."]);
+                }
             }
         } else {
             if ($totalGb > 0 && (float) $owner->gb_balance < $totalGb) {
@@ -89,7 +108,7 @@ class VoucherService
             default => [null, null],
         };
 
-        return DB::transaction(function () use ($owner, $plan, $quantity, $validity, $gbPer, $pricePer, $basePricePer, $totalGb, $totalCost, $resellerId, $sellerId, $note, $purchaseSource, $customBatchCode) {
+        return DB::transaction(function () use ($owner, $plan, $quantity, $validity, $gbPer, $pricePer, $basePricePer, $totalGb, $totalCost, $resellerId, $sellerId, $note, $purchaseSource, $customBatchCode, $isGbPackage) {
             $bCode = $customBatchCode ?: $this->uniqueBatchCode();
             if (Batch::where('batch_code', $bCode)->exists()) {
                 $bCode = $bCode . '-' . strtoupper(Str::random(4));
@@ -127,6 +146,9 @@ class VoucherService
                     'simultaneous_use' => (int) ($plan->simultaneous_use ?: 1),
                     'price' => $pricePer,
                     'base_price' => $basePricePer,
+                    // GB Package vouchers carry their own GB-equivalent cost so it
+                    // can be deducted later, at sell/first-use time, instead of now.
+                    'gb_cost' => $isGbPackage ? $gbPer : null,
                     'status' => 'active', 'expires_at' => null,
                     'created_at' => $now, 'updated_at' => $now,
                 ];
@@ -146,12 +168,15 @@ class VoucherService
                 DB::table('radreply')->insert($chunk);
             }
 
-            // Deduct balance (row-locked, audited).
+            // Deduct balance (row-locked, audited). GB Package vouchers are the
+            // exception: their gb_cost was persisted per-row above instead, and
+            // gb_balance is only actually spent later, at sell/first-use time
+            // (GbService::settleVoucherConsumption) — generation only reserved it.
             if ($purchaseSource === 'wallet') {
                 if ($totalCost > 0) {
                     $this->wallet->deduct($owner, $totalCost, $batch->batch_code, $note ?? "Generated {$quantity} vouchers via Wallet");
                 }
-            } else {
+            } elseif (! $isGbPackage) {
                 if ($totalGb > 0) {
                     $this->gb->deduct($owner, $totalGb, $batch->batch_code, $note ?? "Generated {$quantity} vouchers via GB");
                 }

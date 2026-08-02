@@ -148,10 +148,16 @@ export default function Dashboard() {
       {d.role === 'reseller' && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatCard 
-              label="GB Balance (Stock)" 
-              value={<span className="text-cyan-600">{gb(d.balances.gb)}</span>} 
-              icon={<Database size={22} />} 
+            <StatCard
+              label="Wallet Balance"
+              value={<span className="text-emerald-600">{rs(d.balances.wallet)}</span>}
+              icon={<Wallet size={22} />}
+              iconColorClass="text-emerald-600 bg-emerald-50 border border-emerald-100/50"
+            />
+            <StatCard
+              label="GB Balance (Stock)"
+              value={<span className="text-cyan-600">{gb(d.balances.gb)}</span>}
+              icon={<Database size={22} />}
               iconColorClass="text-cyan-600 bg-cyan-50 border border-cyan-100/50"
               sub={<span>Purchased: <strong className="text-slate-700">{gb(d.gb_purchased)}</strong></span>}
             />
@@ -162,12 +168,18 @@ export default function Dashboard() {
               iconColorClass="text-purple-600 bg-purple-50 border border-purple-100/50"
               sub={<span>Sellers: <strong className="text-slate-700">{num(d.counts.sellers)}</strong></span>}
             />
-            <StatCard label="Revenue from Sellers" value={<span className="text-emerald-600">{rs(d.revenue_sellers)}</span>} icon={<TrendingUp size={22} />} iconColorClass="text-emerald-600 bg-emerald-50 border border-emerald-100/50" />
+            <StatCard label="Total Collected from Sellers" value={<span className="text-emerald-600">{rs(d.collected_from_sellers)}</span>} icon={<TrendingUp size={22} />} iconColorClass="text-emerald-600 bg-emerald-50 border border-emerald-100/50" />
+            <StatCard
+              label="Total Receivable"
+              value={<span className="text-teal-600">{rs(d.outstanding_due)}</span>}
+              icon={<CreditCard size={22} />}
+              iconColorClass="text-teal-600 bg-teal-50 border border-teal-100/50"
+              sub={<span>Owed by sellers for allocated GB</span>}
+            />
 
             <VoucherStatCard title="Total Vouchers" vouchers={d.vouchers} icon={<Ticket size={22} />} iconColorClass="text-rose-600 bg-rose-50 border border-rose-100/50" />
-            <StatCard label="Voucher Sales" value={<span className="text-blue-600">{rs(d.voucher_sales)}</span>} icon={<TrendingUp size={22} />} iconColorClass="text-blue-600 bg-blue-50 border border-blue-100/50" />
-            <StatCard label="Packages" value={<span className="text-amber-600">{num(d.counts.packages)}</span>} icon={<Package size={22} />} iconColorClass="text-amber-600 bg-amber-50 border border-amber-100/50" />
-            <StatCard label="Commission Paid to Admin" value={<span className="text-orange-600">{rs(d.commission_paid)} <span className="text-sm font-medium text-orange-400">({d.commission_percent}%)</span></span>} icon={<Receipt size={22} />} iconColorClass="text-orange-600 bg-orange-50 border border-orange-100/50" />
+            <StatCard label="GB Voucher Sales" value={<span className="text-blue-600">{rs(d.voucher_sales)}</span>} icon={<TrendingUp size={22} />} iconColorClass="text-blue-600 bg-blue-50 border border-blue-100/50" />
+            <StatCard label="Commission Due to Admin" value={<span className="text-orange-600">{rs(d.commission_due)} <span className="text-sm font-medium text-orange-400">({d.commission_percent}%)</span></span>} icon={<Receipt size={22} />} iconColorClass="text-orange-600 bg-orange-50 border border-orange-100/50" />
             <StatCard label="Net Earnings (After Commission)" value={<span className="text-lime-600">{rs(d.commission_net_earnings)}</span>} icon={<Sparkles size={22} />} iconColorClass="text-lime-600 bg-lime-50 border border-lime-100/50" />
           </div>
 
