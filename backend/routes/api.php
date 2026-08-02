@@ -74,9 +74,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/billing/invoices', [BillingController::class, 'invoices']);
     Route::get('/billing/payments', [BillingController::class, 'payments']);
     Route::post('/billing/payments/collect', [BillingController::class, 'collect'])->middleware('permission:wallet_load');
+    Route::post('/billing/commission/collect', [BillingController::class, 'collectCommission'])->middleware('permission:wallet_load');
 
     // Accounts Module (Sales Ledger & Expenses)
     Route::get('/accounts/sales-ledger', [AccountController::class, 'salesLedger']);
+    Route::get('/accounts/commission-report', [AccountController::class, 'commissionReport']);
     Route::get('/accounts/expenses', [AccountController::class, 'expensesIndex']);
     Route::post('/accounts/expenses', [AccountController::class, 'expenseStore']);
     Route::put('/accounts/expenses/{expense}', [AccountController::class, 'expenseUpdate']);

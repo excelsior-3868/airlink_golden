@@ -76,4 +76,41 @@ class PaymentService
             return $payment;
         });
     }
+
+    /**
+     * Record a real-world commission settlement from a reseller to their
+     * admin. Unlike collect(), this never touches wallet_due or Invoice rows
+     * — the admin's wallet was already credited at sale time (VoucherController
+     * @sell); this only clears the reseller's outstanding commission_due and
+     * logs a dated Payment so it can be reported on.
+     */
+    public function collectCommission(User $collector, User $payer, float $amount, ?string $note = null): Payment
+    {
+        if ($amount <= 0) {
+            throw ValidationException::withMessages(['amount' => 'Payment amount must be greater than zero.']);
+        }
+        if ($payer->parent_id !== $collector->id) {
+            throw ValidationException::withMessages(['user_id' => 'You can only collect commission from your own direct downline.']);
+        }
+
+        return DB::transaction(function () use ($collector, $payer, $amount, $note) {
+            $payerUser = User::whereKey($payer->id)->lockForUpdate()->first();
+            $collectorUser = User::whereKey($collector->id)->lockForUpdate()->first();
+
+            if ((float) $payerUser->commission_due < $amount) {
+                throw ValidationException::withMessages(['amount' => "Payment amount Rs {$amount} exceeds the user's outstanding commission of Rs {$payerUser->commission_due}."]);
+            }
+
+            $payerUser->decrement('commission_due', $amount);
+
+            return Payment::create([
+                'sender_id' => $payerUser->id,
+                'receiver_id' => $collectorUser->id,
+                'type' => 'commission',
+                'amount' => $amount,
+                'payment_date' => now(),
+                'note' => $note ?? "Commission collected by {$collectorUser->username}",
+            ]);
+        });
+    }
 }

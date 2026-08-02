@@ -94,4 +94,27 @@ class BillingController extends Controller
             'wallet_due' => $payer->fresh()->wallet_due
         ], 'Payment collected successfully.');
     }
+
+    /** Collect a real commission settlement from a direct downline reseller. */
+    public function collectCommission(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'user_id' => ['required', 'integer', 'exists:users,id'],
+            'amount' => ['required', 'numeric', 'min:0.01'],
+            'note' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $payer = User::findOrFail($data['user_id']);
+        $payment = $this->paymentService->collectCommission(
+            $request->user(),
+            $payer,
+            (float) $data['amount'],
+            $data['note'] ?? null
+        );
+
+        return $this->ok([
+            'payment' => $payment,
+            'commission_due' => $payer->fresh()->commission_due,
+        ], 'Commission payment collected successfully.');
+    }
 }

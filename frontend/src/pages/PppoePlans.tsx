@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Plus, Package } from 'lucide-react'
+import { Plus, Package, Router } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useQuery, invalidateCache } from '../lib/cache'
 import { useAuth } from '../lib/auth'
@@ -88,7 +88,7 @@ export default function PppoePlans() {
       <PageTitle
         title="PPPOE Plans"
         subtitle="Broadband connection packages"
-        icon={<Package size={22} className="text-indigo-500" />}
+        icon={<Router size={22} className="text-indigo-500" />}
         action={
           <motion.button
             whileTap={{ scale: 0.95 }}

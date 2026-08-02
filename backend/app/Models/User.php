@@ -14,7 +14,7 @@ use Laravel\Sanctum\HasApiTokens;
 
 #[Fillable([
     'name', 'username', 'email', 'phone', 'password', 'role', 'parent_id',
-    'wallet_balance', 'wallet_due', 'gb_balance', 'gb_rate', 'status', 'created_by',
+    'wallet_balance', 'wallet_due', 'gb_balance', 'gb_rate', 'commission_percent', 'status', 'created_by',
     'must_reset_password', 'legacy_id', 'legacy_username',
 ])]
 #[Hidden(['password', 'remember_token'])]
@@ -32,6 +32,8 @@ class User extends Authenticatable
             'wallet_due' => 'decimal:2',
             'gb_balance' => 'decimal:3',
             'gb_rate' => 'decimal:2',
+            'commission_percent' => 'decimal:2',
+            'commission_due' => 'decimal:2',
             'must_reset_password' => 'boolean',
         ];
     }

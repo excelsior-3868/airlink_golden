@@ -42,6 +42,9 @@ class UserController extends Controller
     public function storeReseller(Request $request): JsonResponse
     {
         $data = $this->validateNewUser($request);
+        $data['commission_percent'] = $request->validate([
+            'commission_percent' => ['required', 'numeric', 'min:0', 'max:100'],
+        ])['commission_percent'];
         $admin = $request->user();
 
         $reseller = User::create($data + [
@@ -93,6 +96,9 @@ class UserController extends Controller
 
         if ($actor->isAdmin()) {
             $rules['gb_rate'] = ['nullable', 'numeric', 'min:0.01'];
+            if ($user->isReseller()) {
+                $rules['commission_percent'] = ['nullable', 'numeric', 'min:0', 'max:100'];
+            }
             if ($user->isSeller()) {
                 $rules['parent_id'] = ['nullable', 'integer', Rule::exists('users', 'id')->where('role', 'reseller')];
             }
@@ -109,6 +115,7 @@ class UserController extends Controller
         if (! $actor->isAdmin()) {
             unset($data['gb_rate']);
             unset($data['parent_id']);
+            unset($data['commission_percent']);
         }
 
         $user->update($data);

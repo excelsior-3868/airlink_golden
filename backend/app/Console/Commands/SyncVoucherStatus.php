@@ -40,8 +40,9 @@ class SyncVoucherStatus extends Command
                AND u.bytes_used >= v.data_gb * 1073741824"
         );
 
-        // 2. Expire anything past its expiry that isn't already terminal.
+        // 2. Expire anything past its expiry that has been activated and isn't already terminal.
         $expired = Voucher::whereNotNull('expires_at')
+            ->whereNotNull('activated_at')
             ->where('expires_at', '<', now())
             ->whereIn('status', ['active', 'sold', 'used'])
             ->update(['status' => 'expired']);

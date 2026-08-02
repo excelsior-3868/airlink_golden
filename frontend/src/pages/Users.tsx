@@ -33,7 +33,7 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
       setCreateOpen(true)
     }
   }, [location.search])
-  const [form, setForm] = useState<any>({ name: '', username: '', email: '', phone: '', password: '', confirm_password: '', gb_rate: '' })
+  const [form, setForm] = useState<any>({ name: '', username: '', email: '', phone: '', password: '', confirm_password: '', gb_rate: '', commission_percent: '' })
   const [showPw, setShowPw] = useState(false)
   const [showConfirmPw, setShowConfirmPw] = useState(false)
   const [fundUser, setFundUser] = useState<any>(null)
@@ -42,7 +42,7 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
   const [collectAmount, setCollectAmount] = useState('')
   const [collectNote, setCollectNote] = useState('')
   const [editUser, setEditUser] = useState<any>(null)
-  const [editForm, setEditForm] = useState<any>({ name: '', username: '', email: '', phone: '', password: '', parent_id: '', gb_rate: '' })
+  const [editForm, setEditForm] = useState<any>({ name: '', username: '', email: '', phone: '', password: '', parent_id: '', gb_rate: '', commission_percent: '' })
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -171,6 +171,7 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
       password: '',
       parent_id: u.parent_id || '',
       gb_rate: u.gb_rate !== undefined && u.gb_rate !== null ? String(u.gb_rate) : '',
+      commission_percent: u.commission_percent !== undefined && u.commission_percent !== null ? String(u.commission_percent) : '',
     })
     setErr('')
   }
@@ -195,6 +196,9 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
       if (!payload.password) delete payload.password
       if (user?.role !== 'admin' || !payload.gb_rate || String(payload.gb_rate).trim() === '') {
         delete payload.gb_rate
+      }
+      if (role !== 'reseller' || user?.role !== 'admin' || !payload.commission_percent || String(payload.commission_percent).trim() === '') {
+        delete payload.commission_percent
       }
       if (role !== 'seller' || user?.role !== 'admin' || !payload.parent_id) {
         delete payload.parent_id
@@ -222,6 +226,10 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
       setErr('Passwords do not match.')
       return
     }
+    if (role === 'reseller' && user?.role === 'admin' && (!form.commission_percent || String(form.commission_percent).trim() === '')) {
+      setErr('Commission % is required for resellers.')
+      return
+    }
     setBusy(true)
     setErr('')
     try {
@@ -231,9 +239,12 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
       if (user?.role !== 'admin' || !payload.gb_rate || String(payload.gb_rate).trim() === '') {
         delete payload.gb_rate
       }
+      if (role !== 'reseller' || user?.role !== 'admin') {
+        delete payload.commission_percent
+      }
       await api.post(`/${role}s`, { ...payload, parent_id: pid })
       setCreateOpen(false)
-      setForm({ name: '', username: '', email: '', phone: '', password: '', confirm_password: '', gb_rate: '' })
+      setForm({ name: '', username: '', email: '', phone: '', password: '', confirm_password: '', gb_rate: '', commission_percent: '' })
       setShowPw(false)
       setShowConfirmPw(false)
       load()
@@ -342,6 +353,7 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
                 {role === 'reseller' && <th>Wallet Balance</th>}
                 <th>GB Balance</th>
                 <th>GB Rate</th>
+                {role === 'reseller' && <th>Commission %</th>}
                 <th>Vouchers Generated</th>
                 {role === 'reseller' && <th>Sellers</th>}
                 <th>Status</th>
@@ -377,6 +389,7 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
                       {role === 'reseller' && <td className="font-semibold text-emerald-700">{rs(u.wallet_balance)}</td>}
                       <td>{gb(u.gb_balance)}</td>
                       <td>{rs(u.gb_rate)}/GB</td>
+                      {role === 'reseller' && <td>{u.commission_percent ?? 0}%</td>}
                       <td className="font-semibold text-slate-700">{u.vouchers_count ?? 0}</td>
                       {role === 'reseller' && <td>{u.children_count ?? 0}</td>}
                       <td><Pill tone={u.status === 'active' ? 'success' : 'danger'}>{u.status === 'active' ? 'Active' : 'Disabled'}</Pill></td>
@@ -402,7 +415,7 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
                     </motion.tr>
                     {isExpanded && (
                       <tr className="bg-slate-50/40">
-                        <td colSpan={role === 'reseller' ? 10 : (user?.role === 'admin' ? 9 : 8)} className="py-4 px-6 border-b border-slate-200/60">
+                        <td colSpan={role === 'reseller' ? 11 : (user?.role === 'admin' ? 9 : 8)} className="py-4 px-6 border-b border-slate-200/60">
                           <div className="mb-3 flex items-center justify-between">
                             <div className="flex items-center gap-3">
                               <div className="w-10 h-10 rounded-full bg-purple-100 text-purple-700 flex items-center justify-center font-bold text-lg shadow-sm border border-purple-200/50 shrink-0">
@@ -576,6 +589,20 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
               </div>
             )}
 
+            {user?.role === 'admin' && role === 'reseller' && (
+              <div className="md:col-span-2">
+                <label className="text-xs font-bold text-slate-500 block mb-1.5">Commission % (Admin's cut of each voucher sale)</label>
+                <input
+                  className="input no-spinners"
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="e.g. 50"
+                  value={form.commission_percent}
+                  onChange={(e) => setForm({ ...form, commission_percent: e.target.value })}
+                />
+              </div>
+            )}
+
             <div>
               <label className="text-xs font-bold text-slate-500 block mb-1.5">Password</label>
               <div className="relative">
@@ -685,11 +712,12 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
           )}
 
           {(+fund.amount > 0 || +fund.gb_amount > 0) && (() => {
+            const isFreeReseller = role === 'reseller' && user?.role === 'admin'
             const walletAmt = +fund.amount || 0
             const gbAmt = (+fund.gb_amount || 0) * +(fundUser?.gb_rate || 0)
             const totalCost = walletAmt + gbAmt
-            const paid = Math.min(+fund.gb_paid || 0, totalCost)
-            const due = Math.max(totalCost - paid, 0)
+            const paid = isFreeReseller ? totalCost : Math.min(+fund.gb_paid || 0, totalCost)
+            const due = isFreeReseller ? 0 : Math.max(totalCost - paid, 0)
             return (
               <div className="rounded-2xl border border-slate-200/80 bg-slate-50/60 p-3 space-y-3">
                 {walletAmt > 0 && (
@@ -704,28 +732,36 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
                     <span className="text-purple-600 font-bold">{rs(gbAmt)}</span>
                   </div>
                 )}
-                <div className="relative">
-                  <Wallet size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input
-                    className="input pl-10 no-spinners"
-                    type="text"
-                    inputMode="decimal"
-                    placeholder="Paid now (Rs) — optional"
-                    value={formatAmountInput(fund.gb_paid)}
-                    onChange={(e) => {
-                      const raw = e.target.value.replace(/,/g, '')
-                      if (raw !== '' && !/^\d*\.?\d*$/.test(raw)) return
-                      // Preserve in-progress decimal typing (e.g. "100."); only clamp once it actually exceeds the cap.
-                      const parsed = +raw
-                      const next = raw !== '' && !isNaN(parsed) && parsed > totalCost ? String(totalCost) : raw
-                      setFund({ ...fund, gb_paid: next })
-                    }}
-                  />
-                </div>
-                <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-200/70">
-                  <span className="text-slate-500 font-semibold">Remaining due (added)</span>
-                  <span className={`font-bold ${due > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{rs(due)}</span>
-                </div>
+                {isFreeReseller ? (
+                  <div className="text-xs font-semibold text-emerald-600 bg-emerald-50 border border-emerald-100 px-3 py-2 rounded-xl">
+                    Free — reseller loads create no due balance. Admin's revenue comes from the commission cut on voucher sales instead.
+                  </div>
+                ) : (
+                  <>
+                    <div className="relative">
+                      <Wallet size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        className="input pl-10 no-spinners"
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="Paid now (Rs) — optional"
+                        value={formatAmountInput(fund.gb_paid)}
+                        onChange={(e) => {
+                          const raw = e.target.value.replace(/,/g, '')
+                          if (raw !== '' && !/^\d*\.?\d*$/.test(raw)) return
+                          // Preserve in-progress decimal typing (e.g. "100."); only clamp once it actually exceeds the cap.
+                          const parsed = +raw
+                          const next = raw !== '' && !isNaN(parsed) && parsed > totalCost ? String(totalCost) : raw
+                          setFund({ ...fund, gb_paid: next })
+                        }}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-200/70">
+                      <span className="text-slate-500 font-semibold">Remaining due (added)</span>
+                      <span className={`font-bold ${due > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{rs(due)}</span>
+                    </div>
+                  </>
+                )}
                 {walletAmt > 0 && gbAmt > 0 && (
                   <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-200/70">
                     <span className="text-slate-600 font-semibold">Total Amount</span>
@@ -817,6 +853,20 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
                   placeholder="e.g. 100.00"
                   value={editForm.gb_rate}
                   onChange={(e) => setEditForm({ ...editForm, gb_rate: e.target.value })}
+                />
+              </div>
+            )}
+
+            {user?.role === 'admin' && role === 'reseller' && (
+              <div className="md:col-span-2">
+                <label className="text-xs font-bold text-slate-500 block mb-1.5">Commission % (Admin's cut of each voucher sale)</label>
+                <input
+                  className="input no-spinners"
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="e.g. 50"
+                  value={editForm.commission_percent}
+                  onChange={(e) => setEditForm({ ...editForm, commission_percent: e.target.value })}
                 />
               </div>
             )}

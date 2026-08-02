@@ -124,6 +124,10 @@ export default function FundModal({ open, onClose, onSuccess, defaultAllocType =
     return Math.max(roundTo2(gbCost - paid), 0)
   }, [gbCost, gbPaid])
 
+  // Admin→reseller loads are always free — the backend ignores paid_amount and
+  // never creates a due balance for this relationship, so don't offer the field.
+  const isFreeResellerAlloc = user?.role === 'admin' && targetUser?.role === 'reseller'
+
   // User balances check
   const isShortGb = useMemo(() => {
     if (allocType !== 'gb' || !gbAmount || !user) return false
@@ -146,7 +150,7 @@ export default function FundModal({ open, onClose, onSuccess, defaultAllocType =
         await api.post('/gb/allocate', {
           user_id: targetUser.id,
           gb_amount: parseFloat(gbAmount),
-          paid_amount: gbPaid ? parseFloat(gbPaid) : 0,
+          paid_amount: isFreeResellerAlloc ? 0 : (gbPaid ? parseFloat(gbPaid) : 0),
           note: gbNote || undefined
         })
         setSuccess(`Successfully allocated ${gb(gbAmount)} to ${targetUser.name}.`)
@@ -290,26 +294,34 @@ export default function FundModal({ open, onClose, onSuccess, defaultAllocType =
                       <span className="text-[10px] text-slate-400">@ {rs(targetUser.gb_rate)}/GB</span>
                     </div>
 
-                    <div className="relative">
-                      <Wallet size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                      <input
-                        className="input pl-10"
-                        type="number"
-                        min="0"
-                        max={gbCost}
-                        step="0.01"
-                        placeholder="Paid now (Rs) — optional"
-                        value={gbPaid}
-                        onChange={(e) => setGbPaid(e.target.value)}
-                      />
-                    </div>
+                    {isFreeResellerAlloc ? (
+                      <div className="text-xs font-semibold text-emerald-600 bg-emerald-50 border border-emerald-100 px-3 py-2 rounded-xl">
+                        Free — reseller allocations create no due balance. Admin's revenue comes from the commission cut on voucher sales instead.
+                      </div>
+                    ) : (
+                      <>
+                        <div className="relative">
+                          <Wallet size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                          <input
+                            className="input pl-10"
+                            type="number"
+                            min="0"
+                            max={gbCost}
+                            step="0.01"
+                            placeholder="Paid now (Rs) — optional"
+                            value={gbPaid}
+                            onChange={(e) => setGbPaid(e.target.value)}
+                          />
+                        </div>
 
-                    <div className="flex items-center justify-between text-xs pt-1.5 border-t border-slate-200/70">
-                      <span className="text-slate-500 font-semibold">Remaining Due (added to debt)</span>
-                      <span className={`font-bold ${remainingDue > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
-                        {rs(remainingDue)}
-                      </span>
-                    </div>
+                        <div className="flex items-center justify-between text-xs pt-1.5 border-t border-slate-200/70">
+                          <span className="text-slate-500 font-semibold">Remaining Due (added to debt)</span>
+                          <span className={`font-bold ${remainingDue > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                            {rs(remainingDue)}
+                          </span>
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
 

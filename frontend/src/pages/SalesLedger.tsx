@@ -140,12 +140,14 @@ export default function SalesLedger() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <GlassCard className="p-4 flex items-center justify-between">
           <div>
-            <p className="text-xs font-semibold text-slate-400">Total Invoiced Sales</p>
-            <p className="text-xl font-extrabold text-blue-600 mt-1">{rs(summary.total_invoiced)}</p>
+            <p className="text-xs font-semibold text-slate-400">Commission Earned</p>
+            <p className="text-xl font-extrabold text-indigo-600 mt-1">
+              {rs(user?.role === 'admin' ? summary.total_admin_commission : (summary.total_reseller_commission ?? summary.total_admin_commission ?? 0))}
+            </p>
             <p className="text-[11px] text-slate-400 mt-1 font-medium">{gb(summary.total_gb)} Allocated</p>
           </div>
-          <div className="w-12 h-12 rounded-2xl bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center shrink-0">
-            <TrendingUp size={22} />
+          <div className="w-12 h-12 rounded-2xl bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center shrink-0">
+            <DollarSign size={22} />
           </div>
         </GlassCard>
 
@@ -202,7 +204,7 @@ export default function SalesLedger() {
                 <th>Role</th>
                 <th>GB Rate</th>
                 <th>Total GB Sales</th>
-                <th>Invoiced Sales (Rs)</th>
+                <th>Commission Share (Rs)</th>
                 <th>Collected (Rs)</th>
                 <th>Outstanding Due (Rs)</th>
                 <th>Action</th>
@@ -222,7 +224,7 @@ export default function SalesLedger() {
                   </td>
                   <td className="font-mono text-xs">{rs(u.gb_rate)}/GB</td>
                   <td className="font-bold text-slate-700">{gb(u.total_gb_sales)}</td>
-                  <td className="font-bold text-blue-600">{rs(u.total_invoiced)}</td>
+                  <td className="font-bold text-indigo-600">{rs(u.role === 'admin' ? u.total_admin_share : u.total_reseller_share)}</td>
                   <td className="font-bold text-emerald-600">{rs(u.total_paid)}</td>
                   <td className="font-bold text-rose-600">{rs(u.wallet_due)}</td>
                   <td>

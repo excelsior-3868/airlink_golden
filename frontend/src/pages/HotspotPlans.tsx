@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { motion } from 'framer-motion'
-import { Plus, Package, Pencil, Trash2, Wifi } from 'lucide-react'
+import { Plus, Package, Pencil, Trash2, Wifi, RotateCcw } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useQuery, invalidateCache } from '../lib/cache'
 import { useAuth } from '../lib/auth'
@@ -106,6 +106,18 @@ export default function HotspotPlans() {
   const [bandwidthFilter, setBandwidthFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
   const [validityFilter, setValidityFilter] = useState('all')
+
+  const isFiltered = ownerFilter !== 'all' || typeFilter !== 'all' || nasFilter !== 'all' || macFilter !== 'all' || bandwidthFilter !== 'all' || statusFilter !== 'all' || validityFilter !== 'all'
+
+  const clearFilters = () => {
+    setOwnerFilter('all')
+    setTypeFilter('all')
+    setNasFilter('all')
+    setMacFilter('all')
+    setBandwidthFilter('all')
+    setStatusFilter('all')
+    setValidityFilter('all')
+  }
 
   const typeFilterOptions: SelectOption[] = [
     { value: 'all', label: 'All Types' },
@@ -276,7 +288,7 @@ export default function HotspotPlans() {
       <PageTitle
         title="Hotspot Plans"
         subtitle="Voucher-based hotspot packages"
-        icon={<Package size={22} className="text-indigo-500" />}
+        icon={<Wifi size={22} className="text-sky-500" />}
         action={
           <motion.button
             whileTap={{ scale: 0.95 }}
@@ -339,13 +351,26 @@ export default function HotspotPlans() {
         </div>
       )}
 
-      <div className="mb-6 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 bg-slate-50/70 p-3.5 rounded-xl border border-slate-200/60">
+      <div className="mb-6 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3 bg-slate-50/70 p-3.5 rounded-xl border border-slate-200/60 items-center">
         <CustomSelect value={typeFilter} onChange={setTypeFilter} options={typeFilterOptions} />
         <CustomSelect value={nasFilter} onChange={setNasFilter} options={yesNoOptions('NAS')} />
         <CustomSelect value={macFilter} onChange={setMacFilter} options={yesNoOptions('MAC Bind')} />
         <CustomSelect value={bandwidthFilter} onChange={setBandwidthFilter} options={bandwidthFilterOptions} />
         <CustomSelect value={statusFilter} onChange={setStatusFilter} options={statusFilterOptions} />
         <CustomSelect value={validityFilter} onChange={setValidityFilter} options={validityFilterOptions} />
+        <button
+          onClick={clearFilters}
+          disabled={!isFiltered}
+          className={`flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl border transition-all h-[38px] whitespace-nowrap ${
+            isFiltered
+              ? 'bg-rose-50 text-rose-600 border-rose-200/80 hover:bg-rose-100 hover:text-rose-700 shadow-xs cursor-pointer'
+              : 'bg-slate-100/60 text-slate-400 border-slate-200/60 cursor-not-allowed opacity-60'
+          }`}
+          title="Clear Filters"
+        >
+          <RotateCcw size={14} />
+          Clear Filters
+        </button>
       </div>
 
       <GlassCard className="!p-0 overflow-hidden">

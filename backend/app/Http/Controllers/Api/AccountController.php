@@ -122,9 +122,10 @@ class AccountController extends Controller
 
         // Voucher Sales Query — cards sold by a reseller directly, or by one of
         // their sellers. Attributed to seller_id when set, else reseller_id.
-        // Vouchers are treated as fully paid at sale (cash collected from the
-        // end customer up front), so they add straight to invoiced + paid,
-        // never to wallet_due.
+        // Only the reseller/seller's own cut (reseller_share) counts as paid —
+        // they already pocketed that cash from the end customer. The admin_share
+        // is owed up the chain and stays in wallet_due until a real Payment is
+        // recorded, even though it's auto-credited into the admin's wallet balance.
         $voucherQuery = Voucher::query()
             ->whereIn('status', ['sold', 'active', 'used', 'expired'])
             ->where(function ($q) use ($userIds) {
@@ -154,7 +155,20 @@ class AccountController extends Controller
             $totalPaid = (float) $uPayments->sum('amount');
             $totalVoucherSales = (float) $uVouchers->sum('price');
             $totalVoucherGb = (float) $uVouchers->sum('data_gb');
-            $due = (float) $u->wallet_due;
+            // Commission columns are null for vouchers sold before this feature —
+            // fall back to the full price going to the reseller/seller (0% admin cut),
+            // matching what actually happened for those historical sales.
+            $totalAdminShare = (float) $uVouchers->sum(fn ($v) => $v->admin_share ?? 0.0);
+            $totalResellerShare = (float) $uVouchers->sum(fn ($v) => $v->reseller_share ?? (float) $v->price);
+            // The reseller/seller's own cut never touches the admin's books at all —
+            // it's their retail profit, not something owed to or collected by admin.
+            // Only admin_share is a receivable. Outstanding commission is read from
+            // the persisted commission_due balance (kept in sync by VoucherController
+            // @sell and PaymentService@collectCommission) rather than recomputed from
+            // this request's date-filtered vouchers/payments, which would drift
+            // whenever a from/to date filter is applied.
+            $totalInvoicedAll = $totalInvoiced + $totalVoucherSales;
+            $due = (float) $u->commission_due;
 
             return [
                 'id' => $u->id,
@@ -163,10 +177,13 @@ class AccountController extends Controller
                 'role' => $u->role,
                 'parent_id' => $u->parent_id,
                 'gb_rate' => (float) $u->gb_rate,
+                'commission_percent' => (float) $u->commission_percent,
                 'total_gb_sales' => $totalGb + $totalVoucherGb,
                 'total_voucher_sales' => $totalVoucherSales,
-                'total_invoiced' => $totalInvoiced + $totalVoucherSales,
-                'total_paid' => $totalPaid + $totalVoucherSales,
+                'total_admin_share' => $totalAdminShare,
+                'total_reseller_share' => $totalResellerShare,
+                'total_invoiced' => $totalInvoicedAll,
+                'total_paid' => $totalPaid,
                 'wallet_due' => $due,
                 'invoices_count' => $uInvoices->count(),
                 'payments_count' => $uPayments->count(),
@@ -193,9 +210,9 @@ class AccountController extends Controller
                 'paid_amount' => (float) $inv->paid_amount,
                 'due_amount' => (float) ($inv->total_amount - $inv->paid_amount),
                 'status' => strtoupper($inv->status),
-                'date' => $inv->created_at->toIso8601String(),
-                'created_at' => $inv->created_at->toIso8601String(),
-                'note' => "GB Allocation ({$inv->gb_amount} GB)",
+                'created_at' => $inv->created_at ? $inv->created_at->toDateTimeString() : now()->toDateTimeString(),
+                'date' => $inv->invoice_date ?? ($inv->created_at ? $inv->created_at->toDateString() : date('Y-m-d')),
+                'note' => $inv->notes ?? "GB Allocation ({$inv->gb_amount} GB)",
             ]);
         }
 
@@ -203,8 +220,8 @@ class AccountController extends Controller
             $ledgerItems->push([
                 'id' => "pay-{$pay->id}",
                 'type' => 'payment',
-                'title' => 'Payment Received',
-                'reference' => "PAY-{$pay->id}",
+                'title' => "Payment Collection ({$pay->payment_method})",
+                'reference' => $pay->reference_number ?? "PAY-{$pay->id}",
                 'party_name' => $pay->sender->name ?? $pay->sender->username ?? 'User',
                 'user_name' => $pay->sender->name ?? $pay->sender->username ?? 'User',
                 'user_role' => $pay->sender->role ?? '',
@@ -226,6 +243,10 @@ class AccountController extends Controller
             $ownerId = $v->seller_id ?? $v->reseller_id;
             $planName = $v->plan->name ?? 'Package';
             $customer = $v->customer_username ?: 'Walk-in Customer';
+            // Null on vouchers sold before this feature — treat as 0% admin cut,
+            // matching what actually happened for those historical sales.
+            $adminShare = (float) ($v->admin_share ?? 0.0);
+            $resellerShare = (float) ($v->reseller_share ?? $v->price);
 
             $ledgerItems->push([
                 'id' => "vch-{$v->id}",
@@ -238,10 +259,16 @@ class AccountController extends Controller
                 'user_id' => $ownerId,
                 'amount' => (float) $v->price,
                 'invoiced' => (float) $v->price,
-                'paid' => (float) $v->price,
-                'paid_amount' => (float) $v->price,
-                'due_amount' => 0.00,
-                'status' => 'PAID',
+                // Only the reseller/seller's own cut is settled at sale time — the
+                // admin_share is owed up the chain until a real Payment is recorded,
+                // even though it was already auto-credited into the admin's wallet.
+                'paid' => $resellerShare,
+                'paid_amount' => $resellerShare,
+                'due_amount' => $adminShare,
+                'admin_share' => $adminShare,
+                'reseller_share' => $resellerShare,
+                'commission_percent' => (float) ($v->commission_percent ?? 0.0),
+                'status' => $adminShare > 0 ? 'PARTIAL' : 'PAID',
                 'date' => ($v->sold_at ?? $v->created_at)->toIso8601String(),
                 'created_at' => ($v->sold_at ?? $v->created_at)->toIso8601String(),
                 'note' => "Voucher Sale ({$planName}) to {$customer}",
@@ -249,8 +276,9 @@ class AccountController extends Controller
         }
 
         // Calculate running balance chronologically. Every item now carries both
-        // 'invoiced' and 'paid' (zero where not applicable), so a fully-settled
-        // item (invoiced === paid, e.g. a voucher sale) nets to no due change.
+        // 'invoiced' and 'paid' (zero where not applicable) — a fully-settled
+        // item (invoiced === paid) nets to no due change, while a voucher sale
+        // (paid = reseller_share only) leaves its admin_share as running debt.
         $chronologicalItems = $ledgerItems->sortBy('created_at')->values();
         $running = 0.0;
         $itemsWithBalance = $chronologicalItems->map(function ($item) use (&$running) {
@@ -269,8 +297,10 @@ class AccountController extends Controller
 
         $overallTotalInvoiced = (float) $userSummaries->sum('total_invoiced');
         $overallTotalPaid = (float) $userSummaries->sum('total_paid');
-        $overallTotalDue = (float) $users->sum('wallet_due');
+        $overallTotalDue = (float) $userSummaries->sum('wallet_due');
         $overallTotalGb = (float) $userSummaries->sum('total_gb_sales');
+        $overallAdminCommission = (float) $userSummaries->sum('total_admin_share');
+        $overallResellerCommission = (float) $userSummaries->sum('total_reseller_share');
 
         return $this->ok([
             'summary' => [
@@ -278,6 +308,8 @@ class AccountController extends Controller
                 'total_paid' => $overallTotalPaid,
                 'total_due' => $overallTotalDue,
                 'total_gb' => $overallTotalGb,
+                'total_admin_commission' => $overallAdminCommission,
+                'total_reseller_commission' => $overallResellerCommission,
                 'reseller_count' => $userSummaries->where('role', 'reseller')->count(),
                 'seller_count' => $userSummaries->where('role', 'seller')->count(),
             ],
@@ -289,6 +321,114 @@ class AccountController extends Controller
                 'last_page' => max(1, (int) ceil($total / $perPage)),
                 'data' => $pagedData,
             ],
+        ]);
+    }
+
+    /**
+     * Commission earned vs. actually collected, grouped by day/week/month/year.
+     * "Earned" comes from vouchers.admin_share (accrued at sale time).
+     * "Collected" comes from real Payment rows of type='commission'
+     * (PaymentService@collectCommission) — never from the automatic wallet
+     * credit, which is a bookkeeping accrual, not a settlement.
+     */
+    public function commissionReport(Request $request): JsonResponse
+    {
+        $actor = $request->user();
+        $groupBy = in_array($request->query('group_by'), ['weekly', 'monthly', 'yearly']) ? $request->query('group_by') : 'daily';
+        $targetUserId = $request->query('user_id');
+
+        $userQuery = User::query();
+        if ($actor->isAdmin()) {
+            if ($targetUserId) {
+                $userQuery->where('id', (int) $targetUserId);
+            } else {
+                $userQuery->where('role', 'reseller');
+            }
+        } elseif ($actor->isReseller()) {
+            $userQuery->where('id', $actor->id);
+        } else {
+            $userQuery->where('id', -1); // Sellers never carry commission_due.
+        }
+        $userIds = $userQuery->pluck('id')->all();
+
+        [$dateExpr, $periods] = match ($groupBy) {
+            'yearly' => ["DATE_FORMAT(%s, '%%Y')", collect(range(4, 0))->map(fn ($i) => now()->subYears($i)->format('Y'))],
+            'monthly' => ["DATE_FORMAT(%s, '%%Y-%%m')", collect(range(11, 0))->map(fn ($i) => now()->subMonths($i)->format('Y-m'))],
+            // ISO year-week (Monday-start) — matches PHP's 'o'/'W' format so trailing-window
+            // labels line up with MySQL's %x/%v for the same week.
+            'weekly' => ["DATE_FORMAT(%s, '%%x-W%%v')", collect(range(11, 0))->map(fn ($i) => now()->subWeeks($i)->format('o-\WW'))],
+            default => ['DATE(%s)', collect(range(29, 0))->map(fn ($i) => now()->subDays($i)->toDateString())],
+        };
+
+        $fromDate = $request->query('from_date');
+        $toDate = $request->query('to_date');
+
+        $earnedQuery = Voucher::query()
+            ->whereIn('reseller_id', $userIds)
+            ->whereNotNull('sold_at')
+            ->whereNotNull('admin_share');
+        if ($fromDate) {
+            $earnedQuery->whereDate('sold_at', '>=', $fromDate);
+        }
+        if ($toDate) {
+            $earnedQuery->whereDate('sold_at', '<=', $toDate);
+        }
+        $earnedByPeriod = $earnedQuery
+            ->selectRaw(sprintf($dateExpr, 'sold_at') . ' as period, SUM(admin_share) as total')
+            ->groupBy('period')
+            ->pluck('total', 'period');
+
+        $collectedQuery = Payment::query()
+            ->whereIn('sender_id', $userIds)
+            ->where('type', 'commission');
+        if ($fromDate) {
+            $collectedQuery->whereDate('payment_date', '>=', $fromDate);
+        }
+        if ($toDate) {
+            $collectedQuery->whereDate('payment_date', '<=', $toDate);
+        }
+        $collectedByPeriod = $collectedQuery
+            ->selectRaw(sprintf($dateExpr, 'payment_date') . ' as period, SUM(amount) as total')
+            ->groupBy('period')
+            ->pluck('total', 'period');
+
+        // When an explicit date range is given, report every period it touches
+        // instead of the default trailing window.
+        $periodKeys = ($fromDate || $toDate)
+            ? $earnedByPeriod->keys()->merge($collectedByPeriod->keys())->unique()->sort()->values()
+            : $periods;
+
+        $rows = $periodKeys->map(fn ($period) => [
+            'period' => $period,
+            'earned' => (float) ($earnedByPeriod[$period] ?? 0),
+            'collected' => (float) ($collectedByPeriod[$period] ?? 0),
+        ])->values();
+
+        $outstanding = (float) User::whereIn('id', $userIds)->sum('commission_due');
+
+        // Per-reseller breakdown, so the admin can collect against a specific
+        // account directly from this report. Not date-filtered — commission_due
+        // is a live balance, and total_earned_all_time gives context for it.
+        $byReseller = $actor->isAdmin()
+            ? User::whereIn('id', $userIds)->get(['id', 'name', 'username', 'commission_due'])
+                ->map(fn ($u) => [
+                    'id' => $u->id,
+                    'name' => $u->name,
+                    'username' => $u->username,
+                    'commission_due' => (float) $u->commission_due,
+                    'total_earned_all_time' => (float) Voucher::where('reseller_id', $u->id)->sum('admin_share'),
+                ])
+                ->sortByDesc('commission_due')
+                ->values()
+            : [];
+
+        return $this->ok([
+            'group_by' => $groupBy,
+            'rows' => $rows,
+            'by_reseller' => $byReseller,
+            'total_earned' => (float) $rows->sum('earned'),
+            'total_collected' => (float) $rows->sum('collected'),
+            'total_outstanding' => $outstanding,
         ]);
     }
 

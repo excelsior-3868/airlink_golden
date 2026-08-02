@@ -9,6 +9,7 @@ use App\Models\Voucher;
 use App\Services\RadiusService;
 use App\Services\VoucherCardService;
 use App\Services\VoucherService;
+use App\Services\WalletService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -22,6 +23,7 @@ class VoucherController extends Controller
         private VoucherService $vouchers,
         private RadiusService $radius,
         private VoucherCardService $cards,
+        private WalletService $wallet,
     ) {}
 
     public function generate(Request $request): JsonResponse
@@ -363,13 +365,41 @@ class VoucherController extends Controller
             'customer_username' => ['nullable', 'string', 'max:255'],
         ]);
 
-        $voucher->update([
-            'status' => 'sold',
-            'sold_at' => now(),
-            'customer_username' => $data['customer_username'] ?? $voucher->customer_username,
-        ]);
+        DB::transaction(function () use ($voucher, $data) {
+            $reseller = $voucher->reseller_id ? User::find($voucher->reseller_id) : null;
+            $percent = $reseller ? (float) $reseller->commission_percent : 0.0;
+            $price = (float) $voucher->price;
+            $adminShare = round($price * $percent / 100, 2);
+            $resellerShare = round($price - $adminShare, 2);
 
-        return $this->ok($voucher, 'Voucher marked as sold.');
+            $voucher->update([
+                'status' => 'sold',
+                'sold_at' => now(),
+                'customer_username' => $data['customer_username'] ?? $voucher->customer_username,
+                'commission_percent' => $percent,
+                'admin_share' => $adminShare,
+                'reseller_share' => $resellerShare,
+            ]);
+
+            // Credit the admin's share of this sale straight into their wallet.
+            // Attributed via the reseller's own parent, not a hardcoded root admin,
+            // so this stays correct in a multi-admin setup.
+            if ($adminShare > 0 && $reseller && $reseller->parent_id) {
+                $admin = User::find($reseller->parent_id);
+                if ($admin && $admin->isAdmin()) {
+                    $this->wallet->credit(
+                        $admin, $adminShare, 'commission', $voucher->code,
+                        "Commission on voucher {$voucher->code} sale ({$percent}%)"
+                    );
+                    // The wallet credit above is an internal accrual — the reseller
+                    // hasn't actually remitted this cash yet, so it stays on their
+                    // books as owed until a real settlement is recorded.
+                    $reseller->increment('commission_due', $adminShare);
+                }
+            }
+        });
+
+        return $this->ok($voucher->fresh(), 'Voucher marked as sold.');
     }
 
     /** Redeem a voucher to load GB balance (reseller/seller). Consumes the voucher. */
@@ -439,6 +469,9 @@ class VoucherController extends Controller
         $q = Voucher::query();
         if ($actor->isReseller()) {
             $q->where('reseller_id', $actor->id);
+            if (! $this->isFullAccessToken($actor)) {
+                $q->where('owner_id', $actor->id);
+            }
         } elseif ($actor->isSeller()) {
             $q->where('seller_id', $actor->id);
         }
@@ -448,8 +481,17 @@ class VoucherController extends Controller
 
     private function canAccess(User $actor, Voucher $v): bool
     {
-        return $actor->isAdmin()
-            || ($actor->isReseller() && $v->reseller_id === $actor->id)
-            || ($actor->isSeller() && $v->seller_id === $actor->id);
+        if ($actor->isAdmin()) {
+            return true;
+        }
+        if ($actor->isReseller()) {
+            if (! $this->isFullAccessToken($actor)) {
+                return $v->owner_id === $actor->id;
+            }
+
+            return $v->reseller_id === $actor->id;
+        }
+
+        return $actor->isSeller() && $v->seller_id === $actor->id;
     }
 }

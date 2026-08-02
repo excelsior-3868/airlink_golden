@@ -38,11 +38,9 @@ class DashboardController extends Controller
             'wallet_distributed' => (float) WalletTransaction::where('type', 'load')->sum('amount'),
             'gb_distributed' => (float) DB::table('gb_transactions')->where('type', 'allocate')->where('from_user_id', $admin->id)->sum('gb_amount'),
             'vouchers' => $this->voucherBreakdown(Voucher::query()),
-            'revenue' => (float) Invoice::where('sender_id', $admin->id)->sum('total_amount'),
-            'outstanding_due' => (float) User::where('role', 'reseller')->sum('wallet_due'),
-            'online' => $this->onlineCount(),
-            'offline' => max(0, Voucher::where('status', 'active')->count() - $this->onlineCount()),
-            'top_resellers' => $this->topByVoucherSales('reseller_id'),
+            'commission_earned' => (float) WalletTransaction::where('user_id', $admin->id)->where('type', 'commission')->sum('amount'),
+            'commission_today' => (float) WalletTransaction::where('user_id', $admin->id)->where('type', 'commission')->whereDate('created_at', now()->toDateString())->sum('amount'),
+            'top_resellers' => $this->topByVoucherSales('reseller_id', null, true),
             'recent_transactions' => WalletTransaction::with(['user', 'fromUser', 'toUser'])->latest()->limit(5)->get()->map(fn($t) => [
                 'id' => $t->id,
                 'user' => $t->user?->username,
@@ -181,6 +179,9 @@ class DashboardController extends Controller
             'vouchers' => $this->voucherBreakdown(Voucher::where('reseller_id', $reseller->id)),
             'sales' => $totalSales,
             'outstanding_due' => (float) User::where('parent_id', $reseller->id)->sum('wallet_due'),
+            'commission_percent' => (float) $reseller->commission_percent,
+            'commission_paid' => (float) Voucher::where('reseller_id', $reseller->id)->whereNotNull('admin_share')->sum('admin_share'),
+            'commission_net_earnings' => (float) Voucher::where('reseller_id', $reseller->id)->whereNotNull('reseller_share')->sum('reseller_share'),
             'top_sellers' => $this->topByVoucherSales('seller_id', $sellerIds),
             'recent_wallet_transfers' => $mergedTransactions,
         ];
@@ -261,26 +262,35 @@ class DashboardController extends Controller
         ];
     }
 
-    private function onlineCount(): int
+    private function topByVoucherSales(string $column, $restrictIds = null, bool $includeCommission = false): array
     {
-        return (int) DB::table('radacct')->whereNull('acctstoptime')->distinct()->count('username');
-    }
+        $selects = [$column, DB::raw('count(*) as vouchers'), DB::raw('sum(price) as revenue')];
+        if ($includeCommission) {
+            $selects[] = DB::raw('sum(admin_share) as commission');
+        }
 
-    private function topByVoucherSales(string $column, $restrictIds = null): array
-    {
         $q = Voucher::query()->whereNotNull($column)
-            ->select($column, DB::raw('count(*) as vouchers'), DB::raw('sum(price) as revenue'))
+            ->select($selects)
             ->groupBy($column)->orderByDesc('revenue')->limit(5);
         if ($restrictIds !== null) {
             $q->whereIn($column, $restrictIds);
         }
         $rows = $q->get();
-        $names = User::whereIn('id', $rows->pluck($column))->pluck('username', 'id');
+        $users = User::whereIn('id', $rows->pluck($column))->get(['id', 'username', 'commission_percent'])->keyBy('id');
 
-        return $rows->map(fn ($r) => [
-            'user' => $names[$r->$column] ?? "#{$r->$column}",
-            'vouchers' => (int) $r->vouchers,
-            'revenue' => (float) $r->revenue,
-        ])->all();
+        return $rows->map(function ($r) use ($column, $users, $includeCommission) {
+            $user = $users[$r->$column] ?? null;
+            $item = [
+                'user' => $user->username ?? "#{$r->$column}",
+                'vouchers' => (int) $r->vouchers,
+                'revenue' => (float) $r->revenue,
+            ];
+            if ($includeCommission) {
+                $item['commission'] = (float) ($r->commission ?? 0);
+                $item['commission_percent'] = $user ? (float) $user->commission_percent : 0.0;
+            }
+
+            return $item;
+        })->all();
     }
 }

@@ -20,6 +20,11 @@ class WalletService
      * remainder ($amount - $paidAmount) is added to their wallet_due. When
      * $paidAmount is null the load is treated as fully settled (no due),
      * which preserves the original debt-free transfer behavior.
+     *
+     * Admin→reseller loads are always free: the admin's revenue comes from
+     * their commission cut of voucher sales instead, so no due/IOU or
+     * Payment record is created for this specific relationship regardless
+     * of what $paidAmount is passed.
      */
     public function transfer(User $from, User $to, float $amount, string $type = 'load', ?string $note = null, ?string $reference = null, ?float $paidAmount = null): void
     {
@@ -36,7 +41,8 @@ class WalletService
             throw ValidationException::withMessages(['user_id' => 'You can only load/transfer to your own direct downline.']);
         }
 
-        $paidAmount ??= $amount;
+        $isFreeReseller = $from->role === 'admin' && $to->role === 'reseller';
+        $paidAmount = $isFreeReseller ? $amount : ($paidAmount ?? $amount);
         if ($paidAmount < 0) {
             throw ValidationException::withMessages(['paid_amount' => 'Paid amount cannot be negative.']);
         }
@@ -44,7 +50,7 @@ class WalletService
             throw ValidationException::withMessages(['paid_amount' => "Paid amount Rs {$paidAmount} cannot exceed the loaded amount of Rs {$amount}."]);
         }
 
-        DB::transaction(function () use ($from, $to, $amount, $type, $note, $reference, $paidAmount) {
+        DB::transaction(function () use ($from, $to, $amount, $type, $note, $reference, $paidAmount, $isFreeReseller) {
             // Lock both rows to prevent concurrent double-spend.
             $sender = User::whereKey($from->id)->lockForUpdate()->first();
             $receiver = User::whereKey($to->id)->lockForUpdate()->first();
@@ -77,7 +83,8 @@ class WalletService
             ]);
 
             // Record the upfront settlement as a payment (receiver pays the sender).
-            if ($paidAmount > 0) {
+            // Skipped for free admin→reseller loads: no real payment occurred.
+            if ($paidAmount > 0 && !$isFreeReseller) {
                 Payment::create([
                     'sender_id' => $receiver->id,
                     'receiver_id' => $sender->id,
@@ -122,6 +129,18 @@ class WalletService
                 'note' => $note ?? "Refund from {$t->username}",
             ]);
         });
+    }
+
+    /** Credit money into $user's wallet (e.g. admin's commission share on a voucher sale). */
+    public function credit(User $user, float $amount, string $type, string $reference, ?string $note = null): void
+    {
+        $u = User::whereKey($user->id)->lockForUpdate()->first();
+        $u->increment('wallet_balance', $amount);
+        $u->refresh();
+        WalletTransaction::create([
+            'user_id' => $u->id, 'type' => $type, 'amount' => $amount,
+            'balance_after' => $u->wallet_balance, 'reference' => $reference, 'note' => $note,
+        ]);
     }
 
     /** Deduct money for voucher generation (used by VoucherService in M3). */

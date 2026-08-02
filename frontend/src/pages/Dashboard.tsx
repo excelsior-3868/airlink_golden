@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Wallet, Database, Users2, Store, Ticket, TrendingUp, Wifi, WifiOff, History, UserCheck, LayoutDashboard, CreditCard, PlusCircle, Package, UserPlus, Receipt, Coins, Sparkles, Layers, Activity, BarChart3 } from 'lucide-react'
+import { Wallet, Database, Users2, Store, Ticket, TrendingUp, History, UserCheck, LayoutDashboard, CreditCard, PlusCircle, Package, UserPlus, Receipt, Coins, Sparkles, Layers, Activity, BarChart3 } from 'lucide-react'
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { api } from '../lib/api'
 import { useQuery } from '../lib/cache'
@@ -76,14 +76,20 @@ export default function Dashboard() {
       {d.role === 'admin' && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatCard label="Today's Sales" value={<span className="text-emerald-600">{rs(d.today_sales)}</span>} icon={<TrendingUp size={22} />} iconColorClass="text-emerald-600 bg-emerald-50 border border-emerald-100/50" />
+            <StatCard label="Wallet Balance" value={<span className="text-emerald-600">{rs(d.balances.wallet)}</span>} icon={<Wallet size={22} />} iconColorClass="text-emerald-600 bg-emerald-50 border border-emerald-100/50" />
+            <StatCard label="GB Balance" value={<span className="text-cyan-600">{gb(d.balances.gb)}</span>} icon={<Database size={22} />} iconColorClass="text-cyan-600 bg-cyan-50 border border-cyan-100/50" />
             <StatCard label="Wallet Distributed" value={<span className="text-blue-600">{rs(d.wallet_distributed)}</span>} icon={<Wallet size={22} />} iconColorClass="text-blue-600 bg-blue-50 border border-blue-100/50" />
             <StatCard label="GB Distributed" value={<span className="text-purple-600">{gb(d.gb_distributed)}</span>} icon={<Database size={22} />} iconColorClass="text-purple-600 bg-purple-50 border border-purple-100/50" />
-            <StatCard label="Outstanding Reseller Due" value={<span className="text-rose-600">{rs(d.outstanding_due)}</span>} icon={<Wallet size={22} />} iconColorClass="text-rose-600 bg-rose-50 border border-rose-100/50" />
-            <StatCard label="Online Users" value={<span className="text-sky-600">{num(d.online)}</span>} icon={<Wifi size={22} />} iconColorClass="text-sky-600 bg-sky-50 border border-sky-100/50" />
-            <StatCard label="Offline Users" value={<span className="text-slate-600">{num(d.offline)}</span>} icon={<WifiOff size={22} />} iconColorClass="text-slate-500 bg-slate-50 border border-slate-200/50" />
+            <StatCard
+              label="Commission Earned"
+              value={<span className="text-amber-600">{rs(d.commission_earned)}</span>}
+              icon={<Coins size={22} />}
+              iconColorClass="text-amber-600 bg-amber-50 border border-amber-100/50"
+              sub={<span>Today: <strong className="text-slate-700">{rs(d.commission_today)}</strong></span>}
+            />
             <VoucherStatCard title="Total Vouchers" vouchers={d.vouchers} icon={<Ticket size={22} />} iconColorClass="text-rose-600 bg-rose-50 border border-rose-100/50" />
-            <StatCard label="Sales Revenue (All-Time)" value={<span className="text-teal-600">{rs(d.revenue)}</span>} icon={<TrendingUp size={22} />} iconColorClass="text-teal-600 bg-teal-50 border border-teal-100/50" />
+            <StatCard label="Total Resellers" value={<span className="text-indigo-600">{num(d.counts?.resellers || 0)}</span>} icon={<Users2 size={22} />} iconColorClass="text-indigo-600 bg-indigo-50 border border-indigo-100/50" />
+            <StatCard label="Total Sellers" value={<span className="text-pink-600">{num(d.counts?.sellers || 0)}</span>} icon={<Store size={22} />} iconColorClass="text-pink-600 bg-pink-50 border border-pink-100/50" />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -100,7 +106,7 @@ export default function Dashboard() {
                       <div key={i} className="flex items-center justify-between text-sm hover:bg-secondary/20 p-2 rounded-lg transition-colors">
                         <span className="font-semibold text-slate-700">{t.user}</span>
                         <span className="text-slate-500 font-medium">
-                          {num(t.vouchers)} vouchers · <span className="text-primary font-bold">{rs(t.revenue)}</span>
+                          {num(t.vouchers)} vouchers · <span className="text-primary font-bold">{rs(t.revenue)}</span> · <span className="text-amber-600 font-bold">{t.commission_percent}% → {rs(t.commission)}</span>
                         </span>
                       </div>
                     ))}
@@ -149,20 +155,20 @@ export default function Dashboard() {
               iconColorClass="text-cyan-600 bg-cyan-50 border border-cyan-100/50"
               sub={<span>Purchased: <strong className="text-slate-700">{gb(d.gb_purchased)}</strong></span>}
             />
-            <StatCard label="My Wallet Due (Payable)" value={<span className="text-rose-600">{rs(d.balances.wallet_due)}</span>} icon={<Wallet size={22} />} iconColorClass="text-rose-600 bg-rose-50 border border-rose-100/50" />
-            <StatCard 
-              label="GB Allocated to Sellers" 
-              value={<span className="text-purple-600">{gb(d.gb_allocated)}</span>} 
-              icon={<Database size={22} />} 
-              iconColorClass="text-purple-600 bg-purple-50 border border-purple-100/50" 
+            <StatCard
+              label="GB Allocated to Sellers"
+              value={<span className="text-purple-600">{gb(d.gb_allocated)}</span>}
+              icon={<Database size={22} />}
+              iconColorClass="text-purple-600 bg-purple-50 border border-purple-100/50"
               sub={<span>Sellers: <strong className="text-slate-700">{num(d.counts.sellers)}</strong></span>}
             />
             <StatCard label="Revenue from Sellers" value={<span className="text-emerald-600">{rs(d.revenue_sellers)}</span>} icon={<TrendingUp size={22} />} iconColorClass="text-emerald-600 bg-emerald-50 border border-emerald-100/50" />
-            
+
             <VoucherStatCard title="Total Vouchers" vouchers={d.vouchers} icon={<Ticket size={22} />} iconColorClass="text-rose-600 bg-rose-50 border border-rose-100/50" />
             <StatCard label="Voucher Sales" value={<span className="text-blue-600">{rs(d.voucher_sales)}</span>} icon={<TrendingUp size={22} />} iconColorClass="text-blue-600 bg-blue-50 border border-blue-100/50" />
-            <StatCard label="Retail Profit" value={<span className="text-teal-600">{rs(d.retail_profit)}</span>} icon={<TrendingUp size={22} />} iconColorClass="text-teal-600 bg-teal-50 border border-teal-100/50" />
             <StatCard label="Packages" value={<span className="text-amber-600">{num(d.counts.packages)}</span>} icon={<Package size={22} />} iconColorClass="text-amber-600 bg-amber-50 border border-amber-100/50" />
+            <StatCard label="Commission Paid to Admin" value={<span className="text-orange-600">{rs(d.commission_paid)} <span className="text-sm font-medium text-orange-400">({d.commission_percent}%)</span></span>} icon={<Receipt size={22} />} iconColorClass="text-orange-600 bg-orange-50 border border-orange-100/50" />
+            <StatCard label="Net Earnings (After Commission)" value={<span className="text-lime-600">{rs(d.commission_net_earnings)}</span>} icon={<Sparkles size={22} />} iconColorClass="text-lime-600 bg-lime-50 border border-lime-100/50" />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

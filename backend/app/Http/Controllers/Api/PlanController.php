@@ -27,15 +27,23 @@ class PlanController extends Controller
         $actor = $request->user();
         if ($actor && !$actor->isAdmin()) {
             if ($actor->isReseller()) {
-                $query->where(function ($q) use ($actor) {
+                // A scoped third-party integration token (e.g. Trekkers Inn's) is bound to
+                // exactly one reseller account — it must never reach into that reseller's own
+                // downline sellers' individually-created plans, same restriction as
+                // VoucherController::scopedQuery. The reseller's own SPA session (['*']) still
+                // sees its whole downline's plans, unchanged.
+                $includeDownline = $this->isFullAccessToken($actor);
+                $query->where(function ($q) use ($actor, $includeDownline) {
                     $q->whereNull('created_by')
                       ->orWhere('created_by', $actor->id)
                       ->orWhereIn('created_by', function ($sub) {
                           $sub->select('id')->from('users')->where('role', 'admin');
-                      })
-                      ->orWhereIn('created_by', function ($sub) use ($actor) {
-                          $sub->select('id')->from('users')->where('parent_id', $actor->id);
                       });
+                    if ($includeDownline) {
+                        $q->orWhereIn('created_by', function ($sub) use ($actor) {
+                            $sub->select('id')->from('users')->where('parent_id', $actor->id);
+                        });
+                    }
                 });
             } else if ($actor->isSeller()) {
                 $query->where('package_type', '!=', 'wallet')

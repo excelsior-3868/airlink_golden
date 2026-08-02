@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Plus, Pencil, Trash2, Search, Package } from 'lucide-react'
+import { Plus, Pencil, Trash2, Search, Package, Gauge } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useQuery, invalidateCache } from '../lib/cache'
 import { useAuth } from '../lib/auth'
@@ -84,7 +84,7 @@ export default function Bandwidths() {
       <PageTitle
         title="Bandwidth Plans"
         subtitle="Configure download and upload rate limits"
-        icon={<Package size={22} className="text-indigo-500" />}
+        icon={<Gauge size={22} className="text-violet-500" />}
         action={
           isAdmin && (
             <motion.button

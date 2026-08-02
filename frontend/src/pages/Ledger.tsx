@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import {
   BookOpen, Receipt, ArrowLeftRight, TrendingUp, Wallet, DollarSign,
   Plus, Filter, RefreshCw, Search, Users, FileText, CheckCircle2, AlertCircle,
-  Database, HandCoins, ArrowUpRight, ArrowDownLeft, Trash2, Edit3, Tag, Calendar, UserCheck, Activity
+  Database, HandCoins, ArrowUpRight, ArrowDownLeft, Trash2, Edit3, Tag, Calendar, UserCheck, Activity,
+  HandCoins as CollectIcon, PiggyBank,
 } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useQuery, invalidateCache } from '../lib/cache'
@@ -15,7 +17,7 @@ import { DualDatePicker } from '../components/DualDatePicker'
 import RadiusLogs from './RadiusLogs'
 
 // Sub-Tab Types
-type LedgerTab = 'sales' | 'expenses' | 'transactions'
+type LedgerTab = 'sales' | 'expenses' | 'commission' | 'transactions'
 
 const EXPENSE_CATEGORIES = [
   { value: 'salary', label: 'Salary & Compensation' },
@@ -45,12 +47,12 @@ export default function Ledger() {
   // Active Tab from URL query or default to 'sales'
   const currentTabParam = (searchParams.get('tab') as LedgerTab) || 'sales'
   const [activeTab, setActiveTab] = useState<LedgerTab>(
-    ['sales', 'expenses', 'transactions'].includes(currentTabParam) ? currentTabParam : 'sales'
+    ['sales', 'expenses', 'commission', 'transactions'].includes(currentTabParam) ? currentTabParam : 'sales'
   )
 
   useEffect(() => {
     const tabParam = (searchParams.get('tab') as LedgerTab) || 'sales'
-    if (['sales', 'expenses', 'transactions'].includes(tabParam)) {
+    if (['sales', 'expenses', 'commission', 'transactions'].includes(tabParam)) {
       setActiveTab(tabParam)
     }
   }, [searchParams])
@@ -106,6 +108,21 @@ export default function Ledger() {
           </button>
         )}
 
+        {(user?.role === 'admin' || user?.role === 'reseller') && (
+          <button
+            type="button"
+            onClick={() => handleTabChange('commission')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all shrink-0 ${
+              activeTab === 'commission'
+                ? 'bg-white text-slate-900 shadow-sm border border-slate-200/80'
+                : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200/50'
+            }`}
+          >
+            <PiggyBank size={16} className={activeTab === 'commission' ? 'text-violet-600' : 'text-slate-400'} />
+            <span>Commission Report</span>
+          </button>
+        )}
+
         <button
           type="button"
           onClick={() => handleTabChange('transactions')}
@@ -131,6 +148,7 @@ export default function Ledger() {
         >
           {activeTab === 'sales' && <SalesLedgerView />}
           {activeTab === 'expenses' && (user?.role === 'admin' || user?.role === 'reseller') && <ExpensesLedgerView />}
+          {activeTab === 'commission' && (user?.role === 'admin' || user?.role === 'reseller') && <CommissionReportView />}
           {activeTab === 'transactions' && <TransactionsAuditView />}
         </motion.div>
       </AnimatePresence>
@@ -174,7 +192,7 @@ function SalesLedgerView() {
     setPage(1)
   }, [roleFilter, targetUserId, fromDate, toDate, search])
 
-  const summary = ledgerData?.summary || { total_invoiced: 0, total_paid: 0, total_due: 0, total_gb: 0 }
+  const summary = ledgerData?.summary || { total_invoiced: 0, total_paid: 0, total_due: 0, total_gb: 0, total_admin_commission: 0, total_reseller_commission: 0 }
   const userSummaries = ledgerData?.user_summaries || []
   const ledger = ledgerData?.ledger || { data: [], current_page: 1, last_page: 1, total: 0 }
 
@@ -193,12 +211,14 @@ function SalesLedgerView() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <GlassCard className="p-4 flex items-center justify-between">
           <div>
-            <p className="text-xs font-semibold text-slate-400">Total Invoiced Sales</p>
-            <p className="text-xl font-extrabold text-blue-600 mt-1">{rs(summary.total_invoiced)}</p>
+            <p className="text-xs font-semibold text-slate-400">Commission Earned</p>
+            <p className="text-xl font-extrabold text-indigo-600 mt-1">
+              {rs(user?.role === 'admin' ? summary.total_admin_commission : (summary.total_reseller_commission ?? summary.total_admin_commission ?? 0))}
+            </p>
             <p className="text-[11px] text-slate-400 mt-1 font-medium">{gb(summary.total_gb)} Allocated</p>
           </div>
-          <div className="w-12 h-12 rounded-2xl bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center shrink-0">
-            <TrendingUp size={22} />
+          <div className="w-12 h-12 rounded-2xl bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center shrink-0">
+            <DollarSign size={22} />
           </div>
         </GlassCard>
 
@@ -276,13 +296,6 @@ function SalesLedgerView() {
 
       {/* Itemized Sales Statement Table */}
       <GlassCard className="!p-0 overflow-hidden">
-        <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
-          <div>
-            <h3 className="font-extrabold text-slate-800 text-sm">Detailed Sales Ledger Statements</h3>
-            <p className="text-xs text-slate-400 mt-0.5">Itemized statement of GB allocations, voucher sales, and cash collections</p>
-          </div>
-        </div>
-
         {loading ? (
           <Spinner />
         ) : ledger.data.length === 0 ? (
@@ -302,7 +315,8 @@ function SalesLedgerView() {
                   <th>Reference</th>
                   <th>Invoiced (Rs)</th>
                   <th>Paid (Rs)</th>
-                  <th>Balance (Rs)</th>
+                  <th>Admin Share (Rs)</th>
+                  <th>Reseller Share (Rs)</th>
                   <th>Note</th>
                 </tr>
               </thead>
@@ -346,8 +360,11 @@ function SalesLedgerView() {
                         ? rs(row.paid ?? row.amount)
                         : '—'}
                     </td>
-                    <td className="whitespace-nowrap font-extrabold text-xs text-slate-800">
-                      {rs(row.running_balance ?? row.due_amount ?? 0)}
+                    <td className="whitespace-nowrap font-extrabold text-xs text-indigo-600">
+                      {row.type === 'voucher_sale' ? rs(row.admin_share ?? 0) : '—'}
+                    </td>
+                    <td className="whitespace-nowrap font-extrabold text-xs text-slate-600">
+                      {row.type === 'voucher_sale' ? rs(row.reseller_share ?? 0) : '—'}
                     </td>
                     <td className="text-xs text-slate-500 max-w-xs truncate">{row.note || row.title || '—'}</td>
                   </motion.tr>
@@ -537,7 +554,314 @@ function ExpensesLedgerView() {
 }
 
 /* ==========================================================================
-   3. All Transactions Audit View
+   3. Commission Report View
+   ========================================================================== */
+type CommissionPeriod = 'daily' | 'weekly' | 'monthly' | 'yearly'
+
+function CommissionReportView() {
+  const { user } = useAuth()
+  const [groupBy, setGroupBy] = useState<CommissionPeriod>('daily')
+  const [fromDate, setFromDate] = useState<string>('')
+  const [toDate, setToDate] = useState<string>('')
+  const [collectTarget, setCollectTarget] = useState<{ id: number; name: string; username: string; commission_due: number } | null>(null)
+
+  const queryParams = new URLSearchParams()
+  queryParams.set('group_by', groupBy)
+  if (fromDate) queryParams.set('from_date', fromDate)
+  if (toDate) queryParams.set('to_date', toDate)
+
+  const { data, loading, refetch } = useQuery<any>(
+    `accounts/commission-report?${queryParams.toString()}`,
+    () => api.get(`/accounts/commission-report?${queryParams.toString()}`).then((r) => r.data.data),
+  )
+
+  const rows = data?.rows || []
+  const byReseller = data?.by_reseller || []
+  const isCustomRange = !!(fromDate || toDate)
+
+  const periodLabel = (p: string) => {
+    if (groupBy === 'daily') return p.slice(5) // MM-DD
+    if (groupBy === 'monthly') return p // YYYY-MM
+    return p // YYYY, or YYYY-Www for weekly
+  }
+
+  const resetFilters = () => {
+    setFromDate('')
+    setToDate('')
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* KPI Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <GlassCard className="p-4 flex items-center justify-between">
+          <div>
+            <p className="text-xs font-semibold text-slate-400">Commission Earned</p>
+            <p className="text-xl font-extrabold text-indigo-600 mt-1">{rs(data?.total_earned || 0)}</p>
+            <p className="text-[11px] text-slate-400 mt-1 font-medium">Accrued on voucher sales, this range</p>
+          </div>
+          <div className="w-12 h-12 rounded-2xl bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center shrink-0">
+            <DollarSign size={22} />
+          </div>
+        </GlassCard>
+
+        <GlassCard className="p-4 flex items-center justify-between">
+          <div>
+            <p className="text-xs font-semibold text-slate-400">Commission Collected</p>
+            <p className="text-xl font-extrabold text-emerald-600 mt-1">{rs(data?.total_collected || 0)}</p>
+            <p className="text-[11px] text-emerald-600 mt-1 font-medium">Real settlements, this range</p>
+          </div>
+          <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-100 text-emerald-600 flex items-center justify-center shrink-0">
+            <CollectIcon size={22} />
+          </div>
+        </GlassCard>
+
+        <GlassCard className="p-4 flex items-center justify-between">
+          <div>
+            <p className="text-xs font-semibold text-slate-400">Outstanding Commission</p>
+            <p className={`text-xl font-extrabold mt-1 ${(data?.total_outstanding || 0) > 0 ? 'text-amber-600' : 'text-slate-700'}`}>
+              {rs(data?.total_outstanding || 0)}
+            </p>
+            <p className="text-[11px] text-slate-400 mt-1 font-medium">Live balance, not yet settled</p>
+          </div>
+          <div className="w-12 h-12 rounded-2xl bg-amber-50 border border-amber-100 text-amber-600 flex items-center justify-center shrink-0">
+            <AlertCircle size={22} />
+          </div>
+        </GlassCard>
+      </div>
+
+      {/* Period Toggle + Custom Date Range */}
+      <div className="flex flex-col lg:flex-row items-start lg:items-end gap-3">
+        <div className="flex flex-wrap gap-2">
+          {(['daily', 'weekly', 'monthly', 'yearly'] as CommissionPeriod[]).map((p) => (
+            <button
+              key={p}
+              onClick={() => setGroupBy(p)}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-2xl text-xs font-bold border transition-all capitalize ${
+                groupBy === p
+                  ? 'bg-[#003164] text-white border-[#003164] shadow-md shadow-[#003164]/20'
+                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              <Calendar size={14} /> {p}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex flex-wrap items-end gap-3 lg:ml-auto">
+          <div>
+            <label className="text-[11px] font-bold text-slate-500 block mb-1">From Date</label>
+            <DualDatePicker label="From Date" value={fromDate} onChange={setFromDate} />
+          </div>
+          <div>
+            <label className="text-[11px] font-bold text-slate-500 block mb-1">To Date</label>
+            <DualDatePicker label="To Date" value={toDate} onChange={setToDate} />
+          </div>
+          {isCustomRange && (
+            <button
+              onClick={resetFilters}
+              className="text-xs font-semibold text-slate-500 hover:text-slate-700 flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition-all h-[38px]"
+            >
+              <RefreshCw size={13} /> Reset
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Earned vs Collected Chart */}
+      <GlassCard className="p-4">
+        <h3 className="font-extrabold text-slate-800 text-sm mb-1">Commission Earned vs. Collected</h3>
+        <p className="text-xs text-slate-400 mb-4">
+          {isCustomRange
+            ? 'Custom range'
+            : groupBy === 'daily' ? 'Last 30 days'
+            : groupBy === 'weekly' ? 'Last 12 weeks'
+            : groupBy === 'monthly' ? 'Last 12 months'
+            : 'Last 5 years'}
+        </p>
+        {loading && !data ? (
+          <Spinner />
+        ) : rows.length === 0 ? (
+          <EmptyState title="No Commission Activity" subtitle="No vouchers with commission have been sold in this range." />
+        ) : (
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={rows} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+              <XAxis dataKey="period" tickFormatter={periodLabel} tick={{ fontSize: 10, fill: '#94a3b8' }} />
+              <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} width={52} tickFormatter={(v) => `Rs ${(v / 1000).toFixed(0)}k`} />
+              <Tooltip
+                labelFormatter={(p: any) => periodLabel(String(p))}
+                formatter={(v: any, name: any) => [`Rs ${Number(v).toLocaleString()}`, name]}
+                contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', fontSize: 12 }}
+              />
+              <Legend wrapperStyle={{ fontSize: 12 }} />
+              <Bar name="Earned" dataKey="earned" fill="#4f46e5" radius={[4, 4, 0, 0]} />
+              <Bar name="Collected" dataKey="collected" fill="#059669" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+      </GlassCard>
+
+      {/* Raw data table, mirrors the chart above */}
+      {rows.length > 0 && (
+        <GlassCard className="!p-0 overflow-hidden">
+          <div className="overflow-x-auto max-h-64">
+            <table className="w-full">
+              <thead>
+                <tr>
+                  <th>Period</th>
+                  <th>Earned (Rs)</th>
+                  <th>Collected (Rs)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.slice().reverse().map((r: any) => (
+                  <tr key={r.period} className="hover:bg-slate-50/50">
+                    <td className="whitespace-nowrap text-xs font-semibold text-slate-600">{periodLabel(r.period)}</td>
+                    <td className="whitespace-nowrap font-bold text-indigo-600 text-xs">{rs(r.earned)}</td>
+                    <td className="whitespace-nowrap font-bold text-emerald-600 text-xs">{rs(r.collected)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </GlassCard>
+      )}
+
+      {/* Outstanding Commission by Reseller — admin only, with Collect action */}
+      {user?.role === 'admin' && (
+        <GlassCard className="!p-0 overflow-hidden">
+          <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/50">
+            <h3 className="font-extrabold text-slate-800 text-sm">Outstanding Commission by Reseller</h3>
+            <p className="text-xs text-slate-400 mt-0.5">Live balances — record a settlement as it's actually paid in cash/bank</p>
+          </div>
+          {byReseller.length === 0 ? (
+            <EmptyState title="No Resellers" subtitle="No resellers found." />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr>
+                    <th>Reseller</th>
+                    <th>Total Earned (All-Time)</th>
+                    <th>Outstanding Due</th>
+                    <th className="text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {byReseller.map((r: any) => (
+                    <tr key={r.id} className="hover:bg-slate-50/50">
+                      <td className="whitespace-nowrap">
+                        <div className="font-bold text-slate-800 text-xs">{r.name}</div>
+                        <div className="text-[10px] font-mono text-slate-400">{r.username}</div>
+                      </td>
+                      <td className="whitespace-nowrap font-bold text-indigo-600 text-xs">{rs(r.total_earned_all_time)}</td>
+                      <td className="whitespace-nowrap font-bold text-xs">
+                        {r.commission_due > 0 ? <span className="text-amber-600">{rs(r.commission_due)}</span> : <span className="text-slate-400">Settled</span>}
+                      </td>
+                      <td className="text-right whitespace-nowrap">
+                        <button
+                          disabled={r.commission_due <= 0}
+                          onClick={() => setCollectTarget(r)}
+                          className="px-2.5 py-1 rounded-xl bg-emerald-50 text-emerald-600 hover:bg-emerald-100 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition-all"
+                        >
+                          Collect Commission
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </GlassCard>
+      )}
+
+      <CollectCommissionModal target={collectTarget} onClose={() => setCollectTarget(null)} onCollected={() => { refetch(); invalidateCache('accounts/sales-ledger') }} />
+    </div>
+  )
+}
+
+function CollectCommissionModal({
+  target, onClose, onCollected,
+}: { target: { id: number; name: string; username: string; commission_due: number } | null; onClose: () => void; onCollected: () => void }) {
+  const [amount, setAmount] = useState('')
+  const [note, setNote] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [errorMsg, setErrorMsg] = useState('')
+
+  useEffect(() => {
+    if (target) {
+      setAmount(String(target.commission_due))
+      setNote('')
+      setErrorMsg('')
+    }
+  }, [target])
+
+  if (!target) return null
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const rawAmount = Number(String(amount).replace(/,/g, ''))
+    if (!rawAmount || rawAmount <= 0) {
+      setErrorMsg('Please enter a valid amount.')
+      return
+    }
+    try {
+      setBusy(true)
+      setErrorMsg('')
+      await api.post('/billing/commission/collect', { user_id: target.id, amount: rawAmount, note: note || undefined })
+      onCollected()
+      onClose()
+    } catch (err: any) {
+      setErrorMsg(apiError(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal open={!!target} onClose={onClose} title="Collect Commission Payment" subtitle={`From ${target.name} (${target.username})`} icon={<CollectIcon size={20} />}>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {errorMsg && <div className="p-3 text-xs bg-rose-50 border border-rose-100 text-rose-600 rounded-xl font-bold">{errorMsg}</div>}
+
+        <div className="p-3 bg-amber-50 border border-amber-100 rounded-xl text-xs font-semibold text-amber-700">
+          Outstanding commission due: <strong>{rs(target.commission_due)}</strong>
+        </div>
+
+        <div>
+          <label className="text-xs font-bold text-slate-500 block mb-1">Amount Received (Rs)</label>
+          <input
+            type="text"
+            required
+            className="input text-xs font-semibold"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+          />
+        </div>
+
+        <div>
+          <label className="text-xs font-bold text-slate-500 block mb-1">Note (optional)</label>
+          <textarea
+            rows={2}
+            placeholder="e.g. Paid via bank transfer on..."
+            className="input text-xs"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+          />
+        </div>
+
+        <div className="flex justify-end gap-2 pt-2">
+          <button type="button" onClick={onClose} className="btn-secondary text-xs font-bold py-2 px-4 rounded-xl">Cancel</button>
+          <button type="submit" disabled={busy} className="btn-primary text-xs font-bold py-2 px-4 rounded-xl">{busy ? 'Recording...' : 'Record Payment'}</button>
+        </div>
+      </form>
+    </Modal>
+  )
+}
+
+/* ==========================================================================
+   4. All Transactions Audit View
    ========================================================================== */
 type SourceFilter = '' | 'wallet' | 'gb' | 'invoice' | 'payment'
 

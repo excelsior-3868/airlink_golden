@@ -20,6 +20,11 @@ class GbService
      * settled at allocation time. Only the unpaid remainder is added to the receiver's
      * wallet_due, the invoice is stamped with the paid amount (marked 'paid' when fully
      * settled), and a Payment record is created so it appears in the payment history.
+     *
+     * Admin→reseller allocations are always free: the admin's revenue comes from
+     * their commission cut of voucher sales instead, so no due/IOU or Payment
+     * record is created for this specific relationship regardless of $paidAmount.
+     * The invoice is still recorded (for allocation history) but stamped fully paid.
      */
     public function allocate(User $from, User $to, float $gb, ?string $note = null, float $paidAmount = 0.0): void
     {
@@ -36,7 +41,9 @@ class GbService
             throw ValidationException::withMessages(['user_id' => 'You can only allocate GB to your own direct downline.']);
         }
 
-        DB::transaction(function () use ($from, $to, $gb, $note, $paidAmount) {
+        $isFreeReseller = $from->role === 'admin' && $to->role === 'reseller';
+
+        DB::transaction(function () use ($from, $to, $gb, $note, $paidAmount, $isFreeReseller) {
             $allocator = User::whereKey($from->id)->lockForUpdate()->first();
             $receiver = User::whereKey($to->id)->lockForUpdate()->first();
 
@@ -58,8 +65,9 @@ class GbService
             $allocator->decrement('gb_balance', $gb);
             $receiver->increment('gb_balance', $gb);
 
-            // Only the unpaid remainder becomes outstanding due
-            $dueAmount = round($totalAmount - $paidAmount, 2);
+            // Only the unpaid remainder becomes outstanding due. Admin→reseller
+            // allocations are always free, so no due ever accrues for them.
+            $dueAmount = $isFreeReseller ? 0.0 : round($totalAmount - $paidAmount, 2);
             if ($dueAmount > 0) {
                 $receiver->increment('wallet_due', $dueAmount);
             }
@@ -67,7 +75,7 @@ class GbService
             $allocator->refresh();
             $receiver->refresh();
 
-            // Create Invoice
+            // Create Invoice (kept for allocation history even when free).
             $invoiceNumber = 'INV-' . now()->format('Ymd') . '-' . strtoupper(Str::random(6));
             Invoice::create([
                 'invoice_number' => $invoiceNumber,
@@ -76,12 +84,13 @@ class GbService
                 'gb_amount' => $gb,
                 'rate' => $rate,
                 'total_amount' => $totalAmount,
-                'status' => $paidAmount >= $totalAmount ? 'paid' : 'due',
-                'paid_amount' => $paidAmount,
+                'status' => $isFreeReseller || $paidAmount >= $totalAmount ? 'paid' : 'due',
+                'paid_amount' => $isFreeReseller ? $totalAmount : $paidAmount,
             ]);
 
-            // Record the upfront settlement as a payment (receiver pays the allocator)
-            if ($paidAmount > 0) {
+            // Record the upfront settlement as a payment (receiver pays the allocator).
+            // Skipped for free admin→reseller allocations: no real payment occurred.
+            if ($paidAmount > 0 && !$isFreeReseller) {
                 Payment::create([
                     'sender_id' => $receiver->id,
                     'receiver_id' => $allocator->id,
