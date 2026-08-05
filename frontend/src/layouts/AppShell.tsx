@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Package, Users2, Store, Wallet as WalletIcon,
   Database, Ticket, LogOut, Wifi, Router, ShieldCheck, Shield,
   ChevronDown, ChevronRight, Key, Gauge, ArrowLeftRight, Menu, X, Terminal, Calendar,
-  BookOpen, Receipt
+  BookOpen, Receipt, Scale, CreditCard
 } from 'lucide-react'
 import { Role, useAuth } from '../lib/auth'
 import { rs, gb } from '../lib/format'
@@ -23,6 +23,7 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'reseller', 'seller'], color: 'text-blue-500', perm: 'dashboard' },
+  { to: '/financial-dashboard', label: 'Financial Dashboard', icon: Scale, roles: ['admin', 'reseller', 'seller'], color: 'text-blue-600' },
   {
     label: 'Plan',
     icon: Package,
@@ -37,16 +38,18 @@ const NAV: NavItem[] = [
   },
   { to: '/resellers', label: 'Add/View Resellers', icon: Users2, roles: ['admin'], color: 'text-purple-500', perm: 'view_resellers' },
   { to: '/sellers', label: 'Add/View Sellers', icon: Store, roles: ['admin', 'reseller'], color: 'text-amber-500', perm: 'view_sellers' },
-  { to: '/ledger', label: 'Accounting & Ledger', icon: BookOpen, roles: ['admin', 'reseller', 'seller'], color: 'text-emerald-500' },
   { to: '/funds', label: 'Wallet / GB Allocation', icon: WalletIcon, roles: ['admin', 'reseller', 'seller'], color: 'text-emerald-500' },
   { to: '/vouchers', label: 'Voucher Sales', icon: Ticket, roles: ['admin', 'reseller', 'seller'], color: 'text-rose-500', perm: ['generate_voucher', 'reports'] },
   { to: '/diagnostics', label: 'Voucher Diagnostics', icon: Terminal, roles: ['admin', 'reseller', 'seller'], color: 'text-slate-600' },
+  { to: '/ledger', label: 'Accounting & Ledger', icon: BookOpen, roles: ['admin', 'reseller', 'seller'], color: 'text-emerald-500' },
   {
     label: 'Settings',
     icon: Shield,
     roles: ['admin', 'reseller', 'seller'],
     color: 'text-slate-500',
     children: [
+      { to: '/settings/payment-methods', label: 'Payment Methods', roles: ['admin'], icon: CreditCard, color: 'text-sky-500' },
+      { to: '/settings/chart-of-accounts', label: 'Chart of Accounts', roles: ['admin', 'reseller', 'seller'], icon: BookOpen, color: 'text-emerald-600' },
       { to: '/settings/system-load', label: 'System Load', roles: ['admin'], icon: WalletIcon, color: 'text-emerald-500' },
       { to: '/settings/voucher-card', label: 'Voucher Card', roles: ['admin', 'reseller', 'seller'], icon: Ticket, color: 'text-rose-500' },
       { to: '/settings/api-tokens', label: 'API Tokens', roles: ['admin', 'reseller', 'seller'], icon: Key, color: 'text-indigo-500', perm: 'manage_api_tokens' },
@@ -57,6 +60,7 @@ const NAV: NavItem[] = [
     ]
   }
 ]
+
 
 interface NavListProps {
   items: NavItem[];
@@ -122,7 +126,7 @@ const NavList = ({ items, location, expanded, toggleExpanded, user, can, onNavig
           }
         >
           <it.icon size={18} className={`transition-transform group-hover:scale-110 ${it.color}`} />
-          {it.label}
+          {it.to === '/funds' && user.role !== 'admin' ? 'GB Allocation' : it.label}
         </NavLink>
       )
     })}
@@ -188,9 +192,10 @@ export default function AppShell() {
 
   return (
     <div className="min-h-screen bg-background md:p-4 lg:p-5 md:flex md:gap-4">
-      {/* Desktop Sidebar */}
-      <aside className="hidden md:flex flex-col w-64 shrink-0 app-sidebar-panel p-4 sticky top-4 h-[calc(100vh-2rem)]">
+      {/* Desktop Sidebar (Fixed) */}
+      <aside className="hidden md:flex flex-col w-64 shrink-0 app-sidebar-panel p-4 fixed top-4 left-4 lg:left-5 h-[calc(100vh-2rem)] z-30">
         <div className="flex items-center gap-3 px-2 py-2 mb-4">
+
           <div className="bg-[#003164] text-white rounded-2xl p-2.5 shadow-sm"><Wifi size={18} /></div>
           <div>
             <p className="font-medium text-2xl tracking-tight text-[#003164] leading-none">Airlink</p>
@@ -373,11 +378,12 @@ export default function AppShell() {
       </AnimatePresence>
 
       {/* Main */}
-      <div className="flex-1 min-w-0 px-3 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:px-4 md:p-0">
+      <div className="flex-1 min-w-0 px-3 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:px-4 md:p-0 md:ml-[17rem]">
         <motion.main initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
           <Outlet />
         </motion.main>
       </div>
+
 
       <ChangePasswordModal open={passwordOpen} onClose={() => setPasswordOpen(false)} />
     </div>

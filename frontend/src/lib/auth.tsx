@@ -13,6 +13,8 @@ export interface AuthUser {
   parent_id: number | null
   wallet_balance: string
   gb_balance: string
+  gb_reserved?: number | string
+  gb_allowable?: number | string
   status: string
   must_reset_password: boolean
   permissions: Record<string, boolean>

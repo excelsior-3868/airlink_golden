@@ -68,7 +68,7 @@ class DatabaseSeeder extends Seeder
             ['feature' => 'view_transactions', 'display_name' => 'Transactions Menu', 'category' => 'Navigation', 'description' => 'Show the Transactions history menu', 'admin' => 1, 'reseller' => 1, 'seller' => 1],
             ['feature' => 'view_settings', 'display_name' => 'Settings Menu', 'category' => 'Navigation', 'description' => 'Show the Settings menu (System Load, NAS, Permissions, Logs)', 'admin' => 1, 'reseller' => 0, 'seller' => 0],
 
-            ['feature' => 'manage_api_tokens', 'display_name' => 'Manage API Tokens', 'category' => 'Integrations', 'description' => 'Create and revoke API tokens for third-party integrations (e.g. a PMS selling vouchers)', 'admin' => 1, 'reseller' => 1, 'seller' => 1],
+            ['feature' => 'manage_api_tokens', 'display_name' => 'Manage API Tokens', 'category' => 'Integrations', 'description' => 'Create and revoke API tokens for third-party integrations (e.g. a PMS selling vouchers)', 'admin' => 1, 'reseller' => 0, 'seller' => 0],
         ];
 
         foreach ($perms as $p) {

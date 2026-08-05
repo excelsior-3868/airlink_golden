@@ -75,11 +75,7 @@ class WalletController extends Controller
             if (! in_array($userId, $visibleIds->all())) {
                 return $this->fail('Unauthorized access to user transaction history.', 403);
             }
-            $query->where(function($q) use ($userId) {
-                $q->where('user_id', $userId)
-                  ->orWhere('from_user_id', $userId)
-                  ->orWhere('to_user_id', $userId);
-            });
+            $query->where('user_id', $userId);
         } else {
             $query->whereIn('user_id', $visibleIds);
         }

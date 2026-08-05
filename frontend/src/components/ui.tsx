@@ -8,8 +8,8 @@ export { DualDatePicker } from './DualDatePicker'
 export { ConfirmModal } from './ConfirmModal'
 export type { ConfirmState } from './ConfirmModal'
 
-export function GlassCard({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return <div className={`glass-card p-5 sm:p-6 ${className}`}>{children}</div>
+export function GlassCard({ children, className = '', onClick }: { children: ReactNode; className?: string; onClick?: () => void }) {
+  return <div className={`glass-card p-5 sm:p-6 ${className}`} onClick={onClick}>{children}</div>
 }
 
 export function Pill({ tone = 'secondary', children, className = '' }: { tone?: string; children: ReactNode; className?: string }) {
@@ -38,7 +38,8 @@ export function VoucherStatCard({
   title,
   vouchers,
   icon,
-  iconColorClass = 'text-rose-500 bg-rose-50 border border-rose-100/50'
+  iconColorClass = 'text-rose-500 bg-rose-50 border border-rose-100/50',
+  valueColorClass = 'text-rose-600'
 }: {
   title: string;
   vouchers: {
@@ -47,6 +48,7 @@ export function VoucherStatCard({
   };
   icon?: ReactNode;
   iconColorClass?: string;
+  valueColorClass?: string;
 }) {
   const total = vouchers?.total || 0;
   const byStatus = vouchers?.by_status || {};
@@ -61,7 +63,7 @@ export function VoucherStatCard({
       <div className="flex items-start justify-between">
         <div>
           <p className="text-muted-foreground text-xs sm:text-sm font-medium">{title}</p>
-          <p className="text-xl lg:text-2xl font-bold mt-0.5 tracking-tight">{total.toLocaleString()}</p>
+          <p className={`text-xl lg:text-2xl font-bold mt-0.5 tracking-tight ${valueColorClass}`}>{total.toLocaleString()}</p>
         </div>
         {icon && (
           <div className={`rounded-2xl p-2 shrink-0 flex items-center justify-center ${iconColorClass}`}>
@@ -388,7 +390,7 @@ export function CustomSelect({
     return String(o.label).toLowerCase().includes(q) || String(o.value).toLowerCase().includes(q)
   })
 
-  const selected = resolvedOptions.find((o) => o.value === value)
+  const selected = resolvedOptions.find((o) => String(o.value).toUpperCase() === String(value).toUpperCase())
 
   return (
     <div ref={ref} className={`relative text-left ${className.includes('w-full') ? 'w-full block' : 'inline-block min-w-[180px]'} ${open ? 'z-30' : 'z-0'} ${className}`}>
@@ -505,5 +507,30 @@ export function Combobox(props: {
   searchable?: boolean;
 }) {
   return <CustomSelect searchable={props.searchable !== false} {...props} />
+}
+
+export function renderPaymentMethodIcon(iconVal?: string | null, codeVal?: string) {
+  const code = (codeVal || '').toUpperCase();
+  const icon = iconVal || '';
+
+  if (icon && (icon.startsWith('data:image') || icon.startsWith('http') || icon.startsWith('/') || icon.endsWith('.png') || icon.endsWith('.jpg') || icon.endsWith('.svg'))) {
+    return <img src={icon} alt={code} className="w-5 h-5 object-contain rounded shrink-0" />;
+  }
+  if (code === 'CASH' || icon === '💵') {
+    return <span className="text-base leading-none shrink-0">💵</span>;
+  }
+  if (code === 'QR_ESEWA' || icon === '🟢') {
+    return <span className="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center font-bold text-xs shrink-0">e</span>;
+  }
+  if (code === 'QR_KHALTI' || icon === '🚀') {
+    return <span className="text-base leading-none shrink-0">🚀</span>;
+  }
+  if (code === 'CARD' || icon === '💳') {
+    return <span className="text-base leading-none shrink-0">💳</span>;
+  }
+  if (code === 'FONEPAY_QR' || icon === '📲') {
+    return <span className="text-[10px] bg-rose-600 text-white font-extrabold px-1 py-0.5 rounded tracking-tighter shrink-0">fonepay</span>;
+  }
+  return <span className="text-base leading-none shrink-0">{icon || '💳'}</span>;
 }
 

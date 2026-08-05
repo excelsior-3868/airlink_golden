@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\Voucher;
+use App\Services\Radius\CoaService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
@@ -12,10 +13,9 @@ use Illuminate\Support\Facades\DB;
  *   active/sold + cumulative radacct usage ≥ its data cap → used
  *   any non-terminal + past expires_at → expired
  *
- * Reconnects are allowed until expiry or quota exhaustion (FreeRADIUS itself
- * enforces both live, per voucher, on every login — see sites-available/default),
- * so an open radacct session no longer means "already used" the way it did
- * before first-login activation replaced generation-time expiry.
+ * Either transition now also sends a CoA Disconnect-Request for any live
+ * session, instead of leaving the user connected until the NAS's own
+ * Session-Timeout/Mikrotik-Total-Limit catches up.
  */
 class SyncVoucherStatus extends Command
 {
@@ -23,29 +23,50 @@ class SyncVoucherStatus extends Command
 
     protected $description = 'Update voucher statuses from radacct usage and expiry dates';
 
+    public function __construct(private readonly CoaService $coa)
+    {
+        parent::__construct();
+    }
+
     public function handle(): int
     {
-        // 1. Mark as used any active/sold voucher whose plan has a data cap and
-        //    whose cumulative radacct usage has met or exceeded it.
-        $used = DB::affectingStatement(
-            "UPDATE vouchers v
+        // 1. Usernames whose active/sold voucher has a data cap and whose
+        //    cumulative radacct usage has met or exceeded it.
+        $usedUsernames = collect(DB::select(
+            "SELECT v.username
+             FROM vouchers v
              JOIN (
-                 SELECT UserName AS username, SUM(AcctInputOctets + AcctOutputOctets) AS bytes_used
+                 SELECT username, SUM(acctinputoctets + acctoutputoctets) AS bytes_used
                  FROM radacct
-                 GROUP BY UserName
+                 GROUP BY username
              ) u ON u.username = v.username
-             SET v.status = 'used'
              WHERE v.status IN ('active', 'sold')
                AND v.data_gb IS NOT NULL AND v.data_gb > 0
                AND u.bytes_used >= v.data_gb * 1073741824"
-        );
+        ))->pluck('username');
 
-        // 2. Expire anything past its expiry that has been activated and isn't already terminal.
-        $expired = Voucher::whereNotNull('expires_at')
+        $used = 0;
+        if ($usedUsernames->isNotEmpty()) {
+            $used = Voucher::whereIn('username', $usedUsernames)
+                ->whereIn('status', ['active', 'sold'])
+                ->update(['status' => 'used']);
+        }
+
+        // 2. Anything past its expiry that has been activated and isn't already terminal.
+        $expiredVouchers = Voucher::whereNotNull('expires_at')
             ->whereNotNull('activated_at')
             ->where('expires_at', '<', now())
             ->whereIn('status', ['active', 'sold', 'used'])
-            ->update(['status' => 'expired']);
+            ->get(['id', 'username']);
+
+        $expired = $expiredVouchers->count();
+        if ($expired > 0) {
+            Voucher::whereIn('id', $expiredVouchers->pluck('id'))->update(['status' => 'expired']);
+        }
+
+        $usedUsernames->merge($expiredVouchers->pluck('username'))
+            ->unique()
+            ->each(fn (string $username) => $this->coa->disconnectUsername($username));
 
         $this->info("Sync complete: {$used} used, {$expired} expired.");
 

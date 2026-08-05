@@ -293,7 +293,7 @@ class PlanController extends Controller
             'time_limit' => ['nullable', 'integer', 'min:0'],
             'validity_days' => ['required', 'integer', 'min:0'],
             'simultaneous_use' => ['nullable', 'integer', 'min:1', 'max:10'],
-            'base_price' => [$isHotspot ? 'nullable' : 'required', 'numeric', 'min:0'],
+            'base_price' => ['nullable', 'numeric', 'min:0'],
             'selling_price' => [$isHotspot ? 'nullable' : 'required', 'numeric', 'min:0'],
             'api_nas' => ['nullable', 'string', 'max:255'],
             'package_type' => ['nullable', 'in:wallet,gb'],

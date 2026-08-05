@@ -14,7 +14,7 @@ class PaymentService
      * Collect payment from a direct downline user.
      * Reduces their wallet_due and records a Payment, paying off oldest invoices first.
      */
-    public function collect(User $collector, User $payer, float $amount, ?string $note = null): Payment
+    public function collect(User $collector, User $payer, float $amount, ?string $note = null, string $paymentMethod = 'cash'): Payment
     {
         if ($amount <= 0) {
             throw ValidationException::withMessages(['amount' => 'Payment amount must be greater than zero.']);
@@ -23,7 +23,7 @@ class PaymentService
             throw ValidationException::withMessages(['user_id' => 'You can only collect payment from your own direct downline.']);
         }
 
-        return DB::transaction(function () use ($collector, $payer, $amount, $note) {
+        return DB::transaction(function () use ($collector, $payer, $amount, $note, $paymentMethod) {
             $payerUser = User::whereKey($payer->id)->lockForUpdate()->first();
             $collectorUser = User::whereKey($collector->id)->lockForUpdate()->first();
 
@@ -42,6 +42,7 @@ class PaymentService
                 'amount' => $amount,
                 'payment_date' => now(),
                 'note' => $note ?? "Payment collected by {$collectorUser->username}",
+                'payment_method' => $paymentMethod,
             ]);
 
             // Allocate payment to outstanding invoices (oldest first)
@@ -84,7 +85,7 @@ class PaymentService
      * @sell); this only clears the reseller's outstanding commission_due and
      * logs a dated Payment so it can be reported on.
      */
-    public function collectCommission(User $collector, User $payer, float $amount, ?string $note = null): Payment
+    public function collectCommission(User $collector, User $payer, float $amount, ?string $note = null, string $paymentMethod = 'cash'): Payment
     {
         if ($amount <= 0) {
             throw ValidationException::withMessages(['amount' => 'Payment amount must be greater than zero.']);
@@ -93,7 +94,7 @@ class PaymentService
             throw ValidationException::withMessages(['user_id' => 'You can only collect commission from your own direct downline.']);
         }
 
-        return DB::transaction(function () use ($collector, $payer, $amount, $note) {
+        return DB::transaction(function () use ($collector, $payer, $amount, $note, $paymentMethod) {
             $payerUser = User::whereKey($payer->id)->lockForUpdate()->first();
             $collectorUser = User::whereKey($collector->id)->lockForUpdate()->first();
 
@@ -110,6 +111,7 @@ class PaymentService
                 'amount' => $amount,
                 'payment_date' => now(),
                 'note' => $note ?? "Commission collected by {$collectorUser->username}",
+                'payment_method' => $paymentMethod,
             ]);
         });
     }

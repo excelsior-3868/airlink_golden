@@ -26,7 +26,7 @@ class WalletService
      * Payment record is created for this specific relationship regardless
      * of what $paidAmount is passed.
      */
-    public function transfer(User $from, User $to, float $amount, string $type = 'load', ?string $note = null, ?string $reference = null, ?float $paidAmount = null): void
+    public function transfer(User $from, User $to, float $amount, string $type = 'load', ?string $note = null, ?string $reference = null): void
     {
         if ($amount <= 0) {
             throw ValidationException::withMessages(['amount' => 'Amount must be greater than zero.']);
@@ -41,16 +41,7 @@ class WalletService
             throw ValidationException::withMessages(['user_id' => 'You can only load/transfer to your own direct downline.']);
         }
 
-        $isFreeReseller = $from->role === 'admin' && $to->role === 'reseller';
-        $paidAmount = $isFreeReseller ? $amount : ($paidAmount ?? $amount);
-        if ($paidAmount < 0) {
-            throw ValidationException::withMessages(['paid_amount' => 'Paid amount cannot be negative.']);
-        }
-        if ($paidAmount > $amount) {
-            throw ValidationException::withMessages(['paid_amount' => "Paid amount Rs {$paidAmount} cannot exceed the loaded amount of Rs {$amount}."]);
-        }
-
-        DB::transaction(function () use ($from, $to, $amount, $type, $note, $reference, $paidAmount, $isFreeReseller) {
+        DB::transaction(function () use ($from, $to, $amount, $type, $note, $reference) {
             // Lock both rows to prevent concurrent double-spend.
             $sender = User::whereKey($from->id)->lockForUpdate()->first();
             $receiver = User::whereKey($to->id)->lockForUpdate()->first();
@@ -61,12 +52,6 @@ class WalletService
 
             $sender->decrement('wallet_balance', $amount);
             $receiver->increment('wallet_balance', $amount);
-
-            // Only the unpaid remainder becomes outstanding due.
-            $dueAmount = round($amount - $paidAmount, 2);
-            if ($dueAmount > 0) {
-                $receiver->increment('wallet_due', $dueAmount);
-            }
 
             $sender->refresh();
             $receiver->refresh();
@@ -81,18 +66,6 @@ class WalletService
                 'balance_after' => $receiver->wallet_balance, 'from_user_id' => $sender->id,
                 'reference' => $reference, 'note' => $note ?? "Received from {$sender->username}",
             ]);
-
-            // Record the upfront settlement as a payment (receiver pays the sender).
-            // Skipped for free admin→reseller loads: no real payment occurred.
-            if ($paidAmount > 0 && !$isFreeReseller) {
-                Payment::create([
-                    'sender_id' => $receiver->id,
-                    'receiver_id' => $sender->id,
-                    'amount' => $paidAmount,
-                    'payment_date' => now(),
-                    'note' => $note ?? "Payment for wallet load from {$sender->username}",
-                ]);
-            }
         });
     }
 

@@ -517,18 +517,7 @@ export default function HotspotPlans() {
                   />
                 </div>
 
-                <div>
-                  <label className="text-xs font-bold text-slate-600 block mb-1">Wholesale Cost (Rs)</label>
-                  <input
-                    className="input"
-                    type="number"
-                    min="0"
-                    step="any"
-                    placeholder="e.g. 80"
-                    value={form.base_price}
-                    onChange={(e) => setForm({ ...form, base_price: e.target.value })}
-                  />
-                </div>
+
 
                 <div>
                   <label className="text-xs font-bold text-slate-600 block mb-1">Bandwidth Limit</label>

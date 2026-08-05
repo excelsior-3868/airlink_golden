@@ -42,9 +42,7 @@ class GbService
             throw ValidationException::withMessages(['user_id' => 'You can only allocate GB to your own direct downline.']);
         }
 
-        $isFreeReseller = $from->role === 'admin' && $to->role === 'reseller';
-
-        DB::transaction(function () use ($from, $to, $gb, $note, $paidAmount, $isFreeReseller) {
+        DB::transaction(function () use ($from, $to, $gb, $note, $paidAmount) {
             $allocator = User::whereKey($from->id)->lockForUpdate()->first();
             $receiver = User::whereKey($to->id)->lockForUpdate()->first();
 
@@ -66,9 +64,8 @@ class GbService
             $allocator->decrement('gb_balance', $gb);
             $receiver->increment('gb_balance', $gb);
 
-            // Only the unpaid remainder becomes outstanding due. Admin→reseller
-            // allocations are always free, so no due ever accrues for them.
-            $dueAmount = $isFreeReseller ? 0.0 : round($totalAmount - $paidAmount, 2);
+            // Only the unpaid remainder becomes outstanding due.
+            $dueAmount = max(0.0, round($totalAmount - $paidAmount, 2));
             if ($dueAmount > 0) {
                 $receiver->increment('wallet_due', $dueAmount);
             }
@@ -76,7 +73,7 @@ class GbService
             $allocator->refresh();
             $receiver->refresh();
 
-            // Create Invoice (kept for allocation history even when free).
+            // Create Invoice
             $invoiceNumber = 'INV-' . now()->format('Ymd') . '-' . strtoupper(Str::random(6));
             Invoice::create([
                 'invoice_number' => $invoiceNumber,
@@ -85,13 +82,12 @@ class GbService
                 'gb_amount' => $gb,
                 'rate' => $rate,
                 'total_amount' => $totalAmount,
-                'status' => $isFreeReseller || $paidAmount >= $totalAmount ? 'paid' : 'due',
-                'paid_amount' => $isFreeReseller ? $totalAmount : $paidAmount,
+                'status' => $paidAmount >= $totalAmount ? 'paid' : 'due',
+                'paid_amount' => $paidAmount,
             ]);
 
             // Record the upfront settlement as a payment (receiver pays the allocator).
-            // Skipped for free admin→reseller allocations: no real payment occurred.
-            if ($paidAmount > 0 && !$isFreeReseller) {
+            if ($paidAmount > 0) {
                 Payment::create([
                     'sender_id' => $receiver->id,
                     'receiver_id' => $allocator->id,
@@ -174,10 +170,6 @@ class GbService
             }
 
             $price = (float) $v->price;
-            if ($price > 0) {
-                $owner->increment('wallet_due', $price);
-            }
-
             $v->update(['gb_due_amount' => $price]);
         });
     }

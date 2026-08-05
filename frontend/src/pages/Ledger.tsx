@@ -6,13 +6,13 @@ import {
   BookOpen, Receipt, ArrowLeftRight, TrendingUp, Wallet, DollarSign,
   Plus, Filter, RefreshCw, Search, Users, FileText, CheckCircle2, AlertCircle,
   Database, HandCoins, ArrowUpRight, ArrowDownLeft, Trash2, Edit3, Tag, Calendar, UserCheck, Activity,
-  HandCoins as CollectIcon, PiggyBank,
+  HandCoins as CollectIcon, PiggyBank, BarChart3, List as ListIcon,
 } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useQuery, invalidateCache } from '../lib/cache'
 import { useAuth } from '../lib/auth'
 import { rs, gb, datet, date } from '../lib/format'
-import { GlassCard, PageTitle, Pill, Pagination, EmptyState, Spinner, Modal, Combobox, SelectOption, ConfirmModal } from '../components/ui'
+import { GlassCard, PageTitle, Pill, Pagination, EmptyState, Spinner, Modal, Combobox, SelectOption, ConfirmModal, CustomSelect, renderPaymentMethodIcon } from '../components/ui'
 import { DualDatePicker } from '../components/DualDatePicker'
 import RadiusLogs from './RadiusLogs'
 
@@ -70,12 +70,14 @@ export default function Ledger() {
         subtitle="Unified financial dashboard for Sales, Operating Expenses, and Transaction Audits"
         icon={<BookOpen size={22} className="text-blue-600" />}
         action={
-          <button
-            onClick={() => window.dispatchEvent(new Event('open-add-expense'))}
-            className="btn-primary text-xs py-2 px-4 flex items-center gap-1.5 rounded-xl font-bold shadow-md shadow-blue-600/20"
-          >
-            <Plus size={15} /> Add Expense
-          </button>
+          (user?.role === 'admin' || user?.role === 'reseller') ? (
+            <button
+              onClick={() => window.dispatchEvent(new Event('open-add-expense'))}
+              className="btn-primary text-xs py-2 px-4 flex items-center gap-1.5 rounded-xl font-bold shadow-md shadow-blue-600/20"
+            >
+              <Plus size={15} /> Add Expense
+            </button>
+          ) : null
         }
       />
 
@@ -163,12 +165,16 @@ export default function Ledger() {
    ========================================================================== */
 function SalesLedgerView() {
   const { user } = useAuth()
+  const isReseller = user?.role === 'reseller'
   const [roleFilter, setRoleFilter] = useState<string>('')
   const [targetUserId, setTargetUserId] = useState<string>('')
   const [fromDate, setFromDate] = useState<string>('')
   const [toDate, setToDate] = useState<string>('')
   const [search, setSearch] = useState<string>('')
+  const [typeFilter, setTypeFilter] = useState<string>('')
   const [page, setPage] = useState<number>(1)
+
+  const toggleTypeFilter = (t: string) => setTypeFilter((cur) => (cur === t ? '' : t))
 
   const queryParams = new URLSearchParams()
   if (roleFilter) queryParams.set('role', roleFilter)
@@ -176,6 +182,7 @@ function SalesLedgerView() {
   if (fromDate) queryParams.set('from_date', fromDate)
   if (toDate) queryParams.set('to_date', toDate)
   if (search) queryParams.set('search', search)
+  if (typeFilter) queryParams.set('type', typeFilter)
   queryParams.set('page', String(page))
 
   const { data: ledgerData, loading, refetch } = useQuery<any>(
@@ -190,9 +197,9 @@ function SalesLedgerView() {
 
   useEffect(() => {
     setPage(1)
-  }, [roleFilter, targetUserId, fromDate, toDate, search])
+  }, [roleFilter, targetUserId, fromDate, toDate, search, typeFilter])
 
-  const summary = ledgerData?.summary || { total_invoiced: 0, total_paid: 0, total_due: 0, total_gb: 0, total_admin_commission: 0, total_reseller_commission: 0, total_gb_voucher_sales: 0 }
+  const summary = ledgerData?.summary || { total_invoiced: 0, total_paid: 0, total_due: 0, total_gb: 0, total_admin_commission: 0, total_reseller_commission: 0, total_commission_paid: 0, total_gb_voucher_sales: 0 }
   const userSummaries = ledgerData?.user_summaries || []
   const ledger = ledgerData?.ledger || { data: [], current_page: 1, last_page: 1, total: 0 }
 
@@ -202,72 +209,133 @@ function SalesLedgerView() {
     setFromDate('')
     setToDate('')
     setSearch('')
+    setTypeFilter('')
     setPage(1)
   }
 
   return (
     <div className="space-y-6">
       {/* Summary KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {user?.role === 'admin' ? (
-          <GlassCard className="p-4 flex items-center justify-between">
+      {user?.role === 'seller' ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <GlassCard
+            onClick={() => toggleTypeFilter('voucher_sale')}
+            className={`p-4 flex items-center justify-between cursor-pointer transition-shadow ${typeFilter === 'voucher_sale' ? 'ring-2 ring-indigo-400' : ''}`}
+          >
             <div>
-              <p className="text-xs font-semibold text-slate-400">Commission Earned</p>
-              <p className="text-xl font-extrabold text-indigo-600 mt-1">{rs(summary.total_admin_commission)}</p>
-              <p className="text-[11px] text-slate-400 mt-1 font-medium">{gb(summary.total_gb)} Allocated</p>
+              <p className="text-xs font-semibold text-slate-400">Total Voucher Sales</p>
+              <p className="text-xl font-extrabold text-indigo-600 mt-1">
+                {rs(summary.total_voucher_sales ?? summary.total_invoiced ?? 0)}
+              </p>
+              <p className="text-[11px] text-slate-400 mt-1 font-medium">Voucher Revenue Generated</p>
             </div>
             <div className="w-12 h-12 rounded-2xl bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center shrink-0">
+              <Tag size={22} />
+            </div>
+          </GlassCard>
+
+          <GlassCard
+            onClick={() => toggleTypeFilter('due')}
+            className={`p-4 flex items-center justify-between cursor-pointer transition-shadow ${typeFilter === 'due' ? 'ring-2 ring-rose-400' : ''}`}
+          >
+            <div>
+              <p className="text-xs font-semibold text-slate-400">Due Payable to Reseller</p>
+              <p className={`text-xl font-extrabold mt-1 ${((user as any)?.wallet_due ?? 0) > 0 ? 'text-rose-600' : 'text-slate-700'}`}>
+                {rs((user as any)?.wallet_due ?? 0)}
+              </p>
+              <p className="text-[11px] text-slate-400 mt-1 font-medium">Outstanding GB Quota Due</p>
+            </div>
+            <div className="w-12 h-12 rounded-2xl bg-rose-50 border border-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+              <Wallet size={22} />
+            </div>
+          </GlassCard>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* 1. GB Voucher Sales (Reseller) / Commission Earned (Admin) */}
+          <GlassCard
+            onClick={() => toggleTypeFilter(isReseller ? 'gb_voucher_sale' : 'voucher_sale')}
+            className={`p-4 flex items-center justify-between cursor-pointer transition-shadow ${typeFilter === (isReseller ? 'gb_voucher_sale' : 'voucher_sale') ? 'ring-2 ring-rose-400' : ''}`}
+          >
+            <div>
+              <p className="text-xs font-semibold text-slate-400">{isReseller ? 'GB Voucher Sales' : 'Commission Earned'}</p>
+              <p className="text-xl font-extrabold text-rose-600 mt-1">
+                {rs(isReseller ? (summary.total_gb_voucher_sales ?? 0) : (summary.total_commission_paid ?? 0))}
+              </p>
+              <p className="text-[11px] text-slate-400 mt-1 font-medium">{isReseller ? 'GB Package Voucher Revenue' : `${gb(summary.total_gb)} Allocated`}</p>
+            </div>
+            <div className="w-12 h-12 rounded-2xl bg-rose-50 border border-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+              <Tag size={22} />
+            </div>
+          </GlassCard>
+
+          {/* 2. Wallet Voucher Sales (Reseller) / Commission Dues (Admin) */}
+          <GlassCard
+            onClick={() => toggleTypeFilter(isReseller ? 'wallet_voucher_sale' : 'commission_due')}
+            className={`p-4 flex items-center justify-between cursor-pointer transition-shadow ${typeFilter === (isReseller ? 'wallet_voucher_sale' : 'commission_due') ? 'ring-2 ring-purple-400' : ''}`}
+          >
+            <div>
+              <p className="text-xs font-semibold text-slate-400">{isReseller ? 'Wallet Voucher Sales' : 'Commission Dues'}</p>
+              <p className="text-xl font-extrabold text-purple-600 mt-1">
+                {rs(isReseller ? (summary.total_wallet_voucher_sales ?? 0) : (summary.total_commission_due ?? 0))}
+              </p>
+              <p className="text-[11px] text-slate-400 mt-1 font-medium">{isReseller ? 'Wallet Package Voucher Revenue' : 'Outstanding Commission'}</p>
+            </div>
+            <div className="w-12 h-12 rounded-2xl bg-purple-50 border border-purple-100 text-purple-600 flex items-center justify-center shrink-0">
+              <Wallet size={22} />
+            </div>
+          </GlassCard>
+
+          {/* 3. Payment Collected (Load GB Wallet) */}
+          <GlassCard
+            onClick={() => toggleTypeFilter('payment')}
+            className={`p-4 flex items-center justify-between cursor-pointer transition-shadow ${typeFilter === 'payment' ? 'ring-2 ring-emerald-400' : ''}`}
+          >
+            <div>
+              <p className="text-xs font-semibold text-slate-400">Payment Collected (Load GB Wallet)</p>
+              <p className="text-xl font-extrabold text-emerald-600 mt-1">{rs(summary.total_paid)}</p>
+              <p className="text-[11px] text-emerald-600 mt-1 font-medium">{isReseller ? 'Received from Sellers' : 'Received in Cash/Bank'}</p>
+            </div>
+            <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-100 text-emerald-600 flex items-center justify-center shrink-0">
+              <Wallet size={22} />
+            </div>
+          </GlassCard>
+
+          {/* 4. Receivable Dues (Load GB Wallet) */}
+          <GlassCard
+            onClick={() => toggleTypeFilter('due')}
+            className={`p-4 flex items-center justify-between cursor-pointer transition-shadow ${typeFilter === 'due' ? 'ring-2 ring-amber-400' : ''}`}
+          >
+            <div>
+              <p className="text-xs font-semibold text-slate-400">Receivable Dues (Load GB Wallet)</p>
+              <p className={`text-xl font-extrabold mt-1 ${summary.total_due > 0 ? 'text-amber-600' : 'text-slate-700'}`}>
+                {rs(summary.total_due)}
+              </p>
+              <p className="text-[11px] text-slate-400 mt-1 font-medium">{isReseller ? 'Owed by Sellers' : 'Receivable Dues'}</p>
+            </div>
+            <div className="w-12 h-12 rounded-2xl bg-amber-50 border border-amber-100 text-amber-600 flex items-center justify-center shrink-0">
               <DollarSign size={22} />
             </div>
           </GlassCard>
-        ) : (
-          <GlassCard className="p-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-semibold text-slate-400">Payment from GB Voucher Sales</p>
-              <p className="text-xl font-extrabold text-cyan-600 mt-1">{rs(summary.total_gb_voucher_sales)}</p>
-              <p className="text-[11px] text-slate-400 mt-1 font-medium">Collected from customers at sale</p>
-            </div>
-            <div className="w-12 h-12 rounded-2xl bg-cyan-50 border border-cyan-100 text-cyan-600 flex items-center justify-center shrink-0">
-              <Database size={22} />
-            </div>
-          </GlassCard>
-        )}
+        </div>
+      )}
 
-        <GlassCard className="p-4 flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold text-slate-400">Payment Collected from {user?.role === 'admin' ? 'Resellers' : 'Sellers'}</p>
-            <p className="text-xl font-extrabold text-emerald-600 mt-1">{rs(summary.total_paid)}</p>
-            <p className="text-[11px] text-emerald-600 mt-1 font-medium">Received in Cash/Bank</p>
-          </div>
-          <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-100 text-emerald-600 flex items-center justify-center shrink-0">
-            <Wallet size={22} />
-          </div>
-        </GlassCard>
-
-        <GlassCard className="p-4 flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold text-slate-400">Outstanding Balance from {user?.role === 'admin' ? 'Resellers' : 'Sellers'}</p>
-            <p className={`text-xl font-extrabold mt-1 ${summary.total_due > 0 ? 'text-amber-600' : 'text-slate-700'}`}>
-              {rs(summary.total_due)}
-            </p>
-            <p className="text-[11px] text-slate-400 mt-1 font-medium">Receivable Dues</p>
-          </div>
-          <div className="w-12 h-12 rounded-2xl bg-amber-50 border border-amber-100 text-amber-600 flex items-center justify-center shrink-0">
-            <DollarSign size={22} />
-          </div>
-        </GlassCard>
-
-        <GlassCard className="p-4 flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold text-slate-400">Accounts Active</p>
-            <p className="text-xl font-extrabold text-slate-800 mt-1">{userSummaries.length}</p>
-            <p className="text-[11px] text-slate-400 mt-1 font-medium">{user?.role === 'admin' ? 'Resellers' : 'Resellers & Sellers'}</p>
-          </div>
-          <div className="w-12 h-12 rounded-2xl bg-slate-100 border border-slate-200 text-slate-600 flex items-center justify-center shrink-0">
-            <Users size={22} />
-          </div>
-        </GlassCard>
-      </div>
+      {typeFilter && (
+        <div className="flex items-center gap-2 text-xs font-semibold text-slate-500">
+          <Filter size={14} />
+          Filtered by:
+          <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 flex items-center gap-1">
+            {typeFilter === 'gb_voucher_sale' ? 'GB Voucher Sales'
+              : typeFilter === 'payment' ? 'Payments'
+              : typeFilter === 'due' ? 'Receivable Dues (Load GB Wallet)'
+              : typeFilter === 'commission_due' ? 'Commission Dues'
+              : typeFilter === 'voucher_sale' ? 'Commission Earned'
+              : typeFilter === 'commission_paid' ? 'Commission Paid'
+              : typeFilter}
+            <button onClick={() => setTypeFilter('')} className="ml-1 hover:text-slate-900">✕</button>
+          </span>
+        </div>
+      )}
 
       {/* Filter Toolbar */}
       <div className="flex flex-col lg:flex-row items-end gap-3 w-full">
@@ -326,8 +394,8 @@ function SalesLedgerView() {
                   <th>Reference</th>
                   <th>Invoiced (Rs)</th>
                   <th>Paid (Rs)</th>
-                  <th>Admin Share (Rs)</th>
-                  <th>Reseller Share (Rs)</th>
+                  {user?.role !== 'seller' && <th>Admin Share (Rs)</th>}
+                  {user?.role !== 'seller' && <th>Reseller Share (Rs)</th>}
                   <th>Note</th>
                 </tr>
               </thead>
@@ -350,13 +418,13 @@ function SalesLedgerView() {
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-600 border border-blue-100 flex items-center gap-1 w-max">
                           <FileText size={11} /> Invoice
                         </span>
+                      ) : row.type === 'wallet_load' ? (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-50 text-teal-600 border border-teal-100 flex items-center gap-1 w-max">
+                          <Wallet size={11} /> Wallet Load
+                        </span>
                       ) : row.type === 'voucher_sale' ? (
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-50 text-purple-600 border border-purple-100 flex items-center gap-1 w-max">
                           <Tag size={11} /> Voucher Sale
-                        </span>
-                      ) : row.type === 'gb_voucher_sale' ? (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-50 text-cyan-600 border border-cyan-100 flex items-center gap-1 w-max">
-                          <Tag size={11} /> GB Voucher Sale
                         </span>
                       ) : (
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center gap-1 w-max">
@@ -375,13 +443,17 @@ function SalesLedgerView() {
                         ? rs(row.paid ?? row.amount)
                         : '—'}
                     </td>
-                    <td className="whitespace-nowrap font-extrabold text-xs text-indigo-600">
-                      {row.type === 'voucher_sale' ? rs(row.admin_share ?? 0) : '—'}
-                    </td>
-                    <td className="whitespace-nowrap font-extrabold text-xs text-slate-600">
-                      {row.type === 'voucher_sale' ? rs(row.reseller_share ?? 0) : '—'}
-                    </td>
-                    <td className="text-xs text-slate-500 max-w-xs truncate">{row.note || row.title || '—'}</td>
+                    {user?.role !== 'seller' && (
+                      <td className="whitespace-nowrap font-extrabold text-xs text-indigo-600">
+                        {row.type === 'voucher_sale' ? rs(row.admin_share ?? 0) : '—'}
+                      </td>
+                    )}
+                    {user?.role !== 'seller' && (
+                      <td className="whitespace-nowrap font-extrabold text-xs text-slate-600">
+                        {row.type === 'voucher_sale' ? rs(row.reseller_share ?? 0) : '—'}
+                      </td>
+                    )}
+                    <td className="text-xs text-slate-500 max-w-sm whitespace-normal break-words">{row.note || row.title || '—'}</td>
                   </motion.tr>
                 ))}
               </tbody>
@@ -535,7 +607,7 @@ function ExpensesLedgerView() {
                     <td className="whitespace-nowrap font-extrabold text-xs text-rose-600">{rs(exp.amount)}</td>
                     <td className="whitespace-nowrap text-xs text-slate-600 uppercase font-semibold">{exp.payment_method}</td>
                     <td className="whitespace-nowrap font-mono text-xs text-slate-600">{exp.reference || '—'}</td>
-                    <td className="text-xs text-slate-500 max-w-xs truncate">{exp.note || '—'}</td>
+                    <td className="text-xs text-slate-500 max-w-sm whitespace-normal break-words">{exp.note || '—'}</td>
                     <td className="text-right whitespace-nowrap">
                       <button
                         onClick={() => handleDeleteExpense(exp.id)}
@@ -579,6 +651,7 @@ function CommissionReportView() {
   const [fromDate, setFromDate] = useState<string>('')
   const [toDate, setToDate] = useState<string>('')
   const [collectTarget, setCollectTarget] = useState<{ id: number; name: string; username: string; commission_due: number } | null>(null)
+  const [breakdownTab, setBreakdownTab] = useState<'graph' | 'list'>('graph')
 
   const queryParams = new URLSearchParams()
   queryParams.set('group_by', groupBy)
@@ -611,9 +684,11 @@ function CommissionReportView() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <GlassCard className="p-4 flex items-center justify-between">
           <div>
-            <p className="text-xs font-semibold text-slate-400">Commission Earned</p>
-            <p className="text-xl font-extrabold text-indigo-600 mt-1">{rs(data?.total_earned || 0)}</p>
-            <p className="text-[11px] text-slate-400 mt-1 font-medium">Accrued on voucher sales, this range</p>
+            <p className="text-xs font-semibold text-slate-400">{user?.role === 'admin' ? 'Commission Earned' : 'Commission Due'}</p>
+            <p className="text-xl font-extrabold text-indigo-600 mt-1">{rs((user?.role === 'admin' ? data?.total_collected : data?.total_earned) || 0)}</p>
+            <p className="text-[11px] text-slate-400 mt-1 font-medium">
+              {user?.role === 'admin' ? 'Settled with resellers, this range' : 'Accrued on your voucher sales, this range'}
+            </p>
           </div>
           <div className="w-12 h-12 rounded-2xl bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center shrink-0">
             <DollarSign size={22} />
@@ -622,9 +697,11 @@ function CommissionReportView() {
 
         <GlassCard className="p-4 flex items-center justify-between">
           <div>
-            <p className="text-xs font-semibold text-slate-400">Commission Collected</p>
+            <p className="text-xs font-semibold text-slate-400">{user?.role === 'admin' ? 'Commission Collected' : 'Commission Paid to Admin'}</p>
             <p className="text-xl font-extrabold text-emerald-600 mt-1">{rs(data?.total_collected || 0)}</p>
-            <p className="text-[11px] text-emerald-600 mt-1 font-medium">Real settlements, this range</p>
+            <p className="text-[11px] text-emerald-600 mt-1 font-medium">
+              {user?.role === 'admin' ? 'Real settlements, this range' : 'Actually settled with admin, this range'}
+            </p>
           </div>
           <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-100 text-emerald-600 flex items-center justify-center shrink-0">
             <CollectIcon size={22} />
@@ -633,7 +710,7 @@ function CommissionReportView() {
 
         <GlassCard className="p-4 flex items-center justify-between">
           <div>
-            <p className="text-xs font-semibold text-slate-400">Outstanding Commission</p>
+            <p className="text-xs font-semibold text-slate-400">{user?.role === 'admin' ? 'Outstanding Commission' : 'Commission Due to Admin'}</p>
             <p className={`text-xl font-extrabold mt-1 ${(data?.total_outstanding || 0) > 0 ? 'text-amber-600' : 'text-slate-700'}`}>
               {rs(data?.total_outstanding || 0)}
             </p>
@@ -683,50 +760,70 @@ function CommissionReportView() {
         </div>
       </div>
 
-      {/* Earned vs Collected Chart */}
-      <GlassCard className="p-4">
-        <h3 className="font-extrabold text-slate-800 text-sm mb-1">Commission Earned vs. Collected</h3>
-        <p className="text-xs text-slate-400 mb-4">
-          {isCustomRange
-            ? 'Custom range'
-            : groupBy === 'daily' ? 'Last 30 days'
-            : groupBy === 'weekly' ? 'Last 12 weeks'
-            : groupBy === 'monthly' ? 'Last 12 months'
-            : 'Last 5 years'}
-        </p>
-        {loading && !data ? (
-          <Spinner />
-        ) : rows.length === 0 ? (
-          <EmptyState title="No Commission Activity" subtitle="No vouchers with commission have been sold in this range." />
-        ) : (
-          <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={rows} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-              <XAxis dataKey="period" tickFormatter={periodLabel} tick={{ fontSize: 10, fill: '#94a3b8' }} />
-              <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} width={52} tickFormatter={(v) => `Rs ${(v / 1000).toFixed(0)}k`} />
-              <Tooltip
-                labelFormatter={(p: any) => periodLabel(String(p))}
-                formatter={(v: any, name: any) => [`Rs ${Number(v).toLocaleString()}`, name]}
-                contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', fontSize: 12 }}
-              />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Bar name="Earned" dataKey="earned" fill="#4f46e5" radius={[4, 4, 0, 0]} />
-              <Bar name="Collected" dataKey="collected" fill="#059669" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        )}
-      </GlassCard>
+      {/* Earned vs Collected — Graph and List as separate tabs */}
+      <GlassCard className="!p-0 overflow-hidden">
+        <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/50 flex items-start justify-between flex-wrap gap-3">
+          <div>
+            <h3 className="font-extrabold text-slate-800 text-sm">{user?.role === 'admin' ? 'Commission Earned vs. Collected' : 'Commission Due vs. Paid'}</h3>
+            <p className="text-xs text-slate-400 mt-0.5">
+              {isCustomRange
+                ? 'Custom range'
+                : groupBy === 'daily' ? 'Last 30 days'
+                : groupBy === 'weekly' ? 'Last 12 weeks'
+                : groupBy === 'monthly' ? 'Last 12 months'
+                : 'Last 5 years'}
+            </p>
+          </div>
+          <div className="flex gap-1 p-1 bg-slate-100 rounded-xl shrink-0">
+            <button
+              onClick={() => setBreakdownTab('graph')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                breakdownTab === 'graph' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <BarChart3 size={13} /> Graph
+            </button>
+            <button
+              onClick={() => setBreakdownTab('list')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                breakdownTab === 'list' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <ListIcon size={13} /> List
+            </button>
+          </div>
+        </div>
 
-      {/* Raw data table, mirrors the chart above */}
-      {rows.length > 0 && (
-        <GlassCard className="!p-0 overflow-hidden">
-          <div className="overflow-x-auto max-h-64">
+        {loading && !data ? (
+          <div className="p-4"><Spinner /></div>
+        ) : rows.length === 0 ? (
+          <div className="p-4"><EmptyState title="No Commission Activity" subtitle="No vouchers with commission have been sold in this range." /></div>
+        ) : breakdownTab === 'graph' ? (
+          <div className="p-4">
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={rows} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <XAxis dataKey="period" tickFormatter={periodLabel} tick={{ fontSize: 10, fill: '#94a3b8' }} />
+                <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} width={52} tickFormatter={(v) => `Rs ${(v / 1000).toFixed(0)}k`} />
+                <Tooltip
+                  labelFormatter={(p: any) => periodLabel(String(p))}
+                  formatter={(v: any, name: any) => [`Rs ${Number(v).toLocaleString()}`, name]}
+                  contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', fontSize: 12 }}
+                />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Bar name={user?.role === 'admin' ? 'Earned' : 'Due'} dataKey="earned" fill="#4f46e5" radius={[4, 4, 0, 0]} />
+                <Bar name={user?.role === 'admin' ? 'Collected' : 'Paid'} dataKey="collected" fill="#059669" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        ) : (
+          <div className="overflow-x-auto max-h-96">
             <table className="w-full">
               <thead>
                 <tr>
                   <th>Period</th>
-                  <th>Earned (Rs)</th>
-                  <th>Collected (Rs)</th>
+                  <th>{user?.role === 'admin' ? 'Earned (Rs)' : 'Due (Rs)'}</th>
+                  <th>{user?.role === 'admin' ? 'Collected (Rs)' : 'Paid (Rs)'}</th>
                 </tr>
               </thead>
               <tbody>
@@ -740,8 +837,8 @@ function CommissionReportView() {
               </tbody>
             </table>
           </div>
-        </GlassCard>
-      )}
+        )}
+      </GlassCard>
 
       {/* Outstanding Commission by Reseller — admin only, with Collect action */}
       {user?.role === 'admin' && (
@@ -802,13 +899,37 @@ function CollectCommissionModal({
 }: { target: { id: number; name: string; username: string; commission_due: number } | null; onClose: () => void; onCollected: () => void }) {
   const [amount, setAmount] = useState('')
   const [note, setNote] = useState('')
+  const [method, setMethod] = useState('CASH')
   const [busy, setBusy] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
+
+  const [paymentMethods, setPaymentMethods] = useState<SelectOption[]>([
+    { value: 'CASH', label: 'Cash', icon: renderPaymentMethodIcon('💵', 'CASH') },
+    { value: 'QR_ESEWA', label: 'eSewa', icon: renderPaymentMethodIcon('🟢', 'QR_ESEWA') },
+    { value: 'QR_KHALTI', label: 'Khalti', icon: renderPaymentMethodIcon('🚀', 'QR_KHALTI') },
+    { value: 'CARD', label: 'Card', icon: renderPaymentMethodIcon('💳', 'CARD') },
+    { value: 'FONEPAY_QR', label: 'Fonepay QR', icon: renderPaymentMethodIcon('📲', 'FONEPAY_QR') },
+  ])
+
+  useEffect(() => {
+    api.get('/payment-methods').then((res) => {
+      if (res.data?.success && Array.isArray(res.data.data) && res.data.data.length > 0) {
+        setPaymentMethods(
+          res.data.data.map((pm: any) => ({
+            value: pm.code,
+            label: pm.label,
+            icon: renderPaymentMethodIcon(pm.icon, pm.code),
+          }))
+        )
+      }
+    }).catch(() => {})
+  }, [])
 
   useEffect(() => {
     if (target) {
       setAmount(String(target.commission_due))
       setNote('')
+      setMethod('CASH')
       setErrorMsg('')
     }
   }, [target])
@@ -825,7 +946,7 @@ function CollectCommissionModal({
     try {
       setBusy(true)
       setErrorMsg('')
-      await api.post('/billing/commission/collect', { user_id: target.id, amount: rawAmount, note: note || undefined })
+      await api.post('/billing/commission/collect', { user_id: target.id, amount: rawAmount, note: note || undefined, payment_method: method })
       onCollected()
       onClose()
     } catch (err: any) {
@@ -852,6 +973,16 @@ function CollectCommissionModal({
             className="input text-xs font-semibold"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
+          />
+        </div>
+
+        <div>
+          <label className="text-xs font-bold text-slate-500 block mb-1">Payment Method</label>
+          <CustomSelect
+            className="w-full"
+            value={method}
+            onChange={(val) => setMethod(String(val))}
+            options={paymentMethods}
           />
         </div>
 
@@ -969,7 +1100,7 @@ function TransactionsAuditView() {
                     <td className="whitespace-nowrap font-mono text-xs text-slate-600">
                       {t.from && t.to ? `${t.from} → ${t.to}` : (t.from || t.to || '—')}
                     </td>
-                    <td className="text-xs text-slate-500 max-w-xs truncate">{t.reference || t.note || '—'}</td>
+                    <td className="text-xs text-slate-500 max-w-sm whitespace-normal break-words">{t.reference || t.note || '—'}</td>
                   </motion.tr>
                 ))}
               </tbody>

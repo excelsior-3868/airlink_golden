@@ -20,6 +20,7 @@ use App\Http\Controllers\Api\TransactionController;
 use App\Http\Controllers\Api\SeasonController;
 use App\Http\Controllers\Api\AccountController;
 use App\Http\Controllers\Api\IntegrationTokenController;
+use App\Http\Controllers\Api\PaymentMethodController;
 use Illuminate\Support\Facades\Route;
 
 // --- Public ---
@@ -76,7 +77,13 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/billing/payments/collect', [BillingController::class, 'collect'])->middleware('permission:wallet_load');
     Route::post('/billing/commission/collect', [BillingController::class, 'collectCommission'])->middleware('permission:wallet_load');
 
-    // Accounts Module (Sales Ledger & Expenses)
+    // Accounts Module (Sales Ledger, Financial Dashboard, COA & Expenses)
+    Route::get('/accounts/financial-dashboard', [AccountController::class, 'financialDashboard']);
+    Route::get('/accounts/chart-of-accounts', [AccountController::class, 'chartOfAccountsIndex']);
+    Route::post('/accounts/chart-of-accounts', [AccountController::class, 'chartOfAccountsStore']);
+    Route::put('/accounts/chart-of-accounts/{account}', [AccountController::class, 'chartOfAccountsUpdate']);
+    Route::delete('/accounts/chart-of-accounts/{account}', [AccountController::class, 'chartOfAccountsDestroy']);
+
     Route::get('/accounts/sales-ledger', [AccountController::class, 'salesLedger']);
     Route::get('/accounts/commission-report', [AccountController::class, 'commissionReport']);
     Route::get('/accounts/expenses', [AccountController::class, 'expensesIndex']);
@@ -89,11 +96,14 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/accounts/parties/{party}', [AccountController::class, 'partyUpdate']);
     Route::delete('/accounts/parties/{party}', [AccountController::class, 'partyDestroy']);
 
-    // Direct aliases for expenses & parties
-    Route::get('/expenses', [AccountController::class, 'expensesIndex']);
-    Route::post('/expenses', [AccountController::class, 'expenseStore']);
-    Route::put('/expenses/{expense}', [AccountController::class, 'expenseUpdate']);
-    Route::delete('/expenses/{expense}', [AccountController::class, 'expenseDestroy']);
+
+    // Payment Methods
+    Route::get('/payment-methods', [PaymentMethodController::class, 'index']);
+    Route::get('/admin/payment-methods', [PaymentMethodController::class, 'adminIndex'])->middleware('role:admin');
+    Route::post('/admin/payment-methods', [PaymentMethodController::class, 'store'])->middleware('role:admin');
+    Route::put('/admin/payment-methods/{id}', [PaymentMethodController::class, 'update'])->middleware('role:admin');
+    Route::delete('/admin/payment-methods/{id}', [PaymentMethodController::class, 'destroy'])->middleware('role:admin');
+
 
     Route::get('/parties', [AccountController::class, 'partiesIndex']);
     Route::post('/parties', [AccountController::class, 'partyStore']);
@@ -147,6 +157,7 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     Route::middleware('role:admin')->group(function () {
+        Route::get('/admin/system-loads', [UserController::class, 'systemLoadHistory']);
         Route::post('/admin/system-load', [UserController::class, 'systemLoad']);
         Route::patch('/users/{user}/gb-rate', [UserController::class, 'updateGbRate']);
         Route::post('/nas', [NasController::class, 'store']);

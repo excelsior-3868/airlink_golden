@@ -122,4 +122,17 @@ class User extends Authenticatable
             || $this->id === $actor->id
             || $this->parent_id === $actor->id;
     }
+
+    public function getGbReservedAttribute(): float
+    {
+        return (float) Voucher::where('owner_id', $this->id)
+            ->where('status', 'active')
+            ->whereNotNull('gb_cost')
+            ->sum('gb_cost');
+    }
+
+    public function getGbAllowableAttribute(): float
+    {
+        return max(0.000, (float) $this->gb_balance - $this->getGbReservedAttribute());
+    }
 }

@@ -82,11 +82,11 @@ export default function VoucherGenerator() {
 
   const totalWalletCost = useMemo(() => {
     if (gen.plan_id === 'custom') {
-      return (+gen.custom_base_price_val || 0) * gen.quantity
+      return (+gen.custom_selling_price || 0) * gen.quantity
     }
-    const basePrice = gen.custom_base_price !== '' ? +gen.custom_base_price : (selectedPlan ? +selectedPlan.base_price : 0)
-    return basePrice * gen.quantity
-  }, [selectedPlan, gen.plan_id, gen.custom_base_price_val, gen.custom_base_price, gen.quantity])
+    const price = selectedPlan ? +selectedPlan.selling_price : 0
+    return price * gen.quantity
+  }, [selectedPlan, gen.plan_id, gen.custom_selling_price, gen.quantity])
 
   const purchaseSource = gen.custom_purchase_source || 'gb'
   // Only admin/reseller can generate on behalf of a downline user.
@@ -189,10 +189,13 @@ export default function VoucherGenerator() {
         setPlans(rPl.data.data)
       }
 
+      const selectedPlan = plans.find((p) => String(p.id) === String(finalPlanId))
+      const computedSource = selectedPlan?.package_type === 'wallet' ? 'wallet' : (gen.custom_purchase_source || 'gb')
+
       const payload: any = {
         plan_id: +finalPlanId,
         quantity: +gen.quantity,
-        purchase_source: gen.custom_purchase_source || 'gb',
+        purchase_source: computedSource,
       }
       if (gen.validity_days) payload.validity_days = +gen.validity_days
       if (gen.custom_price) payload.custom_price = +gen.custom_price
@@ -415,15 +418,9 @@ export default function VoucherGenerator() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-semibold text-slate-500">Retail Price (Selling Price)</label>
-                    <input className="input mt-1" type="number" min={0} value={gen.custom_selling_price} onChange={(e) => setGen({ ...gen, custom_selling_price: e.target.value })} placeholder="Rs. 300" />
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-slate-500">Base Price (Wholesale Cost)</label>
-                    <input className="input mt-1" type="number" min={0} value={gen.custom_base_price_val} onChange={(e) => setGen({ ...gen, custom_base_price_val: e.target.value })} placeholder="Rs. 100" />
-                  </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-500">Retail Price (Selling Price)</label>
+                  <input className="input mt-1" type="number" min={0} value={gen.custom_selling_price} onChange={(e) => setGen({ ...gen, custom_selling_price: e.target.value })} placeholder="Rs. 300" />
                 </div>
               </div>
             )}
@@ -445,11 +442,10 @@ export default function VoucherGenerator() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div><label className="text-xs font-semibold text-slate-500">Quantity</label><input className="input mt-1" type="number" min={1} max={20000} value={gen.quantity} onChange={(e) => setGen({ ...gen, quantity: +e.target.value })} /></div>
               <div><label className="text-xs font-semibold text-slate-500">Validity (days, optional)</label><input className="input mt-1" type="number" disabled={gen.plan_id === 'custom'} value={gen.validity_days} onChange={(e) => setGen({ ...gen, validity_days: e.target.value })} placeholder="Plan default" /></div>
               <div><label className="text-xs font-semibold text-slate-500">Retail Price (Rs., optional)</label><input className="input mt-1" type="number" min={0.00} step="0.01" disabled={gen.plan_id === 'custom'} value={gen.custom_price} onChange={(e) => setGen({ ...gen, custom_price: e.target.value })} placeholder={selectedPlan ? `${selectedPlan.selling_price}` : "Plan default"} /></div>
-              <div><label className="text-xs font-semibold text-slate-500">Base Price (Rs., optional)</label><input className="input mt-1" type="number" min={0.00} step="0.01" disabled={gen.plan_id === 'custom'} value={gen.custom_base_price} onChange={(e) => setGen({ ...gen, custom_base_price: e.target.value })} placeholder={selectedPlan ? `${selectedPlan.base_price}` : "Plan default"} /></div>
             </div>
 
             {gen.plan_id && (

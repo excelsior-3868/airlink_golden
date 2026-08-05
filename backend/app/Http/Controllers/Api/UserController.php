@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\SystemLoad;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -82,6 +83,9 @@ class UserController extends Controller
     public function update(Request $request, User $user): JsonResponse
     {
         $actor = $request->user();
+        if ($user->isSeller() && $actor->isAdmin()) {
+            return $this->fail('Admins can only view sellers.', 403);
+        }
         if (! $user->isManagedBy($actor)) {
             return $this->fail('You are not authorized to manage this user.', 403);
         }
@@ -126,7 +130,11 @@ class UserController extends Controller
     /** Enable/disable a user in the actor's subtree. */
     public function setStatus(Request $request, User $user): JsonResponse
     {
-        if (! $user->isManagedBy($request->user()) || $user->id === $request->user()->id) {
+        $actor = $request->user();
+        if ($user->isSeller() && $actor->isAdmin()) {
+            return $this->fail('Admins can only view sellers.', 403);
+        }
+        if (! $user->isManagedBy($actor) || $user->id === $actor->id) {
             return $this->fail('You cannot change this user\'s status.', 403);
         }
         $data = $request->validate(['status' => ['required', 'in:active,disabled']]);
@@ -182,6 +190,7 @@ class UserController extends Controller
                     'type' => 'opening',
                     'amount' => $walletAmount,
                     'balance_after' => $user->wallet_balance,
+                    'from_user_id' => $actor->id,
                     'note' => $note,
                     'reference' => 'system:load',
                 ]);
@@ -195,13 +204,54 @@ class UserController extends Controller
                     'type' => 'opening',
                     'gb_amount' => $gbAmount,
                     'balance_after' => $user->gb_balance,
+                    'from_user_id' => $actor->id,
                     'reference' => 'system:load',
                     'note' => $note,
                 ]);
             }
+
+            SystemLoad::create([
+                'user_id' => $user->id,
+                'created_by' => $actor->id,
+                'wallet_amount' => $walletAmount,
+                'gb_amount' => $gbAmount,
+                'wallet_balance_after' => $user->wallet_balance,
+                'gb_balance_after' => $user->gb_balance,
+                'note' => $note,
+            ]);
         });
 
         return $this->ok(['user' => $actor->fresh()], 'System load successful.');
+    }
+
+    /** Fetch paginated system load history (Admin only). */
+    public function systemLoadHistory(Request $request): JsonResponse
+    {
+        $actor = $request->user();
+        if (! $actor->isAdmin()) {
+            return $this->fail('Only Admins can view system load history.', 403);
+        }
+
+        $query = SystemLoad::query()
+            ->with([
+                'user:id,name,username,role',
+                'creator:id,name,username,role',
+            ])
+            ->latest();
+
+        if ($search = $request->query('search')) {
+            $query->where(function ($q) use ($search) {
+                $q->where('note', 'like', "%{$search}%")
+                  ->orWhereHas('creator', function ($cq) use ($search) {
+                      $cq->where('name', 'like', "%{$search}%")
+                         ->orWhere('username', 'like', "%{$search}%");
+                  });
+            });
+        }
+
+        $history = $query->paginate($request->integer('per_page', 20));
+
+        return $this->ok($history);
     }
 
     private function validateNewUser(Request $request): array

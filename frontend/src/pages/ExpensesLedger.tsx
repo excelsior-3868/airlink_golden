@@ -8,7 +8,7 @@ import { api, apiError } from '../lib/api'
 import { useQuery } from '../lib/cache'
 import { useAuth } from '../lib/auth'
 import { rs, date } from '../lib/format'
-import { GlassCard, PageTitle, Modal, Pill, Pagination, EmptyState, Spinner, Combobox, SelectOption, ConfirmModal } from '../components/ui'
+import { GlassCard, PageTitle, Modal, Pill, Pagination, EmptyState, Spinner, Combobox, SelectOption, ConfirmModal, renderPaymentMethodIcon } from '../components/ui'
 import { DualDatePicker } from '../components/DualDatePicker'
 
 const CATEGORIES = [
@@ -22,13 +22,12 @@ const CATEGORIES = [
   { value: 'other', label: 'Other Expenses' },
 ]
 
-const PAYMENT_METHODS = [
-  { value: 'cash', label: 'Cash' },
-  { value: 'bank_transfer', label: 'Bank Transfer' },
-  { value: 'wallet', label: 'Wallet Balance' },
-  { value: 'cheque', label: 'Cheque' },
-  { value: 'credit', label: 'Credit / Due' },
-  { value: 'other', label: 'Other' },
+const PAYMENT_METHODS: SelectOption[] = [
+  { value: 'CASH', label: 'Cash', icon: renderPaymentMethodIcon('💵', 'CASH') },
+  { value: 'QR_ESEWA', label: 'eSewa', icon: renderPaymentMethodIcon('🟢', 'QR_ESEWA') },
+  { value: 'QR_KHALTI', label: 'Khalti', icon: renderPaymentMethodIcon('🚀', 'QR_KHALTI') },
+  { value: 'CARD', label: 'Card', icon: renderPaymentMethodIcon('💳', 'CARD') },
+  { value: 'FONEPAY_QR', label: 'Fonepay QR', icon: renderPaymentMethodIcon('📲', 'FONEPAY_QR') },
 ]
 
 export default function ExpensesLedger() {
@@ -49,13 +48,29 @@ export default function ExpensesLedger() {
     category: 'salary',
     amount: '',
     expense_date: new Date().toISOString().split('T')[0],
-    payment_method: 'cash',
+    payment_method: 'CASH',
     reference: '',
     note: '',
   })
 
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
+
+  const [dynamicPaymentMethods, setDynamicPaymentMethods] = useState<SelectOption[]>(PAYMENT_METHODS)
+
+  useEffect(() => {
+    api.get('/payment-methods').then((res) => {
+      if (res.data?.success && Array.isArray(res.data.data) && res.data.data.length > 0) {
+        setDynamicPaymentMethods(
+          res.data.data.map((pm: any) => ({
+            value: pm.code,
+            label: pm.label,
+            icon: renderPaymentMethodIcon(pm.icon, pm.code),
+          }))
+        )
+      }
+    }).catch(() => {})
+  }, [])
 
   // Query Expenses
   const queryParams = new URLSearchParams()
@@ -187,7 +202,7 @@ export default function ExpensesLedger() {
 
   const categoryModalOptions: SelectOption[] = CATEGORIES.map((c) => ({ value: c.value, label: c.label }))
 
-  const paymentMethodOptions: SelectOption[] = PAYMENT_METHODS.map((m) => ({ value: m.value, label: m.label }))
+  const paymentMethodOptions: SelectOption[] = dynamicPaymentMethods
 
   return (
     <div className="space-y-6">
@@ -481,6 +496,7 @@ export default function ExpensesLedger() {
             <div>
               <label className="text-xs font-bold text-slate-500 block mb-1.5">Payment Method</label>
               <Combobox
+                className="w-full"
                 value={expenseForm.payment_method}
                 onChange={(val) => setExpenseForm({ ...expenseForm, payment_method: val })}
                 options={paymentMethodOptions}

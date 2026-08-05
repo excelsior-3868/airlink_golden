@@ -68,9 +68,9 @@ export default function FundAllocation({ defaultTab }: { defaultTab?: TabType })
   return (
     <div className="space-y-6">
       <PageTitle 
-        title="Wallet & GB Allocation" 
-        subtitle="Manage downline cash wallet loads and data quota allocations" 
-        icon={<WalletIcon size={22} className="text-emerald-500" />} 
+        title={user?.role === 'admin' ? "Wallet & GB Allocation" : "GB Allocation"} 
+        subtitle={user?.role === 'admin' ? "Manage downline cash wallet loads and data quota allocations" : "Manage downline data quota allocations"} 
+        icon={user?.role === 'admin' ? <WalletIcon size={22} className="text-emerald-500" /> : <Database size={22} className="text-cyan-500" />} 
       />
 
       {/* Summary KPI Cards */}

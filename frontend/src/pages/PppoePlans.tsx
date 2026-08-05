@@ -297,16 +297,7 @@ export default function PppoePlans() {
               </select>
             </div>
 
-            <div>
-              <label className="text-xs font-semibold text-muted-foreground uppercase block mb-1">Base Price</label>
-              <input
-                className="input"
-                type="number"
-                placeholder="Base price"
-                value={form.base_price}
-                onChange={(e) => setForm({ ...form, base_price: +e.target.value })}
-              />
-            </div>
+
 
             <div>
               <label className="text-xs font-semibold text-muted-foreground uppercase block mb-1">Selling Price</label>

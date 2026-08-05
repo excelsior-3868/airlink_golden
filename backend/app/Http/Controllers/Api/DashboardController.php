@@ -48,6 +48,15 @@ class DashboardController extends Controller
             'wallet_vouchers' => $this->voucherBreakdown(Voucher::whereHas('plan', fn($q) => $q->where('package_type', 'wallet'))),
             'commission_earned' => (float) WalletTransaction::where('user_id', $admin->id)->where('type', 'commission')->sum('amount'),
             'commission_today' => (float) WalletTransaction::where('user_id', $admin->id)->where('type', 'commission')->whereDate('created_at', now()->toDateString())->sum('amount'),
+            // Live outstanding commission owed to admin, summed across every reseller
+            // (mirrors each reseller's own commission_due, just rolled up system-wide).
+            'commission_due' => (float) User::where('role', 'reseller')->sum('commission_due'),
+            // GB allocation payments actually collected from resellers vs. still
+            // outstanding — same collected/receivable split resellers see for their
+            // own sellers (collected_from_sellers / outstanding_due), rolled up here
+            // for the admin -> reseller leg of the same GB-on-credit flow.
+            'collected_from_resellers' => (float) Invoice::where('sender_id', $admin->id)->sum('paid_amount'),
+            'pending_from_resellers' => (float) User::where('role', 'reseller')->sum('wallet_due'),
             'top_resellers' => $this->topByVoucherSales('reseller_id', null, true),
             'top_sellers' => $this->topByVoucherSales('seller_id', null),
             'recent_transactions' => WalletTransaction::with(['user', 'fromUser', 'toUser'])->latest()->limit(5)->get()->map(fn($t) => [

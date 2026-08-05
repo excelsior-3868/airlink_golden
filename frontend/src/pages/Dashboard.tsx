@@ -100,7 +100,7 @@ export default function Dashboard() {
       {/* Admin Dashboard */}
       {d.role === 'admin' && (
         <div className="space-y-6">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
             <StatCard label="Wallet Balance" value={<span className="text-emerald-600">{rs(d.balances.wallet)}</span>} icon={<Wallet size={22} />} iconColorClass="text-emerald-600 bg-emerald-50 border border-emerald-100/50" />
             <StatCard label="GB Balance" value={<span className="text-cyan-600">{gb(d.balances.gb)}</span>} icon={<Database size={22} />} iconColorClass="text-cyan-600 bg-cyan-50 border border-cyan-100/50" />
             <StatCard label="Wallet Distributed" value={<span className="text-blue-600">{rs(d.wallet_distributed)}</span>} icon={<Wallet size={22} />} iconColorClass="text-blue-600 bg-blue-50 border border-blue-100/50" />
@@ -112,10 +112,28 @@ export default function Dashboard() {
               iconColorClass="text-amber-600 bg-amber-50 border border-amber-100/50"
               sub={<span>Today: <strong className="text-slate-700">{rs(d.commission_today)}</strong></span>}
             />
-            <VoucherStatCard title="GB Vouchers" vouchers={d.gb_vouchers || d.vouchers} icon={<Ticket size={22} />} iconColorClass="text-rose-600 bg-rose-50 border border-rose-100/50" />
-            <VoucherStatCard title="Wallet Vouchers" vouchers={d.wallet_vouchers || d.vouchers} icon={<Wallet size={22} />} iconColorClass="text-purple-600 bg-purple-50 border border-purple-100/50" />
-            <StatCard label="Total Resellers" value={<span className="text-indigo-600">{num(d.counts?.resellers || 0)}</span>} icon={<Users2 size={22} />} iconColorClass="text-indigo-600 bg-indigo-50 border border-indigo-100/50" />
-            <StatCard label="Total Sellers" value={<span className="text-pink-600">{num(d.counts?.sellers || 0)}</span>} icon={<Store size={22} />} iconColorClass="text-pink-600 bg-pink-50 border border-pink-100/50" />
+            <StatCard
+              label="Commission Due"
+              value={<span className="text-orange-600">{rs(d.commission_due)}</span>}
+              icon={<Receipt size={22} />}
+              iconColorClass="text-orange-600 bg-orange-50 border border-orange-100/50"
+              sub={<span>Owed by resellers</span>}
+            />
+            <VoucherStatCard title="GB Vouchers" vouchers={d.gb_vouchers || d.vouchers} icon={<Ticket size={22} />} iconColorClass="text-rose-600 bg-rose-50 border border-rose-100/50" valueColorClass="text-rose-600" />
+            <VoucherStatCard title="Wallet Vouchers" vouchers={d.wallet_vouchers || d.vouchers} icon={<Wallet size={22} />} iconColorClass="text-purple-600 bg-purple-50 border border-purple-100/50" valueColorClass="text-purple-600" />
+            <StatCard
+              label="GB Wallet Payment"
+              value={<span className="text-emerald-600">{rs(d.collected_from_resellers)}</span>}
+              icon={<TrendingUp size={22} />}
+              iconColorClass="text-emerald-600 bg-emerald-50 border border-emerald-100/50"
+            />
+            <StatCard
+              label="GB Wallet Pending Payment"
+              value={<span className="text-teal-600">{rs(d.pending_from_resellers)}</span>}
+              icon={<CreditCard size={22} />}
+              iconColorClass="text-teal-600 bg-teal-50 border border-teal-100/50"
+              sub={<span>Owed for allocated GB</span>}
+            />
           </div>
 
           {/* Charts Row — system-wide, across all resellers & sellers */}
@@ -130,16 +148,22 @@ export default function Dashboard() {
                 <ResponsiveContainer width="100%" height={200}>
                   <AreaChart data={d.daily_trend} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
                     <defs>
-                      <linearGradient id="salesGradAdmin" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.25} />
-                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                      <linearGradient id="salesGradAdminGb" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="#f43f5e" stopOpacity={0} />
+                      </linearGradient>
+                      <linearGradient id="salesGradAdminWallet" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#a855f7" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="#a855f7" stopOpacity={0} />
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                     <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#94a3b8' }} tickFormatter={(v) => v.slice(5)} />
                     <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} width={52} tickFormatter={(v) => `Rs ${(v/1000).toFixed(0)}k`} />
-                    <Tooltip formatter={(v: any) => [`Rs ${Number(v).toLocaleString()}`, 'Sales']} labelStyle={{ fontSize: 11 }} contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', fontSize: 12 }} />
-                    <Area type="monotone" dataKey="sales" stroke="#6366f1" strokeWidth={2} fill="url(#salesGradAdmin)" />
+                    <Tooltip formatter={(v: any) => [`Rs ${Number(v).toLocaleString()}`, undefined]} labelStyle={{ fontSize: 11 }} contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', fontSize: 12 }} />
+                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                    <Area type="monotone" dataKey="gb_sales" name="GB Sales" stackId="sales" stroke="#f43f5e" strokeWidth={2} fill="url(#salesGradAdminGb)" />
+                    <Area type="monotone" dataKey="wallet_sales" name="Wallet Sales" stackId="sales" stroke="#a855f7" strokeWidth={2} fill="url(#salesGradAdminWallet)" />
                   </AreaChart>
                 </ResponsiveContainer>
               </GlassCard>
@@ -171,6 +195,7 @@ export default function Dashboard() {
               <GlassCard>
                 <h3 className="font-bold mb-3 flex items-center gap-2 text-primary">
                   <Users2 size={18} /> Top Resellers
+                  <span className="ml-auto text-xs font-semibold text-indigo-600 bg-indigo-50 border border-indigo-100/50 rounded-full px-2 py-0.5">{num(d.counts?.resellers || 0)} total</span>
                 </h3>
                 {d.top_resellers.length === 0 ? (
                   <EmptyState>No reseller sales yet.</EmptyState>
@@ -193,6 +218,7 @@ export default function Dashboard() {
               <GlassCard>
                 <h3 className="font-bold mb-3 flex items-center gap-2 text-primary">
                   <Store size={18} /> Top Sellers
+                  <span className="ml-auto text-xs font-semibold text-pink-600 bg-pink-50 border border-pink-100/50 rounded-full px-2 py-0.5">{num(d.counts?.sellers || 0)} total</span>
                 </h3>
                 {d.top_sellers.length === 0 ? (
                   <EmptyState>No seller sales yet.</EmptyState>
@@ -282,8 +308,8 @@ export default function Dashboard() {
               sub={<span>Owed by sellers for allocated GB</span>}
             />
 
-            <VoucherStatCard title="GB Vouchers" vouchers={d.gb_vouchers || d.vouchers} icon={<Ticket size={22} />} iconColorClass="text-rose-600 bg-rose-50 border border-rose-100/50" />
-            <VoucherStatCard title="Wallet Vouchers" vouchers={d.wallet_vouchers || d.vouchers} icon={<Wallet size={22} />} iconColorClass="text-purple-600 bg-purple-50 border border-purple-100/50" />
+            <VoucherStatCard title="GB Vouchers" vouchers={d.gb_vouchers || d.vouchers} icon={<Ticket size={22} />} iconColorClass="text-rose-600 bg-rose-50 border border-rose-100/50" valueColorClass="text-rose-600" />
+            <VoucherStatCard title="Wallet Vouchers" vouchers={d.wallet_vouchers || d.vouchers} icon={<Wallet size={22} />} iconColorClass="text-purple-600 bg-purple-50 border border-purple-100/50" valueColorClass="text-purple-600" />
             <StatCard label="GB Voucher Sales" value={<span className="text-blue-600">{rs(d.voucher_sales)}</span>} icon={<TrendingUp size={22} />} iconColorClass="text-blue-600 bg-blue-50 border border-blue-100/50" />
             <StatCard label="Commission Due to Admin" value={<span className="text-orange-600">{rs(d.commission_due)} <span className="text-sm font-medium text-orange-400">({d.commission_percent}%)</span></span>} icon={<Receipt size={22} />} iconColorClass="text-orange-600 bg-orange-50 border border-orange-100/50" />
             <StatCard label="Net Earnings (After Commission)" value={<span className="text-lime-600">{rs(d.commission_net_earnings)}</span>} icon={<Sparkles size={22} />} iconColorClass="text-lime-600 bg-lime-50 border border-lime-100/50" />
@@ -347,6 +373,7 @@ export default function Dashboard() {
               <GlassCard>
                 <h3 className="font-bold mb-3 flex items-center gap-2 text-primary">
                   <Store size={18} /> Top Sellers
+                  <span className="ml-auto text-xs font-semibold text-pink-600 bg-pink-50 border border-pink-100/50 rounded-full px-2 py-0.5">{num(d.counts?.sellers || 0)} total</span>
                 </h3>
                 {d.top_sellers.length === 0 ? (
                   <EmptyState>No seller sales yet.</EmptyState>
@@ -410,7 +437,7 @@ export default function Dashboard() {
             />
             <StatCard label="Due Payable" value={<span className="text-rose-600">{rs(d.balances.wallet_due)}</span>} icon={<Wallet size={22} />} iconColorClass="text-rose-600 bg-rose-50 border border-rose-100/50" sub={d.reseller_name ? <span className="text-xs text-slate-500">To: <span className="font-semibold text-slate-700">{d.reseller_name}</span></span> : undefined} />
             <StatCard label="Today's Sales" value={<span className="text-blue-600">{rs(d.today.sales)}</span>} icon={<TrendingUp size={22} />} iconColorClass="text-blue-600 bg-blue-50 border border-blue-100/50" />
-            <VoucherStatCard title="GB Vouchers" vouchers={d.gb_vouchers || d.vouchers} icon={<Ticket size={22} />} iconColorClass="text-rose-600 bg-rose-50 border border-rose-100/50" />
+            <VoucherStatCard title="GB Vouchers" vouchers={d.gb_vouchers || d.vouchers} icon={<Ticket size={22} />} iconColorClass="text-rose-600 bg-rose-50 border border-rose-100/50" valueColorClass="text-rose-600" />
             <StatCard label="Created Voucher Value" value={<span className="text-indigo-600">{rs(d.voucher_sales)}</span>} icon={<TrendingUp size={22} />} iconColorClass="text-indigo-600 bg-indigo-50 border border-indigo-100/50" />
             <StatCard label="Packages" value={<span className="text-amber-600">{num(d.counts.packages)}</span>} icon={<Package size={22} />} iconColorClass="text-amber-600 bg-amber-50 border border-amber-100/50" />
           </div>

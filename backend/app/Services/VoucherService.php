@@ -35,7 +35,6 @@ class VoucherService
         ?int $validityDays = null,
         ?string $note = null,
         ?float $customPrice = null,
-        ?float $customBasePrice = null,
         ?int $ownerId = null,
         string $purchaseSource = 'gb',
         ?string $customBatchCode = null
@@ -58,8 +57,7 @@ class VoucherService
 
         $validity = $validityDays ?: (int) $plan->validity_days;
         $pricePer = $customPrice !== null ? (float) $customPrice : (float) $plan->selling_price;
-        $basePricePer = $customBasePrice !== null ? (float) $customBasePrice : (float) ($plan->base_price ?? 0);
-        $totalCost = $basePricePer * $quantity;
+        $totalCost = $pricePer * $quantity;
 
         $planGb = (float) ($plan->data_gb ?? 0);
         if ($planGb > 0) {
@@ -68,7 +66,7 @@ class VoucherService
         } else {
             $rate = (float) ($owner->gb_rate ?? 1.00);
             $totalGb = $rate > 0 ? round($totalCost / $rate, 3) : 0.000;
-            $gbPer = $rate > 0 ? round($basePricePer / $rate, 3) : 0.000;
+            $gbPer = $rate > 0 ? round($pricePer / $rate, 3) : 0.000;
         }
 
         // GB Package plans defer the actual balance spend to sell/first-use
@@ -108,7 +106,7 @@ class VoucherService
             default => [null, null],
         };
 
-        return DB::transaction(function () use ($owner, $plan, $quantity, $validity, $gbPer, $pricePer, $basePricePer, $totalGb, $totalCost, $resellerId, $sellerId, $note, $purchaseSource, $customBatchCode, $isGbPackage) {
+        return DB::transaction(function () use ($owner, $plan, $quantity, $validity, $gbPer, $pricePer, $totalGb, $totalCost, $resellerId, $sellerId, $note, $purchaseSource, $customBatchCode, $isGbPackage) {
             $bCode = $customBatchCode ?: $this->uniqueBatchCode();
             if (Batch::where('batch_code', $bCode)->exists()) {
                 $bCode = $bCode . '-' . strtoupper(Str::random(4));
@@ -145,12 +143,13 @@ class VoucherService
                     'validity_days' => $validity,
                     'simultaneous_use' => (int) ($plan->simultaneous_use ?: 1),
                     'price' => $pricePer,
-                    'base_price' => $basePricePer,
+                    'base_price' => $pricePer,
                     // GB Package vouchers carry their own GB-equivalent cost so it
                     // can be deducted later, at sell/first-use time, instead of now.
                     'gb_cost' => $isGbPackage ? $gbPer : null,
                     'status' => 'active', 'expires_at' => null,
                     'created_at' => $now, 'updated_at' => $now,
+
                 ];
                 $r = $this->radius->rows($code, $code, $plan);
                 $checkRows = array_merge($checkRows, $r['check']);

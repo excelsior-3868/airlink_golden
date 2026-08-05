@@ -23,6 +23,9 @@ import SalesLedger from './pages/SalesLedger'
 import ExpensesLedger from './pages/ExpensesLedger'
 import Ledger from './pages/Ledger'
 import ApiTokens from './pages/ApiTokens'
+import FinancialDashboard from './pages/FinancialDashboard'
+import ChartOfAccounts from './pages/ChartOfAccounts'
+import PaymentMethods from './pages/PaymentMethods'
 
 function Protected({ children }: { children: JSX.Element }) {
   const { user, loading } = useAuth()
@@ -71,6 +74,7 @@ export default function App() {
         }
       >
         <Route path="/" element={<Guard perm="dashboard"><Dashboard /></Guard>} />
+        <Route path="/financial-dashboard" element={<Guard roles={['admin', 'reseller', 'seller']}><FinancialDashboard /></Guard>} />
         <Route path="/plans" element={<Navigate to="/plans/hotspot" replace />} />
         <Route path="/plans/hotspot" element={<Guard perm="view_plans"><HotspotPlans /></Guard>} />
         <Route path="/plans/pppoe" element={<Guard perm="view_plans"><PppoePlans /></Guard>} />
@@ -91,6 +95,8 @@ export default function App() {
         <Route path="/nas" element={<Guard perm="view_settings" roles={['admin']}><Nas /></Guard>} />
         <Route path="/logs" element={<Guard perm="view_settings" roles={['admin']}><LoginLogs /></Guard>} />
         <Route path="/permissions" element={<Guard perm="view_settings" roles={['admin']}><Permissions /></Guard>} />
+        <Route path="/settings/payment-methods" element={<Guard perm="view_settings" roles={['admin']}><PaymentMethods /></Guard>} />
+        <Route path="/settings/chart-of-accounts" element={<Guard roles={['admin', 'reseller', 'seller']}><ChartOfAccounts /></Guard>} />
         <Route path="/settings/system-load" element={<Guard perm="view_settings" roles={['admin']}><SystemLoad /></Guard>} />
         <Route path="/settings/voucher-card" element={<Guard roles={['admin', 'reseller', 'seller']}><VoucherCardDesigner /></Guard>} />
         <Route path="/settings/api-tokens" element={<Guard perm="manage_api_tokens" roles={['admin', 'reseller', 'seller']}><ApiTokens /></Guard>} />
@@ -100,3 +106,4 @@ export default function App() {
     </Routes>
   )
 }
+

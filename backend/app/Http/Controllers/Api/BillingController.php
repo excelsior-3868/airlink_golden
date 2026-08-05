@@ -79,6 +79,7 @@ class BillingController extends Controller
             'user_id' => ['required', 'integer', 'exists:users,id'],
             'amount' => ['required', 'numeric', 'min:0.01'],
             'note' => ['nullable', 'string', 'max:255'],
+            'payment_method' => ['nullable', 'string', 'max:50'],
         ]);
 
         $payer = User::findOrFail($data['user_id']);
@@ -86,7 +87,8 @@ class BillingController extends Controller
             $request->user(),
             $payer,
             (float) $data['amount'],
-            $data['note'] ?? null
+            $data['note'] ?? null,
+            $data['payment_method'] ?? 'cash'
         );
 
         return $this->ok([
@@ -102,6 +104,7 @@ class BillingController extends Controller
             'user_id' => ['required', 'integer', 'exists:users,id'],
             'amount' => ['required', 'numeric', 'min:0.01'],
             'note' => ['nullable', 'string', 'max:255'],
+            'payment_method' => ['nullable', 'string', 'max:50'],
         ]);
 
         $payer = User::findOrFail($data['user_id']);
@@ -109,7 +112,8 @@ class BillingController extends Controller
             $request->user(),
             $payer,
             (float) $data['amount'],
-            $data['note'] ?? null
+            $data['note'] ?? null,
+            $data['payment_method'] ?? 'cash'
         );
 
         return $this->ok([

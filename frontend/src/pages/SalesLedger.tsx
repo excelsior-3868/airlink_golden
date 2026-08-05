@@ -138,6 +138,7 @@ export default function SalesLedger() {
 
       {/* Summary KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* 1. Commission Earned */}
         <GlassCard className="p-4 flex items-center justify-between">
           <div>
             <p className="text-xs font-semibold text-slate-400">Commission Earned</p>
@@ -151,9 +152,24 @@ export default function SalesLedger() {
           </div>
         </GlassCard>
 
+        {/* 2. Commission Dues */}
         <GlassCard className="p-4 flex items-center justify-between">
           <div>
-            <p className="text-xs font-semibold text-slate-400">Payments Collected</p>
+            <p className="text-xs font-semibold text-slate-400">Commission Dues</p>
+            <p className={`text-xl font-extrabold mt-1 ${(summary.total_commission_due ?? 0) > 0 ? 'text-purple-600' : 'text-slate-700'}`}>
+              {rs(summary.total_commission_due ?? 0)}
+            </p>
+            <p className="text-[11px] text-slate-400 mt-1 font-medium">Outstanding Commission</p>
+          </div>
+          <div className="w-12 h-12 rounded-2xl bg-purple-50 border border-purple-100 text-purple-600 flex items-center justify-center shrink-0">
+            <AlertCircle size={22} />
+          </div>
+        </GlassCard>
+
+        {/* 3. Payment Collected (Load GB Wallet) */}
+        <GlassCard className="p-4 flex items-center justify-between">
+          <div>
+            <p className="text-xs font-semibold text-slate-400">Payment Collected (Load GB Wallet)</p>
             <p className="text-xl font-extrabold text-emerald-600 mt-1">{rs(summary.total_paid)}</p>
             <p className="text-[11px] text-emerald-600 font-bold mt-1">Received in Cash/Bank</p>
           </div>
@@ -162,27 +178,17 @@ export default function SalesLedger() {
           </div>
         </GlassCard>
 
+        {/* 4. Receivable Dues (Load GB Wallet) */}
         <GlassCard className="p-4 flex items-center justify-between">
           <div>
-            <p className="text-xs font-semibold text-slate-400">Net Outstanding Dues</p>
-            <p className="text-xl font-extrabold text-rose-600 mt-1">{rs(summary.total_due)}</p>
-            <p className="text-[11px] text-rose-500 font-bold mt-1">Pending Collection</p>
-          </div>
-          <div className="w-12 h-12 rounded-2xl bg-rose-50 border border-rose-100 text-rose-600 flex items-center justify-center shrink-0">
-            <AlertCircle size={22} />
-          </div>
-        </GlassCard>
-
-        <GlassCard className="p-4 flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold text-slate-400">Active Accounts</p>
-            <p className="text-xl font-extrabold text-purple-600 mt-1">{userSummaries.length}</p>
-            <p className="text-[11px] text-slate-400 mt-1 font-medium">
-              {summary.reseller_count || 0} Resellers · {summary.seller_count || 0} Sellers
+            <p className="text-xs font-semibold text-slate-400">Receivable Dues (Load GB Wallet)</p>
+            <p className={`text-xl font-extrabold mt-1 ${summary.total_due > 0 ? 'text-amber-600' : 'text-slate-700'}`}>
+              {rs(summary.total_due)}
             </p>
+            <p className="text-[11px] text-slate-400 mt-1 font-medium">Receivable Dues</p>
           </div>
-          <div className="w-12 h-12 rounded-2xl bg-purple-50 border border-purple-100 text-purple-600 flex items-center justify-center shrink-0">
-            <Users size={22} />
+          <div className="w-12 h-12 rounded-2xl bg-amber-50 border border-amber-100 text-amber-600 flex items-center justify-center shrink-0">
+            <DollarSign size={22} />
           </div>
         </GlassCard>
       </div>

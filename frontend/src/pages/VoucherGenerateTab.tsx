@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Ticket, AlertTriangle, Printer, Plus, Pencil, Loader2, Wallet, Database, Layers } from 'lucide-react'
+import { Ticket, AlertTriangle, Printer, Plus, Pencil, Loader2, Wallet, Database, Layers, Sparkles } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { rs, gb } from '../lib/format'
@@ -45,22 +45,25 @@ function VoucherPackageCard({
 }: VoucherPackageCardProps) {
   const [quantity, setQuantity] = useState<number | ''>('')
   const [batchCode, setBatchCode] = useState(() => generateDefaultBatchCode())
-  const [delegationId, setDelegationId] = useState('')
-  const purchaseSource = 'gb'
+  const [delegationId, setDelegationId] = useState(() => {
+    if (selectedOwnerId && selectedOwnerId !== 'all') return selectedOwnerId
+    if (p.creator && p.creator.id !== user?.id) return `${p.creator.role}-${p.creator.id}`
+    return ''
+  })
+  const purchaseSource = p.package_type === 'wallet' ? 'wallet' : 'gb'
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
 
-  // Generating on behalf of the reseller/seller selected in "Generate Packages for" takes
-  // priority; otherwise fall back to auto-detecting a downline plan owner.
   useEffect(() => {
+    let next = ''
     if (selectedOwnerId && selectedOwnerId !== 'all') {
-      setDelegationId(selectedOwnerId)
+      next = selectedOwnerId
     } else if (p.creator && p.creator.id !== user?.id) {
-      setDelegationId(`${p.creator.role}-${p.creator.id}`)
-    } else {
-      setDelegationId('')
+      next = `${p.creator.role}-${p.creator.id}`
     }
-  }, [p, user, selectedOwnerId])
+    setDelegationId(next)
+  }, [p.creator, user?.id, selectedOwnerId])
+
 
   // Resolve delegation user
   const targetUser = useMemo(() => {
@@ -107,16 +110,16 @@ function VoucherPackageCard({
     if (dataGb > 0) {
       return dataGb * (quantity || 0)
     }
-    const basePrice = Number(p.base_price || 0)
+    const price = Number(p.selling_price || 0)
     const rate = Number(targetUser?.gb_rate || 1)
     if (rate <= 0) return 0
-    return (basePrice * (quantity || 0)) / rate
-  }, [p.data_gb, p.base_price, quantity, targetUser?.gb_rate])
+    return (price * (quantity || 0)) / rate
+  }, [p.data_gb, p.selling_price, quantity, targetUser?.gb_rate])
 
   const totalWalletCost = useMemo(() => {
-    const basePrice = Number(p.base_price || 0)
-    return basePrice * (quantity || 0)
-  }, [p.base_price, quantity])
+    const price = Number(p.selling_price || 0)
+    return price * (quantity || 0)
+  }, [p.selling_price, quantity])
 
   const isShortGb = totalGbRequired > targetGbBalance
   const isShortWallet = totalWalletCost > targetWalletBalance
@@ -266,13 +269,13 @@ function VoucherPackageCard({
         </div>
       </div>
 
-      {/* Print Footer Action button */}
+      {/* Generate Footer Action button */}
       <button
         onClick={handlePrint}
         disabled={busy || isShort}
         className="bg-[#005FA3] hover:bg-[#004C83] disabled:bg-slate-200 disabled:text-slate-400 text-white font-extrabold py-2.5 text-center transition-all flex items-center justify-center gap-2 cursor-pointer border-t border-[#005FA3]/10 text-sm select-none"
       >
-        <Printer size={15} /> Generate and Print
+        <Sparkles size={15} /> Generate Vouchers
       </button>
     </div>
   )
@@ -604,8 +607,6 @@ export default function VoucherGenerateTab({ plans, refetchPlans, onSuccess }: V
   const handleGenerationSuccess = (resData: any, planObj: any) => {
     setSuccessPlan(planObj)
     setSuccessResult(resData)
-    // Automatically trigger immediate card document rendering in background
-    openBlob('/vouchers/print', { batch: resData.batch_code })
     onSuccess?.()
   }
 
@@ -796,17 +797,6 @@ export default function VoucherGenerateTab({ plans, refetchPlans, onSuccess }: V
                 onChange={(e) => setNewPlan({ ...newPlan, selling_price: e.target.value })}
               />
             </div>
-            <div>
-              <label className="text-xs font-bold text-slate-500 mb-1.5 block">Base Price (Wholesale Cost)</label>
-              <input
-                type="number"
-                min={0}
-                className="input w-full"
-                placeholder="Rs. 100"
-                value={newPlan.base_price}
-                onChange={(e) => setNewPlan({ ...newPlan, base_price: e.target.value })}
-              />
-            </div>
           </div>
 
 
@@ -920,17 +910,6 @@ export default function VoucherGenerateTab({ plans, refetchPlans, onSuccess }: V
                 placeholder="Rs. 300"
                 value={editForm.selling_price}
                 onChange={(e) => setEditForm({ ...editForm, selling_price: e.target.value })}
-              />
-            </div>
-            <div>
-              <label className="text-xs font-bold text-slate-500 mb-1.5 block">Base Price (Wholesale Cost)</label>
-              <input
-                type="number"
-                min={0}
-                className="input w-full"
-                placeholder="Rs. 100"
-                value={editForm.base_price}
-                onChange={(e) => setEditForm({ ...editForm, base_price: e.target.value })}
               />
             </div>
           </div>
