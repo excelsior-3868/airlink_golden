@@ -93,6 +93,8 @@ class AuthController extends Controller
             'parent_id' => $user->parent_id,
             'wallet_balance' => $user->wallet_balance,
             'gb_balance' => $user->gb_balance,
+            'gb_reserved' => $user->gb_reserved,
+            'gb_allowable' => $user->gb_allowable,
             'status' => $user->status,
             'must_reset_password' => $user->must_reset_password,
             'permissions' => $this->permissionsFor($user),

@@ -202,10 +202,11 @@ export default function Vouchers() {
 
   return (
     <div>
-      <PageTitle 
-        title="Voucher Sales" 
+      <PageTitle
+        title="Voucher Sales"
         subtitle="Generate & manage voucher cards"
         icon={<Ticket size={22} className="text-rose-500" />}
+        showBalances={true}
       />
 
       {/* Tabs */}
