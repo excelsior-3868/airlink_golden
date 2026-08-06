@@ -341,7 +341,11 @@ export default function VoucherGenerateTab({ plans, refetchPlans, onSuccess }: V
   // Options for the main page Generate Packages for filter
   const ownerFilterOptions = useMemo(() => {
     const opts: SelectOption[] = []
-    opts.push({ value: '', label: 'Myself' })
+    // An admin never generates cards for itself — packages always belong to a
+    // reseller or a seller, so there is no "Myself" target to offer.
+    if (user?.role !== 'admin') {
+      opts.push({ value: '', label: 'Myself' })
+    }
     if (user?.role === 'admin' || user?.role === 'reseller') {
       allResellers.filter((r) => r.id !== user?.id).forEach((r) => {
         opts.push({
@@ -379,9 +383,9 @@ export default function VoucherGenerateTab({ plans, refetchPlans, onSuccess }: V
 
       if (selectedOwnerId === 'all') return true
       if (!selectedOwnerId) {
-        if (user?.role === 'admin') {
-          return !p.created_by || p.created_by === user?.id || p.creator?.role === 'admin'
-        }
+        // Admin has no "Myself" target: nothing is selected yet, so show nothing
+        // rather than a list the admin can't generate against.
+        if (user?.role === 'admin') return false
         return p.created_by === user?.id
       } else {
         const [, idStr] = selectedOwnerId.split('-')
@@ -620,6 +624,7 @@ export default function VoucherGenerateTab({ plans, refetchPlans, onSuccess }: V
               value={selectedOwnerId}
               onChange={(val) => setSelectedOwnerId(val)}
               options={ownerFilterOptions}
+              placeholder={user?.role === 'admin' ? 'Select Reseller / Seller' : 'Choose...'}
               searchable={true}
               className="min-w-[340px]"
             />
@@ -697,12 +702,14 @@ export default function VoucherGenerateTab({ plans, refetchPlans, onSuccess }: V
             <Ticket size={32} />
           </div>
           <h3 className="text-base font-bold text-slate-800 tracking-tight">
-            No Custom Packages Found
+            {user?.role === 'admin' && !selectedOwnerId ? 'Select a Reseller / Seller' : 'No Custom Packages Found'}
           </h3>
           <p className="text-xs text-slate-400 font-medium max-w-sm mt-1 mb-2">
-            {user?.role === 'seller'
-              ? 'You do not have any custom packages configured yet.'
-              : 'There are no custom packages created for this user yet. Click "Create a Package" to get started.'}
+            {user?.role === 'admin' && !selectedOwnerId
+              ? 'Packages are generated for a reseller or seller. Pick one above to see their packages.'
+              : user?.role === 'seller'
+                ? 'You do not have any custom packages configured yet.'
+                : 'There are no custom packages created for this user yet. Click "Create a Package" to get started.'}
           </p>
         </div>
       )}

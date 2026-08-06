@@ -202,6 +202,11 @@ function SalesLedgerView() {
   const summary = ledgerData?.summary || { total_invoiced: 0, total_paid: 0, total_due: 0, total_gb: 0, total_admin_commission: 0, total_reseller_commission: 0, total_commission_paid: 0, total_gb_voucher_sales: 0 }
   const userSummaries = ledgerData?.user_summaries || []
   const ledger = ledgerData?.ledger || { data: [], current_page: 1, last_page: 1, total: 0 }
+  // A seller's own row in the scope — the authoritative source for their
+  // outstanding due. The auth `user` blob carries no wallet_due, so reading it
+  // from there silently rendered Rs 0.00 no matter what was owed.
+  const ownSummary = userSummaries.find((u: any) => u.id === user?.id)
+  const ownWalletDue = Number(ownSummary?.wallet_due ?? (user as any)?.wallet_due ?? 0)
 
   const resetFilters = () => {
     setRoleFilter('')
@@ -225,7 +230,7 @@ function SalesLedgerView() {
             <div>
               <p className="text-xs font-semibold text-slate-400">Total Voucher Sales</p>
               <p className="text-xl font-extrabold text-indigo-600 mt-1">
-                {rs(summary.total_voucher_sales ?? summary.total_invoiced ?? 0)}
+                {rs(summary.total_voucher_sales ?? 0)}
               </p>
               <p className="text-[11px] text-slate-400 mt-1 font-medium">Voucher Revenue Generated</p>
             </div>
@@ -240,8 +245,8 @@ function SalesLedgerView() {
           >
             <div>
               <p className="text-xs font-semibold text-slate-400">Due Payable to Reseller</p>
-              <p className={`text-xl font-extrabold mt-1 ${((user as any)?.wallet_due ?? 0) > 0 ? 'text-rose-600' : 'text-slate-700'}`}>
-                {rs((user as any)?.wallet_due ?? 0)}
+              <p className={`text-xl font-extrabold mt-1 ${ownWalletDue > 0 ? 'text-rose-600' : 'text-slate-700'}`}>
+                {rs(ownWalletDue)}
               </p>
               <p className="text-[11px] text-slate-400 mt-1 font-medium">Outstanding GB Quota Due</p>
             </div>

@@ -6,7 +6,7 @@ import { api } from '../lib/api'
 import { useQuery } from '../lib/cache'
 import { useAuth } from '../lib/auth'
 import { rs, gb, num, date } from '../lib/format'
-import { StatCard, PageTitle, GlassCard, EmptyState, Modal, Spinner, VoucherStatCard, CustomSelect, SelectOption, renderPaymentMethodIcon } from '../components/ui'
+import { StatCard, DualStatCard, PageTitle, GlassCard, EmptyState, Modal, Spinner, VoucherStatCard, CustomSelect, SelectOption, renderPaymentMethodIcon } from '../components/ui'
 import { motion } from 'framer-motion'
 import FundModal from '../components/FundModal'
 
@@ -142,40 +142,48 @@ export default function Dashboard() {
       {/* Admin Dashboard */}
       {d.role === 'admin' && (
         <div className="space-y-6">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <StatCard label="Wallet Balance" value={<span className="text-emerald-600">{rs(d.balances.wallet)}</span>} icon={<Wallet size={22} />} iconColorClass="text-emerald-600 bg-emerald-50 border border-emerald-100/50" />
             <StatCard label="GB Balance" value={<span className="text-cyan-600">{gb(d.balances.gb)}</span>} icon={<Database size={22} />} iconColorClass="text-cyan-600 bg-cyan-50 border border-cyan-100/50" />
             <StatCard label="Wallet Distributed" value={<span className="text-blue-600">{rs(d.wallet_distributed)}</span>} icon={<Wallet size={22} />} iconColorClass="text-blue-600 bg-blue-50 border border-blue-100/50" />
             <StatCard label="GB Distributed" value={<span className="text-purple-600">{gb(d.gb_distributed)}</span>} icon={<Database size={22} />} iconColorClass="text-purple-600 bg-purple-50 border border-purple-100/50" />
-            <StatCard
-              label="Commission Earned"
-              value={<span className="text-amber-600">{rs(d.commission_earned)}</span>}
-              icon={<Coins size={22} />}
-              iconColorClass="text-amber-600 bg-amber-50 border border-amber-100/50"
-              sub={<span>Today: <strong className="text-slate-700">{rs(d.commission_today)}</strong></span>}
+            <DualStatCard
+              top={{
+                label: 'Commission Earned',
+                value: rs(d.commission_earned),
+                valueColorClass: 'text-amber-600',
+                icon: <Coins size={22} />,
+                iconColorClass: 'text-amber-600 bg-amber-50 border border-amber-100/50',
+                sub: <span>Today: <strong className="text-slate-700">{rs(d.commission_today)}</strong></span>,
+              }}
+              bottom={{
+                label: 'Commission Due',
+                value: rs(d.commission_due),
+                valueColorClass: 'text-orange-600',
+                icon: <Receipt size={22} />,
+                iconColorClass: 'text-orange-600 bg-orange-50 border border-orange-100/50',
+                sub: <span>Owed by resellers</span>,
+              }}
             />
-            <StatCard
-              label="Commission Due"
-              value={<span className="text-orange-600">{rs(d.commission_due)}</span>}
-              icon={<Receipt size={22} />}
-              iconColorClass="text-orange-600 bg-orange-50 border border-orange-100/50"
-              sub={<span>Owed by resellers</span>}
+            <DualStatCard
+              top={{
+                label: 'GB Wallet Payment',
+                value: rs(d.collected_from_resellers),
+                valueColorClass: 'text-emerald-600',
+                icon: <TrendingUp size={22} />,
+                iconColorClass: 'text-emerald-600 bg-emerald-50 border border-emerald-100/50',
+              }}
+              bottom={{
+                label: 'GB Wallet Pending Payment',
+                value: rs(d.pending_from_resellers),
+                valueColorClass: 'text-teal-600',
+                icon: <CreditCard size={22} />,
+                iconColorClass: 'text-teal-600 bg-teal-50 border border-teal-100/50',
+                sub: <span>Owed for allocated GB</span>,
+              }}
             />
             <VoucherStatCard title="GB Vouchers" vouchers={d.gb_vouchers || d.vouchers} icon={<Ticket size={22} />} iconColorClass="text-rose-600 bg-rose-50 border border-rose-100/50" valueColorClass="text-rose-600" />
             <VoucherStatCard title="Wallet Vouchers" vouchers={d.wallet_vouchers || d.vouchers} icon={<Wallet size={22} />} iconColorClass="text-purple-600 bg-purple-50 border border-purple-100/50" valueColorClass="text-purple-600" />
-            <StatCard
-              label="GB Wallet Payment"
-              value={<span className="text-emerald-600">{rs(d.collected_from_resellers)}</span>}
-              icon={<TrendingUp size={22} />}
-              iconColorClass="text-emerald-600 bg-emerald-50 border border-emerald-100/50"
-            />
-            <StatCard
-              label="GB Wallet Pending Payment"
-              value={<span className="text-teal-600">{rs(d.pending_from_resellers)}</span>}
-              icon={<CreditCard size={22} />}
-              iconColorClass="text-teal-600 bg-teal-50 border border-teal-100/50"
-              sub={<span>Owed for allocated GB</span>}
-            />
           </div>
 
           {/* Charts Row — system-wide, across all resellers & sellers */}
@@ -582,8 +590,21 @@ export default function Dashboard() {
               sub={<span>Reserved by Vouchers: <strong className="text-slate-700">{gb(d.balances.gb_reserved ?? 0)}</strong></span>}
             />
             <StatCard label="Due Payable" value={<span className="text-rose-600">{rs(d.balances.wallet_due)}</span>} icon={<Wallet size={22} />} iconColorClass="text-rose-600 bg-rose-50 border border-rose-100/50" sub={d.reseller_name ? <span className="text-xs text-slate-500">To: <span className="font-semibold text-slate-700">{d.reseller_name}</span></span> : undefined} />
-            <StatCard label="Today's Sales" value={<span className="text-blue-600">{rs(d.today.sales)}</span>} icon={<TrendingUp size={22} />} iconColorClass="text-blue-600 bg-blue-50 border border-blue-100/50" />
-            <VoucherStatCard title="GB Vouchers" vouchers={d.gb_vouchers || d.vouchers} icon={<Ticket size={22} />} iconColorClass="text-rose-600 bg-rose-50 border border-rose-100/50" valueColorClass="text-rose-600" />
+            {/* Spans both rows so the status chart and its pills get room to breathe. */}
+            <VoucherStatCard title="GB Vouchers" vouchers={d.gb_vouchers || d.vouchers} icon={<Ticket size={22} />} iconColorClass="text-rose-600 bg-rose-50 border border-rose-100/50" valueColorClass="text-rose-600" className="lg:row-span-2" />
+            <StatCard
+              label="Voucher Sales"
+              value={<span className="text-blue-600">{rs(d.voucher_sales_to_date ?? 0)}</span>}
+              icon={<TrendingUp size={22} />}
+              iconColorClass="text-blue-600 bg-blue-50 border border-blue-100/50"
+              sub={
+                <span className="flex items-center gap-1.5 whitespace-nowrap">
+                  <span>Sold till date</span>
+                  <span className="text-slate-300">|</span>
+                  <span>Today <strong className="text-slate-700">{rs(d.today?.sold_sales ?? 0)}</strong></span>
+                </span>
+              }
+            />
             <StatCard label="Created Voucher Value" value={<span className="text-indigo-600">{rs(d.voucher_sales)}</span>} icon={<TrendingUp size={22} />} iconColorClass="text-indigo-600 bg-indigo-50 border border-indigo-100/50" />
             <StatCard label="Packages" value={<span className="text-amber-600">{num(d.counts.packages)}</span>} icon={<Package size={22} />} iconColorClass="text-amber-600 bg-amber-50 border border-amber-100/50" />
           </div>

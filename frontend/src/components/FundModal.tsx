@@ -54,9 +54,9 @@ export default function FundModal({ open, onClose, onSuccess, defaultAllocType =
     if (!open || !user) return
 
     if (user.role === 'admin') {
-      // Admin loads both resellers and sellers
+      // Admin funds its own direct downline only — resellers. Sellers belong to a
+      // reseller and are allocated GB by them, never by the admin.
       api.get('/users', { params: { role: 'reseller', per_page: 100 } }).then((r) => setResellers(r.data.data?.data || r.data.data || []))
-      api.get('/users', { params: { role: 'seller', per_page: 500 } }).then((r) => setSellers(r.data.data?.data || r.data.data || []))
     } else if (user.role === 'reseller') {
       // Reseller loads only their sellers
       api.get('/users', { params: { role: 'seller', per_page: 100 } }).then((r) => setSellers(r.data.data?.data || r.data.data || []))
@@ -87,7 +87,9 @@ export default function FundModal({ open, onClose, onSuccess, defaultAllocType =
       })
     })
 
-    if (allocType !== 'wallet') {
+    // Sellers are only ever a recipient for their own reseller (and never for a
+    // wallet load, which is reseller-only).
+    if (allocType !== 'wallet' && user?.role !== 'admin') {
       sellers.forEach((s) => {
         opts.push({
           value: String(s.id),
@@ -102,7 +104,7 @@ export default function FundModal({ open, onClose, onSuccess, defaultAllocType =
     }
 
     return opts
-  }, [resellers, sellers, allocType])
+  }, [resellers, sellers, allocType, user])
 
   // Drop the selected seller if the type switches to wallet (reseller-only)
   useEffect(() => {
@@ -141,7 +143,7 @@ export default function FundModal({ open, onClose, onSuccess, defaultAllocType =
 
   // Only admins fund both wallet and GB. A reseller can only push GB down to
   // its own sellers, so it never sees the type switch or a reseller recipient.
-  const recipientLabel = user?.role === 'admin' ? 'Reseller / Seller' : 'Seller'
+  const recipientLabel = user?.role === 'admin' ? 'Reseller' : 'Seller'
 
   const handleFund = async () => {
     if (!targetUser) return

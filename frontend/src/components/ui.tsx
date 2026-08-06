@@ -35,24 +35,67 @@ export function StatCard({ label, value, icon, sub, iconColorClass = 'text-prima
   )
 }
 
+/**
+ * Two related figures stacked in one tile, split by a hairline — the shape the
+ * reseller dashboard already used inline for its paired metrics (payment vs
+ * receivable, commission due vs earned).
+ */
+export function DualStatCard({ top, bottom, className = '' }: {
+  top: { label: string; value: ReactNode; icon?: ReactNode; iconColorClass?: string; valueColorClass?: string; sub?: ReactNode };
+  bottom: { label: string; value: ReactNode; icon?: ReactNode; iconColorClass?: string; valueColorClass?: string; sub?: ReactNode };
+  className?: string;
+}) {
+  const half = (s: typeof top) => (
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <p className="text-muted-foreground text-xs sm:text-sm font-medium leading-snug">{s.label}</p>
+        <p className={`text-xl font-bold mt-1 tracking-tight tabular-nums whitespace-nowrap ${s.valueColorClass || ''}`}>{s.value}</p>
+        {s.sub && <p className="text-xs text-muted-foreground mt-1">{s.sub}</p>}
+      </div>
+      {s.icon && (
+        <div className={`rounded-2xl p-2.5 shrink-0 flex items-center justify-center ${s.iconColorClass || 'text-primary bg-primary/10'}`}>
+          {s.icon}
+        </div>
+      )}
+    </div>
+  )
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+      className={`glass-card p-5 flex flex-col justify-between gap-3 ${className}`}
+    >
+      {half(top)}
+      <div className="h-px bg-slate-200" />
+      {half(bottom)}
+    </motion.div>
+  )
+}
+
 export function VoucherStatCard({
   title,
   vouchers,
   icon,
   iconColorClass = 'text-rose-500 bg-rose-50 border border-rose-100/50',
-  valueColorClass = 'text-rose-600'
+  valueColorClass = 'text-rose-600',
+  className = ''
 }: {
   title: string;
   vouchers: {
     total: number;
     by_status: Record<string, number>;
+    sold_today?: number;
   };
   icon?: ReactNode;
   iconColorClass?: string;
   valueColorClass?: string;
+  className?: string;
 }) {
   const total = vouchers?.total || 0;
   const byStatus = vouchers?.by_status || {};
+  const soldToday = vouchers?.sold_today;
 
   const statusLine = [
     { status: 'Active', value: byStatus.active || 0, color: '#10b981' },
@@ -73,11 +116,19 @@ export function VoucherStatCard({
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
-      className="glass-card p-5 flex flex-col justify-between"
+      className={`glass-card p-5 flex flex-col justify-between ${className}`}
     >
       <div className="flex items-start justify-between">
-        <div>
-          <p className="text-muted-foreground text-xs sm:text-sm font-medium">{title}</p>
+        <div className="min-w-0">
+          {/* Title and today's tally share the heading line; the total sits below. */}
+          <div className="flex items-baseline gap-2 flex-wrap">
+            <p className="text-muted-foreground text-xs sm:text-sm font-medium">{title}</p>
+            {soldToday !== undefined && (
+              <p className="text-xs text-muted-foreground whitespace-nowrap">
+                Today <strong className="text-slate-700">{soldToday.toLocaleString()}</strong> Sold
+              </p>
+            )}
+          </div>
           <p className={`text-xl lg:text-2xl font-bold mt-0.5 tracking-tight ${valueColorClass}`}>{total.toLocaleString()}</p>
         </div>
         {icon && (
@@ -87,7 +138,10 @@ export function VoucherStatCard({
         )}
       </div>
 
-      <div className="h-16 mt-1">
+      {/* flex-1 + a 4rem floor: identical to a fixed h-16 in an auto-height card,
+          but lets the chart absorb the extra space when the card is made taller
+          (e.g. row-span-2) instead of leaving a gap above the status pills. */}
+      <div className="flex-1 min-h-[4rem] mt-1">
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={statusLine} margin={{ top: 8, right: 2, left: 2, bottom: 0 }}>
             <XAxis dataKey="status" tick={{ fontSize: 8.5, fill: '#94a3b8' }} axisLine={false} tickLine={false} interval={0} padding={{ left: 14, right: 14 }} />
@@ -181,10 +235,16 @@ export function PageTitle({ title, subtitle, action, icon, showBalances = false 
 export function Pagination({ meta, onPage }: { meta: any; onPage: (p: number) => void }) {
   if (!meta) return null
   const { current_page, last_page, from, to, total } = meta
+  // Laravel's paginator sends from/to, but hand-built metas (e.g. the ledger's
+  // merged invoice+payment+voucher feed) only carry page/per_page/total — derive
+  // the range in that case rather than reporting "Showing 0 to 0 of N".
+  const perPage = meta.per_page ?? (Array.isArray(meta.data) ? meta.data.length : 0)
+  const rangeStart = from ?? (total > 0 && perPage > 0 ? (current_page - 1) * perPage + 1 : 0)
+  const rangeEnd = to ?? (total > 0 && perPage > 0 ? Math.min(current_page * perPage, total) : 0)
   return (
     <div className="flex items-center justify-between mt-4 flex-wrap gap-3">
       <p className="text-xs font-semibold text-slate-500">
-        Showing {from ?? 0} to {to ?? 0} of {total} items
+        Showing {rangeStart} to {rangeEnd} of {total} items
       </p>
       <div className="flex items-center gap-1.5">
         <button

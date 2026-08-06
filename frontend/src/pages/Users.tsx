@@ -448,9 +448,13 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
                                 <CreditCard size={14} />
                               </button>
                             )}
-                            <button className="text-primary hover:text-indigo-800 p-1.5 rounded-lg hover:bg-slate-100/80 transition-all inline-flex items-center justify-center mr-1" title={user?.role === 'admin' && role !== 'seller' ? 'Load Wallet/GB' : 'Allocate GB'} onClick={() => { setFundUser(u); setErr(''); setFund({ amount: '', gb_amount: '', gb_paid: '' }); }}>
-                              <Wallet size={14} />
-                            </button>
+                            {/* An admin funds resellers only — a seller's GB comes
+                                from their own reseller. */}
+                            {!(user?.role === 'admin' && role === 'seller') && (
+                              <button className="text-primary hover:text-indigo-800 p-1.5 rounded-lg hover:bg-slate-100/80 transition-all inline-flex items-center justify-center mr-1" title={user?.role === 'admin' && role !== 'seller' ? 'Load Wallet/GB' : 'Allocate GB'} onClick={() => { setFundUser(u); setErr(''); setFund({ amount: '', gb_amount: '', gb_paid: '' }); }}>
+                                <Wallet size={14} />
+                              </button>
+                            )}
                             <button className={`${u.status === 'active' ? 'text-rose-500 hover:text-rose-700 hover:bg-rose-50' : 'text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50'} p-1.5 rounded-lg transition-all inline-flex items-center justify-center mr-1`} title={u.status === 'active' ? 'Disable' : 'Enable'} onClick={() => toggle(u)}>
                               {u.status === 'active' ? <UserMinus size={14} /> : <UserCheck size={14} />}
                             </button>

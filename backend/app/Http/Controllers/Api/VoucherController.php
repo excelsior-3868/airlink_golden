@@ -136,8 +136,21 @@ class VoucherController extends Controller
         if (($rid = $request->query('reseller_id')) && $request->user()->isAdmin()) {
             $q->where('reseller_id', $rid);
         }
+        // Seller scope, three mutually exclusive views:
+        //  - 'own' (the default): the actor's own stock, attributed to no seller.
+        //  - 'all': every seller's cards summed together, excluding the actor's own.
+        //  - an id: that one seller's cards.
         if ($sid = $request->query('seller_id')) {
-            $q->where('seller_id', $sid);
+            if ($sid === 'own') {
+                $q->whereNull('seller_id');
+                if ($request->user()->isAdmin()) {
+                    $q->whereNull('reseller_id');
+                }
+            } elseif ($sid === 'all') {
+                $q->whereNotNull('seller_id');
+            } else {
+                $q->where('seller_id', $sid);
+            }
         }
 
         return $this->ok($q->latest()->paginate($request->integer('per_page', 25)));

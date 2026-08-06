@@ -35,10 +35,10 @@ class GbService
         if ($paidAmount < 0) {
             throw ValidationException::withMessages(['paid_amount' => 'Paid amount cannot be negative.']);
         }
-        $isDirectChild = ($to->parent_id === $from->id);
-        $isAdminFundingSeller = ($from->role === 'admin' && $to->role === 'seller');
-
-        if (!$isDirectChild && !$isAdminFundingSeller) {
+        // Strictly direct downline: admin → reseller, reseller → its own sellers.
+        // An admin funding a seller directly used to be allowed here, which let GB
+        // bypass the reseller that owns the seller's rate and due balance.
+        if ($to->parent_id !== $from->id) {
             throw ValidationException::withMessages(['user_id' => 'You can only allocate GB to your own direct downline.']);
         }
 

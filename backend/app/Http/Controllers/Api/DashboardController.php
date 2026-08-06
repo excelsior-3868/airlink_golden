@@ -284,6 +284,12 @@ class DashboardController extends Controller
                 'packages' => $packagesCount,
             ],
             'voucher_sales' => (float) $voucherSales,
+            // Cumulative takings on cards actually handed off to a customer. Uses the
+            // same 'sold' definition as the sales/package reports — 'active' cards are
+            // printed but still in stock, so they count toward created value, not sales.
+            'voucher_sales_to_date' => (float) Voucher::where('seller_id', $seller->id)
+                ->whereIn('status', ['sold', 'used', 'expired'])
+                ->sum('price'),
             'retail_profit' => (float) $retailProfit,
             'vouchers' => $this->voucherBreakdown(Voucher::where('seller_id', $seller->id)),
             'gb_vouchers' => $this->voucherBreakdown(Voucher::where('seller_id', $seller->id)->whereHas('plan', fn($q) => $q->where('package_type', 'gb'))),
@@ -292,6 +298,12 @@ class DashboardController extends Controller
             'today' => [
                 'vouchers' => (clone $today)->count(),
                 'sales' => (float) $todaySales->sum('price'),
+                // Cards actually sold today, keyed off sold_at — the daily counterpart
+                // of voucher_sales_to_date. 'sales' above counts cards *generated* today,
+                // which is a different thing and kept for the existing consumers.
+                'sold_sales' => (float) Voucher::where('seller_id', $seller->id)
+                    ->whereDate('sold_at', now()->toDateString())
+                    ->sum('price'),
             ],
             'recent_customers' => Voucher::where('seller_id', $seller->id)->whereNotNull('customer_username')->latest()->limit(10)->get(['code', 'status', 'customer_username', 'price', 'activated_at', 'sold_at'])->all(),
         ];
@@ -359,6 +371,9 @@ class DashboardController extends Controller
         $total = (int) $byStatus->sum();
         $used = (int) ($byStatus['used'] ?? 0) + (int) ($byStatus['expired'] ?? 0);
         $last7Days = (clone $query)->where('created_at', '>=', now()->subDays(7))->count();
+        // Cards handed to a customer today, keyed off sold_at — distinct from cards
+        // merely generated today, which are still sitting in stock.
+        $soldToday = (int) (clone $query)->whereDate('vouchers.sold_at', now()->toDateString())->count();
 
         return [
             'total' => $total,
@@ -366,6 +381,7 @@ class DashboardController extends Controller
             'used' => $used,
             'remaining' => $total - $used,
             'last_7_days' => $last7Days,
+            'sold_today' => $soldToday,
         ];
     }
 

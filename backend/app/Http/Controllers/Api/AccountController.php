@@ -382,6 +382,10 @@ class AccountController extends Controller
                 'total_reseller_commission' => $overallResellerCommission,
                 'total_commission_due' => $overallCommissionDue,
                 'total_commission_paid' => $overallCommissionPaid,
+                // Every voucher sale in scope, whatever the package type. Without
+                // this the seller view fell back to total_invoiced, which folds GB
+                // allocation invoices in with card sales and reads far too high.
+                'total_voucher_sales' => (float) $vouchers->sum('price'),
                 'total_gb_voucher_sales' => $overallGbVoucherSales,
                 'total_wallet_voucher_sales' => $overallWalletVoucherSales,
                 'total_wallet_voucher_commission' => $overallWalletVoucherCommission,

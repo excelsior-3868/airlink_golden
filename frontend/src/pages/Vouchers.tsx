@@ -14,6 +14,18 @@ import { VoucherCard } from '../components/VoucherCard'
 import VoucherGenerateTab from './VoucherGenerateTab'
 import VoucherSalesSummaryTab from './VoucherSalesSummaryTab'
 
+// The six summary tiles above the vouchers table. `pick` reads the same shape
+// whether it's handed the overall totals or one package type's rollup, so the
+// tile and its GB / Wallet split line always agree on what they're counting.
+const STAT_CARDS: { label: string; color: string; pick: (t: any) => number }[] = [
+  { label: 'Generated', color: 'text-indigo-600', pick: (t) => t?.generated || 0 },
+  { label: 'Sold', color: 'text-blue-600', pick: (t) => t?.by_status?.sold || 0 },
+  { label: 'Active', color: 'text-emerald-600', pick: (t) => t?.by_status?.active || 0 },
+  { label: 'Used', color: 'text-cyan-600', pick: (t) => t?.by_status?.used || 0 },
+  { label: 'Expired', color: 'text-amber-600', pick: (t) => t?.by_status?.expired || 0 },
+  { label: 'Disabled', color: 'text-rose-600', pick: (t) => t?.by_status?.disabled || 0 },
+]
+
 export default function Vouchers() {
   const { user, refresh, can } = useAuth()
   const navigate = useNavigate()
@@ -76,9 +88,11 @@ export default function Vouchers() {
   // Vouchers state — includes the reporting filters merged in from the old
   // standalone Voucher Usage Report page (season/date range/package/reseller/seller).
   const [page, setPage] = useState(1)
+  // seller_id defaults to 'own' — cards the actor generated itself, with none of
+  // its sellers' stock mixed in. 'all' widens it to the whole downline.
   const EMPTY_FILTERS = {
     status: '', code: '', batch: '',
-    from: '', to: '', plan_id: '', reseller_id: '', seller_id: '', season_id: '',
+    from: '', to: '', plan_id: '', reseller_id: '', seller_id: 'own', season_id: '',
   }
   const [filters, setFilters] = useState<any>(EMPTY_FILTERS)
   // Filters apply as soon as they change. Only the free-text fields are debounced
@@ -105,13 +119,26 @@ export default function Vouchers() {
   const [customerUsername, setCustomerUsername] = useState('')
   const [selling, setSelling] = useState(false)
 
-  // The Seller select starts unset ("Select Seller"); 'all' is the explicit
-  // "All Sellers" choice, which sends no seller_id — same as unset.
+  // Reporting extras (season filter, summary cards) are only relevant — and only
+  // authorized — for users with the 'reports' permission, same as the old standalone page.
+  const canSeeReports = can('reports')
+  // Only an admin or reseller has a downline to slice by, so only they get the
+  // Seller select — and only they carry a seller_id filter. A seller's own list is
+  // already scoped server-side, so the filter is dropped entirely for them.
+  const sellerFilterVisible = canSeeReports && (user?.role === 'admin' || user?.role === 'reseller')
+  // Only admins and resellers hold both card types; a seller carries GB cards only.
+  const showPackageSplit = user?.role === 'admin' || user?.role === 'reseller'
+  // "My Own Cards" is a reseller concept — an admin generates no cards of its own,
+  // so for an admin the default is no seller filter at all (every card in the tree,
+  // narrowed with the Reseller select beside it).
+  const sellerScope = user?.role === 'admin' && filters.seller_id === 'own' ? '' : filters.seller_id
+  // seller_id is passed through verbatim — the backend resolves 'own' (default),
+  // 'all' (every seller's cards, excluding the actor's own) and a specific id.
   const effectiveFilters = {
     ...filters,
     code: debouncedText.code,
     batch: debouncedText.batch,
-    seller_id: filters.seller_id === 'all' ? '' : filters.seller_id,
+    seller_id: sellerFilterVisible ? sellerScope : '',
   }
   const cleanFilters = () => Object.fromEntries(Object.entries(effectiveFilters).filter(([, v]) => v))
   const cleanBatchFilters = () => Object.fromEntries(
@@ -136,9 +163,6 @@ export default function Vouchers() {
   }
 
   const { data: plans = [], refetch: refetchPlans } = useQuery<any[]>('plans?active_only=1', () => api.get('/plans', { params: { active_only: 1 } }).then((r) => r.data.data))
-  // Reporting extras (season filter, summary cards) are only relevant — and only
-  // authorized — for users with the 'reports' permission, same as the old standalone page.
-  const canSeeReports = can('reports')
   const { data: seasons = [] } = useQuery<any[]>('seasons', () => api.get('/seasons').then((r) => r.data.data), { enabled: canSeeReports })
   const { data: resellers = [] } = useQuery<any[]>('users?role=reseller&per_page=100', () => api.get('/users', { params: { role: 'reseller', per_page: 100 } }).then((r) => r.data.data.data), { enabled: canSeeReports && user?.role === 'admin' })
   const { data: sellers = [] } = useQuery<any[]>('users?role=seller&per_page=500', () => api.get('/users', { params: { role: 'seller', per_page: 500 } }).then((r) => r.data.data.data), { enabled: canSeeReports && (user?.role === 'admin' || user?.role === 'reseller') })
@@ -149,7 +173,7 @@ export default function Vouchers() {
   )
 
   // Usage summary cards, merged in from the old standalone Voucher Usage Report page.
-  const { data: summary, loading: summaryLoading } = useQuery<any>(
+  const { data: summary, loading: summaryLoading, error: summaryError } = useQuery<any>(
     `vouchers/package-summary?${voucherKey}`,
     () => api.get('/reports/package-summary', { params: cleanFilters() }).then((r) => r.data.data),
     { enabled: activeTab === 'vouchers' && canSeeReports },
@@ -177,6 +201,16 @@ export default function Vouchers() {
     () => api.get('/batches', { params: { page: batchesPage, ...cleanBatchFilters() } }).then((r) => r.data.data),
     { enabled: activeTab === 'batches' },
   )
+
+  // Plans offered by the Batches filter. /plans is scoped per role, but for a
+  // seller it still includes the admin's and their reseller's packages — a seller
+  // can only generate from packages they created (see VoucherGenerateTab), so
+  // those can never appear in their batch list. Plans referenced by the batches
+  // actually loaded are always kept, so the filter can't hide a visible row.
+  const batchPlanIds = new Set((batchesData?.data || []).map((b: any) => b.plan_id ?? b.plan?.id))
+  const batchPlanOptions = user?.role === 'seller'
+    ? plans.filter((p: any) => p.created_by === user?.id || batchPlanIds.has(p.id))
+    : plans
 
   const download = async (kind: 'export' | 'export-xlsx', extraParams?: any) => {
     const res = await api.get(`/vouchers/${kind}`, { params: { ...cleanFilters(), ...extraParams }, responseType: 'blob' })
@@ -355,15 +389,20 @@ export default function Vouchers() {
                   />
                 </div>
               )}
-              {canSeeReports && (user?.role === 'admin' || user?.role === 'reseller') && (
+              {sellerFilterVisible && (
                 <div className="flex-1 min-w-[140px] max-w-[250px]">
                   <label className="text-xs font-semibold text-slate-500 block mb-1">Seller</label>
                   <CustomSelect
                     className="w-full"
                     placeholder="Select Seller"
-                    value={filters.seller_id === 'all' ? 'all' : (filters.seller_id ? +filters.seller_id : '')}
+                    value={sellerScope === 'all' || sellerScope === 'own' ? sellerScope : (sellerScope ? +sellerScope : '')}
                     onChange={(val) => setFilters({ ...filters, seller_id: val })}
-                    options={[{ value: 'all', label: 'All Sellers' }, ...sellers.map((s: any) => ({ value: s.id, label: s.name || s.username }))]}
+                    options={[
+                      // No "My Own Cards" for an admin — it holds no cards of its own.
+                      ...(user?.role === 'admin' ? [] : [{ value: 'own', label: 'My Own Cards' }]),
+                      { value: 'all', label: 'All Sellers' },
+                      ...sellers.map((s: any) => ({ value: s.id, label: s.name || s.username })),
+                    ]}
                   />
                 </div>
               )}
@@ -389,14 +428,32 @@ export default function Vouchers() {
           {summaryLoading && !summary ? (
             <div className="mb-6"><Spinner /></div>
           ) : null}
-          {summary && (
+          {/* useQuery keeps the last good payload on failure, which on these tiles
+              reads as "the filter had no effect" rather than "the request broke".
+              Say so instead of showing counts that don't match the table. */}
+          {summaryError && (
+            <div className="pill danger w-full justify-center py-2 mb-6">
+              Summary unavailable for these filters — {summaryError}
+            </div>
+          )}
+          {summary && !summaryError && (
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-6">
-              <StatCard label="Generated" value={<span className="text-indigo-600 font-bold">{num(summary.totals.generated)}</span>} />
-              <StatCard label="Sold" value={<span className="text-blue-600 font-bold">{num(summary.totals.by_status?.sold || 0)}</span>} />
-              <StatCard label="Active" value={<span className="text-emerald-600 font-bold">{num(summary.totals.by_status?.active || 0)}</span>} />
-              <StatCard label="Used" value={<span className="text-cyan-600 font-bold">{num(summary.totals.by_status?.used || 0)}</span>} />
-              <StatCard label="Expired" value={<span className="text-amber-600 font-bold">{num(summary.totals.by_status?.expired || 0)}</span>} />
-              <StatCard label="Disabled" value={<span className="text-rose-600 font-bold">{num(summary.totals.by_status?.disabled || 0)}</span>} />
+              {STAT_CARDS.map((c) => (
+                <StatCard
+                  key={c.label}
+                  label={c.label}
+                  value={<span className={`${c.color} font-bold`}>{num(c.pick(summary.totals))}</span>}
+                  // Admins and resellers deal in two card types with different
+                  // pricing and settlement, so each figure is also split GB / Wallet.
+                  sub={showPackageSplit ? (
+                    <span className="flex items-center gap-2 whitespace-nowrap">
+                      <span className="text-emerald-600 font-semibold">GB {num(c.pick(summary.totals.by_package_type?.gb))}</span>
+                      <span className="text-slate-300">|</span>
+                      <span className="text-sky-600 font-semibold">Wallet {num(c.pick(summary.totals.by_package_type?.wallet))}</span>
+                    </span>
+                  ) : undefined}
+                />
+              ))}
             </div>
           )}
 
@@ -446,7 +503,13 @@ export default function Vouchers() {
                       <td><Pill tone={statusPill[v.status] || 'secondary'}>{v.status}</Pill></td>
                       {canSeeReports && <td className="text-xs">{v.activated_at ? date(v.activated_at) : '—'}</td>}
                       {canSeeReports && <td className="font-semibold text-slate-700">{v.customer_username || '—'}</td>}
-                      {canSeeReports && user?.role !== 'seller' && <td>{v.reseller?.username || '—'}</td>}
+                      {canSeeReports && user?.role !== 'seller' && (
+                        // A card is attributed to either a seller or the reseller
+                        // directly, never both — so once a seller owns the row, the
+                        // Reseller cell stays blank. An admin keeps the attribution,
+                        // since for them it identifies which reseller's chain it is.
+                        <td>{v.seller?.username && user?.role !== 'admin' ? '—' : (v.reseller?.username || '—')}</td>
+                      )}
                       {canSeeReports && user?.role !== 'seller' && <td>{v.seller?.username || '—'}</td>}
                       {can('generate_voucher') && (
                         <td className="text-right whitespace-nowrap">
@@ -484,9 +547,7 @@ export default function Vouchers() {
                 onChange={(val) => setBatchFilters({ ...batchFilters, plan_id: val })}
                 options={[
                   { value: '', label: 'All Plans' },
-                  ...plans
-                    .filter((p) => (user?.role === 'admin' ? true : p.created_by === user?.id))
-                    .map((p) => ({ value: p.id, label: p.name }))
+                  ...batchPlanOptions.map((p) => ({ value: p.id, label: p.name }))
                 ]}
               />
             </div>

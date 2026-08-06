@@ -22,12 +22,28 @@ class ReportController extends Controller
 
         $rows = (clone $q)
             ->join('internet_plans as p', 'p.id', '=', 'vouchers.plan_id')
-            ->select('p.id as plan_id', 'p.name as plan', 'vouchers.status', DB::raw('count(*) as c'), DB::raw('sum(vouchers.price) as revenue'), DB::raw('sum(vouchers.data_gb) as gb'))
-            ->groupBy('p.id', 'p.name', 'vouchers.status')
+            ->select('p.id as plan_id', 'p.name as plan', 'p.package_type', 'vouchers.status', DB::raw('count(*) as c'), DB::raw('sum(vouchers.price) as revenue'), DB::raw('sum(vouchers.data_gb) as gb'))
+            ->groupBy('p.id', 'p.name', 'p.package_type', 'vouchers.status')
             ->get();
+
+        // Cards come in two flavours a reseller prices and settles differently —
+        // GB packages (direct-due) and wallet packages (commission-split) — so the
+        // status rollup is reported per package type as well as in total.
+        $emptyStatuses = ['new' => 0, 'sold' => 0, 'active' => 0, 'used' => 0, 'expired' => 0, 'disabled' => 0];
+        $byPackageType = [
+            'gb' => ['generated' => 0, 'sold' => 0, 'by_status' => $emptyStatuses],
+            'wallet' => ['generated' => 0, 'sold' => 0, 'by_status' => $emptyStatuses],
+        ];
 
         $summary = [];
         foreach ($rows as $r) {
+            if (isset($byPackageType[$r->package_type])) {
+                $byPackageType[$r->package_type]['generated'] += (int) $r->c;
+                $byPackageType[$r->package_type]['by_status'][$r->status] += (int) $r->c;
+                if (in_array($r->status, ['sold', 'used', 'expired'], true)) {
+                    $byPackageType[$r->package_type]['sold'] += (int) $r->c;
+                }
+            }
             $summary[$r->plan_id] ??= [
                 'plan_id' => $r->plan_id, 'plan' => $r->plan,
                 'generated' => 0, 'used' => 0, 'remaining' => 0, 'revenue' => 0, 'gb_sold' => 0,
@@ -70,6 +86,7 @@ class ReportController extends Controller
                 'revenue' => array_sum(array_column($summary, 'revenue')),
                 'gb_sold' => array_sum(array_column($summary, 'gb_sold')),
                 'by_status' => $totalsByStatus,
+                'by_package_type' => $byPackageType,
             ],
         ]);
     }
@@ -166,44 +183,61 @@ class ReportController extends Controller
         ];
     }
 
-    /** Base voucher query scoped to the actor + shared report filters. */
+    /**
+     * Base voucher query scoped to the actor + shared report filters.
+     *
+     * Every column here is table-qualified on purpose: packageSummary joins
+     * internet_plans, which shares `status`, `created_at`, `data_gb` and others
+     * with vouchers. An unqualified predicate makes MySQL raise "Column ... is
+     * ambiguous" (SQLSTATE 1052) the moment a status/date/season filter is used.
+     */
     private function scoped(Request $request)
     {
         $actor = $request->user();
         $q = Voucher::query();
 
         if ($actor->isReseller()) {
-            $q->where('reseller_id', $actor->id);
+            $q->where('vouchers.reseller_id', $actor->id);
         } elseif ($actor->isSeller()) {
-            $q->where('seller_id', $actor->id);
+            $q->where('vouchers.seller_id', $actor->id);
         }
 
         if ($p = $request->query('plan_id')) {
-            $q->where('plan_id', $p);
+            $q->where('vouchers.plan_id', $p);
         }
         if ($s = $request->query('status')) {
-            $q->where('status', $s);
+            $q->where('vouchers.status', $s);
         }
         if (($rid = $request->query('reseller_id')) && $actor->isAdmin()) {
-            $q->where('reseller_id', $rid);
+            $q->where('vouchers.reseller_id', $rid);
         }
+        // 'own' / 'all' / an id — see VoucherController@index for the three views.
         if ($sid = $request->query('seller_id')) {
-            $q->where('seller_id', $sid);
+            if ($sid === 'own') {
+                $q->whereNull('vouchers.seller_id');
+                if ($actor->isAdmin()) {
+                    $q->whereNull('vouchers.reseller_id');
+                }
+            } elseif ($sid === 'all') {
+                $q->whereNotNull('vouchers.seller_id');
+            } else {
+                $q->where('vouchers.seller_id', $sid);
+            }
         }
         if ($code = $request->query('code')) {
-            $q->where('code', 'like', "%$code%");
+            $q->where('vouchers.code', 'like', "%$code%");
         }
         if ($batch = $request->query('batch')) {
             $q->whereHas('batch', fn ($x) => $x->where('batch_code', 'like', "%$batch%"));
         }
         if ($cu = $request->query('customer_username')) {
-            $q->where('customer_username', 'like', "%$cu%");
+            $q->where('vouchers.customer_username', 'like', "%$cu%");
         }
         if ($from = $request->query('from')) {
-            $q->whereDate('created_at', '>=', $from);
+            $q->whereDate('vouchers.created_at', '>=', $from);
         }
         if ($to = $request->query('to')) {
-            $q->whereDate('created_at', '<=', $to);
+            $q->whereDate('vouchers.created_at', '<=', $to);
         }
         if ($seasonId = $request->query('season_id')) {
             $season = \App\Models\Season::find($seasonId);
@@ -216,15 +250,15 @@ class ReportController extends Controller
                 $q->where(function ($query) use ($sm, $sd, $em, $ed) {
                     if ($sm < $em || ($sm === $em && $sd <= $ed)) {
                         $query->whereRaw("
-                            (MONTH(created_at) > ? OR (MONTH(created_at) = ? AND DAY(created_at) >= ?))
+                            (MONTH(vouchers.created_at) > ? OR (MONTH(vouchers.created_at) = ? AND DAY(vouchers.created_at) >= ?))
                             AND
-                            (MONTH(created_at) < ? OR (MONTH(created_at) = ? AND DAY(created_at) <= ?))
+                            (MONTH(vouchers.created_at) < ? OR (MONTH(vouchers.created_at) = ? AND DAY(vouchers.created_at) <= ?))
                         ", [$sm, $sm, $sd, $em, $em, $ed]);
                     } else {
                         $query->whereRaw("
-                            (MONTH(created_at) > ? OR (MONTH(created_at) = ? AND DAY(created_at) >= ?))
+                            (MONTH(vouchers.created_at) > ? OR (MONTH(vouchers.created_at) = ? AND DAY(vouchers.created_at) >= ?))
                             OR
-                            (MONTH(created_at) < ? OR (MONTH(created_at) = ? AND DAY(created_at) <= ?))
+                            (MONTH(vouchers.created_at) < ? OR (MONTH(vouchers.created_at) = ? AND DAY(vouchers.created_at) <= ?))
                         ", [$sm, $sm, $sd, $em, $em, $ed]);
                     }
                 });
