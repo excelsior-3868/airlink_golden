@@ -1,9 +1,10 @@
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { ReactNode, useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useAuth } from '../lib/auth'
 import { rs, gb } from '../lib/format'
 import { Check, ChevronDown, Tag, Zap, Clock, Ban, Ticket, PlusCircle, Search, Sparkles, Wallet, Database } from 'lucide-react'
+import { ComposedChart, Bar, Cell, Line, XAxis, Tooltip, ResponsiveContainer } from 'recharts'
 export { DualDatePicker } from './DualDatePicker'
 export { ConfirmModal } from './ConfirmModal'
 export type { ConfirmState } from './ConfirmModal'
@@ -24,9 +25,9 @@ export function StatCard({ label, value, icon, sub, iconColorClass = 'text-prima
       transition={{ duration: 0.3 }}
       className="glass-card p-5 flex items-start justify-between"
     >
-      <div>
+      <div className="min-w-0">
         <p className="text-muted-foreground text-xs sm:text-sm font-medium">{label}</p>
-        <p className="text-xl lg:text-2xl font-bold mt-1 tracking-tight">{value}</p>
+        <p className="text-xl font-bold mt-1 tracking-tight tabular-nums whitespace-nowrap">{value}</p>
         {sub && <p className="text-xs text-muted-foreground mt-1">{sub}</p>}
       </div>
       {icon && <div className={`rounded-2xl p-2.5 shrink-0 flex items-center justify-center ${iconColorClass}`}>{icon}</div>}
@@ -53,12 +54,26 @@ export function VoucherStatCard({
   const total = vouchers?.total || 0;
   const byStatus = vouchers?.by_status || {};
 
+  const statusLine = [
+    { status: 'Active', value: byStatus.active || 0, color: '#10b981' },
+    { status: 'Sold', value: byStatus.sold || 0, color: '#d97706' },
+    { status: 'Used', value: byStatus.used || 0, color: '#0ea5e9' },
+    { status: 'Expired', value: byStatus.expired || 0, color: '#f43f5e' },
+    { status: 'Disabled', value: byStatus.disabled || 0, color: '#94a3b8' },
+  ];
+  const renderStatusDot = (props: any) => {
+    const { cx, cy, payload } = props;
+    return <circle key={payload.status} cx={cx} cy={cy} r={3.5} fill={payload.color} stroke="white" strokeWidth={1.5} />;
+  };
+
+  // p-5 matches StatCard, which this card sits beside in every dashboard row —
+  // equal padding is what puts both headings on the same baseline.
   return (
     <motion.div
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
-      className="glass-card p-4 flex flex-col justify-between"
+      className="glass-card p-5 flex flex-col justify-between"
     >
       <div className="flex items-start justify-between">
         <div>
@@ -72,7 +87,27 @@ export function VoucherStatCard({
         )}
       </div>
 
-      <div className="flex flex-wrap gap-1.5 mt-2.5">
+      <div className="h-16 mt-1">
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart data={statusLine} margin={{ top: 8, right: 2, left: 2, bottom: 0 }}>
+            <XAxis dataKey="status" tick={{ fontSize: 8.5, fill: '#94a3b8' }} axisLine={false} tickLine={false} interval={0} padding={{ left: 14, right: 14 }} />
+            <Tooltip
+              formatter={(v: any) => [v, 'Vouchers']}
+              labelStyle={{ fontSize: 11, fontWeight: 600 }}
+              contentStyle={{ borderRadius: 10, border: '1px solid #e2e8f0', fontSize: 11, padding: '4px 8px' }}
+              cursor={{ fill: '#f1f5f9' }}
+            />
+            <Bar dataKey="value" barSize={16} radius={[3, 3, 0, 0]} isAnimationActive={false}>
+              {statusLine.map((entry) => (
+                <Cell key={entry.status} fill={entry.color} fillOpacity={0.22} />
+              ))}
+            </Bar>
+            <Line type="monotone" dataKey="value" stroke="#cbd5e1" strokeWidth={2} dot={renderStatusDot} activeDot={{ r: 6 }} isAnimationActive={false} />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div className="flex flex-wrap gap-1.5 mt-1">
         <span className="px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 text-[10px] font-bold border border-emerald-100/50 shrink-0">
           {byStatus.active || 0} Active
         </span>
@@ -197,49 +232,58 @@ export function Modal({
   tone?: 'light' | 'brand';
 }) {
   const backdropMouseDown = useRef(false)
-  if (!open) return null
   const isBrand = tone === 'brand'
   return createPortal(
-    <div
-      className="fixed inset-0 z-[9990] flex items-center justify-center p-4 bg-slate-950/45 backdrop-blur-sm animate-fade-in"
-      onMouseDown={(e) => { backdropMouseDown.current = e.target === e.currentTarget }}
-      onMouseUp={(e) => { if (backdropMouseDown.current && e.target === e.currentTarget) onClose(); backdropMouseDown.current = false }}
-    >
-      <motion.div
-        initial={{ opacity: 0, scale: 0.96, y: 15 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        transition={{ duration: 0.25, ease: 'easeOut' }}
-        className={`bg-white w-full ${widthClassName} rounded-[28px] relative shadow-2xl border border-slate-100 flex flex-col overflow-visible`}
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        {/* Modal Header */}
-        <div className={`flex items-center justify-between p-5 sm:p-6 border-b rounded-t-[28px] select-none ${isBrand ? 'bg-[#003164] border-[#003164]' : 'bg-white border-slate-100'}`}>
-          <div className="flex items-center gap-3.5 min-w-0">
-            {icon && (
-              <div className={`p-3 rounded-2xl shrink-0 flex items-center justify-center shadow-sm ${isBrand ? 'bg-white/10 text-white border border-white/20' : 'bg-blue-50 text-[#003164] border border-blue-100/50'}`}>
-                {icon}
-              </div>
-            )}
-            <div className="min-w-0">
-              <h2 className={`text-lg font-bold tracking-tight leading-none truncate ${isBrand ? 'text-white' : 'text-slate-800'}`}>{title}</h2>
-              {subtitle && <p className={`text-xs font-semibold mt-1.5 leading-normal tracking-wide truncate max-w-lg ${isBrand ? 'text-blue-100/70' : 'text-slate-400'}`}>{subtitle}</p>}
-            </div>
-          </div>
-
-          <button
-            onClick={onClose}
-            className={`w-8 h-8 flex items-center justify-center rounded-full border transition-all cursor-pointer shrink-0 ml-4 ${isBrand ? 'border-white/20 text-white/70 hover:text-white hover:bg-white/10' : 'border-slate-100 text-slate-400 hover:text-slate-700 hover:bg-slate-50'}`}
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          key="modal-backdrop"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.18 }}
+          className="fixed inset-0 z-[9990] flex items-center justify-center p-4 bg-slate-950/45 backdrop-blur-sm"
+          onMouseDown={(e) => { backdropMouseDown.current = e.target === e.currentTarget }}
+          onMouseUp={(e) => { if (backdropMouseDown.current && e.target === e.currentTarget) onClose(); backdropMouseDown.current = false }}
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.96, y: 15 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.97, y: 8 }}
+            transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+            className={`bg-white w-full ${widthClassName} rounded-[28px] relative shadow-2xl border border-slate-100 flex flex-col overflow-visible`}
+            onMouseDown={(e) => e.stopPropagation()}
           >
-            <span className="text-lg font-light leading-none">&times;</span>
-          </button>
-        </div>
+            {/* Modal Header */}
+            <div className={`flex items-center justify-between p-5 sm:p-6 border-b rounded-t-[28px] select-none ${isBrand ? 'bg-[#003164] border-[#003164]' : 'bg-white border-slate-100'}`}>
+              <div className="flex items-center gap-3.5 min-w-0">
+                {icon && (
+                  <div className={`p-3 rounded-2xl shrink-0 flex items-center justify-center shadow-sm ${isBrand ? 'bg-white/10 text-white border border-white/20' : 'bg-blue-50 text-[#003164] border border-blue-100/50'}`}>
+                    {icon}
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <h2 className={`text-lg font-bold tracking-tight leading-none truncate ${isBrand ? 'text-white' : 'text-slate-800'}`}>{title}</h2>
+                  {subtitle && <p className={`text-xs font-semibold mt-1.5 leading-normal tracking-wide truncate max-w-lg ${isBrand ? 'text-blue-100/70' : 'text-slate-400'}`}>{subtitle}</p>}
+                </div>
+              </div>
 
-        {/* Modal Body */}
-        <div className={`p-6 sm:p-8 ${bodyClassName}`}>
-          {children}
-        </div>
-      </motion.div>
-    </div>,
+              <button
+                onClick={onClose}
+                className={`w-8 h-8 flex items-center justify-center rounded-full border transition-all cursor-pointer shrink-0 ml-4 ${isBrand ? 'border-white/20 text-white/70 hover:text-white hover:bg-white/10' : 'border-slate-100 text-slate-400 hover:text-slate-700 hover:bg-slate-50'}`}
+              >
+                <span className="text-lg font-light leading-none">&times;</span>
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className={`p-6 sm:p-8 ${bodyClassName}`}>
+              {children}
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>,
     document.body
   )
 }

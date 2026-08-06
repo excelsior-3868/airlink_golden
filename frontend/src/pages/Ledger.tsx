@@ -277,9 +277,11 @@ function SalesLedgerView() {
             <div>
               <p className="text-xs font-semibold text-slate-400">{isReseller ? 'Wallet Voucher Sales' : 'Commission Dues'}</p>
               <p className="text-xl font-extrabold text-purple-600 mt-1">
-                {rs(isReseller ? (summary.total_wallet_voucher_sales ?? 0) : (summary.total_commission_due ?? 0))}
+                {rs(isReseller ? (summary.total_wallet_voucher_commission ?? 0) : (summary.total_commission_due ?? 0))}
               </p>
-              <p className="text-[11px] text-slate-400 mt-1 font-medium">{isReseller ? 'Wallet Package Voucher Revenue' : 'Outstanding Commission'}</p>
+              {/* A reseller's own cut, not the gross at the counter — the admin's
+                  share of a wallet sale is never the reseller's revenue. */}
+              <p className="text-[11px] text-slate-400 mt-1 font-medium">{isReseller ? 'Commission Earned (Wallet Package)' : 'Outstanding Commission'}</p>
             </div>
             <div className="w-12 h-12 rounded-2xl bg-purple-50 border border-purple-100 text-purple-600 flex items-center justify-center shrink-0">
               <Wallet size={22} />

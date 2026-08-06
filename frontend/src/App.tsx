@@ -96,7 +96,7 @@ export default function App() {
         <Route path="/logs" element={<Guard perm="view_settings" roles={['admin']}><LoginLogs /></Guard>} />
         <Route path="/permissions" element={<Guard perm="view_settings" roles={['admin']}><Permissions /></Guard>} />
         <Route path="/settings/payment-methods" element={<Guard perm="view_settings" roles={['admin']}><PaymentMethods /></Guard>} />
-        <Route path="/settings/chart-of-accounts" element={<Guard roles={['admin', 'reseller', 'seller']}><ChartOfAccounts /></Guard>} />
+        <Route path="/settings/chart-of-accounts" element={<Guard roles={['admin']}><ChartOfAccounts /></Guard>} />
         <Route path="/settings/system-load" element={<Guard perm="view_settings" roles={['admin']}><SystemLoad /></Guard>} />
         <Route path="/settings/voucher-card" element={<Guard roles={['admin', 'reseller', 'seller']}><VoucherCardDesigner /></Guard>} />
         <Route path="/settings/api-tokens" element={<Guard perm="manage_api_tokens" roles={['admin', 'reseller', 'seller']}><ApiTokens /></Guard>} />

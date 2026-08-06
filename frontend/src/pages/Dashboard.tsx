@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Wallet, Database, Users2, Store, Ticket, TrendingUp, History, UserCheck, LayoutDashboard, CreditCard, PlusCircle, Package, UserPlus, Receipt, Coins, Sparkles, Layers, Activity, BarChart3 } from 'lucide-react'
+import { Wallet, Database, Users2, Store, Ticket, TrendingUp, History, UserCheck, LayoutDashboard, CreditCard, PlusCircle, Package, UserPlus, Receipt, Coins, Sparkles, Layers, Activity, BarChart3, HandCoins } from 'lucide-react'
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { api } from '../lib/api'
 import { useQuery } from '../lib/cache'
@@ -12,7 +12,7 @@ import FundModal from '../components/FundModal'
 
 export default function Dashboard() {
   const navigate = useNavigate()
-  const { user } = useAuth()
+  const { user, can } = useAuth()
   const { data: d, loading, setData: setD } = useQuery<any>(
     'dashboard',
     () => api.get('/dashboard').then((r) => r.data.data),
@@ -62,11 +62,16 @@ export default function Dashboard() {
     }
   }, [d])
 
+  // Commission is only ever collected by the admin from its resellers; a reseller
+  // settles GB dues with its sellers, so it never sees the commission option.
+  const canCollectCommission = user?.role === 'admin'
+  const activeCollectType = canCollectCommission ? collectType : 'gb'
+
   const handleCollectPayment = async () => {
     setCollectBusy(true)
     setCollectErr('')
     try {
-      const endpoint = collectType === 'commission' ? '/billing/commission/collect' : '/billing/payments/collect'
+      const endpoint = activeCollectType === 'commission' ? '/billing/commission/collect' : '/billing/payments/collect'
       await api.post(endpoint, {
         user_id: +collectForm.user_id,
         amount: +collectForm.amount,
@@ -86,13 +91,50 @@ export default function Dashboard() {
 
   if (loading || !d) return <Spinner />
 
+  // A freshly onboarded account (vouchers generated but none sold yet) still
+  // has 14 rows of zeroed-out data, which would otherwise render a flat line
+  // and a degenerate, repeated Y-axis (e.g. "Rs 0k" five times over). Show an
+  // empty state instead of a chart with nothing to show.
+  const dailyTrendHasActivity = d.daily_trend?.some((r: any) => r.count > 0) ?? false
+
+  // Sellers have no downline, so neither action applies to them. Admins fund
+  // both wallet and GB; resellers only ever hand GB down to their sellers
+  // (FundModal hides the allocation-type switch for non-admins).
+  const isDownlineManager = d.role === 'admin' || d.role === 'reseller'
+  const showCollect = isDownlineManager && can('wallet_load')
+  const showQuickFund = isDownlineManager && (can('allocate_gb') || (d.role === 'admin' && can('wallet_load')))
+
   return (
     <div>
-      <PageTitle 
-        title="Dashboard" 
-        subtitle={`${d.role.charAt(0).toUpperCase() + d.role.slice(1)} account overview & billing metrics`} 
-        icon={<LayoutDashboard size={22} className="text-blue-500" />} 
+      <PageTitle
+        title="Dashboard"
+        subtitle={`${d.role.charAt(0).toUpperCase() + d.role.slice(1)} account overview & billing metrics`}
+        icon={<LayoutDashboard size={22} className="text-blue-500" />}
         showBalances={true}
+        action={
+          (showCollect || showQuickFund) && (
+            <div className="flex items-center gap-2">
+              {showCollect && (
+                <motion.button
+                  whileTap={{ scale: 0.95 }}
+                  className="btn-ghost flex items-center gap-2"
+                  onClick={() => { setCollectErr(''); setCollectOpen(true) }}
+                >
+                  <CreditCard size={16} /> Collect Payment
+                </motion.button>
+              )}
+              {showQuickFund && (
+                <motion.button
+                  whileTap={{ scale: 0.95 }}
+                  className="btn-primary flex items-center gap-2"
+                  onClick={() => setQuickFundOpen(true)}
+                >
+                  <PlusCircle size={16} /> Quick Fund
+                </motion.button>
+              )}
+            </div>
+          )
+        }
       />
 
 
@@ -140,52 +182,68 @@ export default function Dashboard() {
           {d.daily_trend && d.daily_trend.length > 0 && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {/* Daily Sales Trend */}
-              <GlassCard>
-                <h3 className="font-bold mb-4 flex items-center gap-2 text-primary">
-                  <TrendingUp size={18} /> Daily Sales Trend
-                  <span className="ml-auto text-xs font-normal text-slate-400">Last 14 days</span>
-                </h3>
-                <ResponsiveContainer width="100%" height={200}>
-                  <AreaChart data={d.daily_trend} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="salesGradAdminGb" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="#f43f5e" stopOpacity={0} />
-                      </linearGradient>
-                      <linearGradient id="salesGradAdminWallet" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#a855f7" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="#a855f7" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                    <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#94a3b8' }} tickFormatter={(v) => v.slice(5)} />
-                    <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} width={52} tickFormatter={(v) => `Rs ${(v/1000).toFixed(0)}k`} />
-                    <Tooltip formatter={(v: any) => [`Rs ${Number(v).toLocaleString()}`, undefined]} labelStyle={{ fontSize: 11 }} contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', fontSize: 12 }} />
-                    <Legend wrapperStyle={{ fontSize: 11 }} />
-                    <Area type="monotone" dataKey="gb_sales" name="GB Sales" stackId="sales" stroke="#f43f5e" strokeWidth={2} fill="url(#salesGradAdminGb)" />
-                    <Area type="monotone" dataKey="wallet_sales" name="Wallet Sales" stackId="sales" stroke="#a855f7" strokeWidth={2} fill="url(#salesGradAdminWallet)" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </GlassCard>
+              <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
+                <GlassCard>
+                  <h3 className="font-bold mb-4 flex items-center gap-2 text-primary">
+                    <TrendingUp size={18} /> Daily Sales Trend
+                    <span className="ml-auto text-xs font-normal text-slate-400">Last 14 days</span>
+                  </h3>
+                  {dailyTrendHasActivity ? (
+                  <ResponsiveContainer width="100%" height={200} className="chart-reveal">
+                    <AreaChart data={d.daily_trend} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="salesGradAdminGb" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.3} />
+                          <stop offset="95%" stopColor="#f43f5e" stopOpacity={0} />
+                        </linearGradient>
+                        <linearGradient id="salesGradAdminWallet" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#a855f7" stopOpacity={0.3} />
+                          <stop offset="95%" stopColor="#a855f7" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                      <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#94a3b8' }} tickFormatter={(v) => v.slice(5)} />
+                      <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} width={52} tickFormatter={(v) => `Rs ${(v/1000).toFixed(0)}k`} />
+                      <Tooltip formatter={(v: any) => [`Rs ${Number(v).toLocaleString()}`, undefined]} labelStyle={{ fontSize: 11 }} contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', fontSize: 12 }} />
+                      <Legend wrapperStyle={{ fontSize: 11 }} />
+                      <Area type="monotone" dataKey="gb_sales" name="GB Sales" stackId="sales" stroke="#f43f5e" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" fill="url(#salesGradAdminGb)" isAnimationActive animationDuration={1700} animationEasing="ease-out" />
+                      <Area type="monotone" dataKey="wallet_sales" name="Wallet Sales" stackId="sales" stroke="#a855f7" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" fill="url(#salesGradAdminWallet)" isAnimationActive animationDuration={1700} animationEasing="ease-out" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                  ) : (
+                    <div style={{ height: 200 }} className="flex items-center justify-center">
+                      <EmptyState title="No sales yet" subtitle="This will fill in once a voucher is sold." />
+                    </div>
+                  )}
+                </GlassCard>
+              </motion.div>
 
               {/* No. of Vouchers Sold — split by GB vs Wallet */}
-              <GlassCard>
-                <h3 className="font-bold mb-4 flex items-center gap-2 text-primary">
-                  <Ticket size={18} /> No. of Vouchers Sold
-                  <span className="ml-auto text-xs font-normal text-slate-400">Last 14 days</span>
-                </h3>
-                <ResponsiveContainer width="100%" height={200}>
-                  <BarChart data={d.daily_trend} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                    <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#94a3b8' }} tickFormatter={(v) => v.slice(5)} />
-                    <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} width={32} allowDecimals={false} />
-                    <Tooltip contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', fontSize: 12 }} labelStyle={{ fontSize: 11 }} />
-                    <Legend wrapperStyle={{ fontSize: 11 }} />
-                    <Bar dataKey="gb_count" name="GB Vouchers" stackId="vouchers" fill="#f43f5e" radius={[0, 0, 0, 0]} />
-                    <Bar dataKey="wallet_count" name="Wallet Vouchers" stackId="vouchers" fill="#a855f7" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </GlassCard>
+              <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.1 }}>
+                <GlassCard>
+                  <h3 className="font-bold mb-4 flex items-center gap-2 text-primary">
+                    <Ticket size={18} /> No. of Vouchers Sold
+                    <span className="ml-auto text-xs font-normal text-slate-400">Last 14 days</span>
+                  </h3>
+                  {dailyTrendHasActivity ? (
+                  <ResponsiveContainer width="100%" height={200} className="chart-reveal">
+                    <BarChart data={d.daily_trend} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                      <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#94a3b8' }} tickFormatter={(v) => v.slice(5)} />
+                      <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} width={32} allowDecimals={false} />
+                      <Tooltip contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', fontSize: 12 }} labelStyle={{ fontSize: 11 }} />
+                      <Legend wrapperStyle={{ fontSize: 11 }} />
+                      <Bar dataKey="gb_count" name="GB Vouchers" stackId="vouchers" fill="#f43f5e" radius={[0, 0, 0, 0]} isAnimationActive animationDuration={1100} animationEasing="ease-out" />
+                      <Bar dataKey="wallet_count" name="Wallet Vouchers" stackId="vouchers" fill="#a855f7" radius={[4, 4, 0, 0]} isAnimationActive animationDuration={1100} animationEasing="ease-out" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                  ) : (
+                    <div style={{ height: 200 }} className="flex items-center justify-center">
+                      <EmptyState title="No vouchers sold yet" subtitle="This will fill in once a voucher is sold." />
+                    </div>
+                  )}
+                </GlassCard>
+              </motion.div>
             </div>
           )}
 
@@ -249,14 +307,14 @@ export default function Dashboard() {
                 ) : (
                   <div className="space-y-2">
                     {d.recent_transactions.map((t: any) => (
-                      <div key={t.id} className="flex justify-between items-center text-xs hover:bg-secondary/20 p-2 rounded-lg transition-colors">
-                        <div>
+                      <div key={t.id} className="flex justify-between items-center gap-3 text-xs hover:bg-secondary/20 p-2 rounded-lg transition-colors">
+                        <div className="min-w-0">
                           <p className="font-semibold text-slate-700">{t.user || 'System'}</p>
                           <p className="text-muted-foreground mt-0.5">{t.note}</p>
                         </div>
-                        <div className="text-right">
-                          <p className="font-bold text-primary">+{rs(t.amount)}</p>
-                          <p className="text-muted-foreground mt-0.5">{date(t.created_at)}</p>
+                        <div className="text-right shrink-0">
+                          <p className="font-bold text-primary whitespace-nowrap tabular-nums">+{rs(t.amount)}</p>
+                          <p className="text-muted-foreground mt-0.5 whitespace-nowrap">{date(t.created_at)}</p>
                         </div>
                       </div>
                     ))}
@@ -299,72 +357,160 @@ export default function Dashboard() {
               iconColorClass="text-purple-600 bg-purple-50 border border-purple-100/50"
               sub={<span>Sellers: <strong className="text-slate-700">{num(d.counts.sellers)}</strong></span>}
             />
-            <StatCard label="Total Collected from Sellers" value={<span className="text-emerald-600">{rs(d.collected_from_sellers)}</span>} icon={<TrendingUp size={22} />} iconColorClass="text-emerald-600 bg-emerald-50 border border-emerald-100/50" />
-            <StatCard
-              label="Total Receivable"
-              value={<span className="text-teal-600">{rs(d.outstanding_due)}</span>}
-              icon={<CreditCard size={22} />}
-              iconColorClass="text-teal-600 bg-teal-50 border border-teal-100/50"
-              sub={<span>Owed by sellers for allocated GB</span>}
-            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+              className="glass-card p-5 flex flex-col justify-between gap-3"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-muted-foreground text-xs sm:text-sm font-medium leading-snug">Payment From Sellers</p>
+                  <p className="text-xl font-bold mt-1 tracking-tight tabular-nums whitespace-nowrap text-emerald-600">{rs(d.collected_from_sellers)}</p>
+                </div>
+                <div className="rounded-2xl p-2.5 shrink-0 flex items-center justify-center text-emerald-600 bg-emerald-50 border border-emerald-100/50">
+                  <TrendingUp size={22} />
+                </div>
+              </div>
+              <div className="h-px bg-slate-200" />
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-muted-foreground text-xs sm:text-sm font-medium leading-snug">Total Receivable from Sellers</p>
+                  <p className="text-xl font-bold mt-1 tracking-tight tabular-nums whitespace-nowrap text-teal-600">{rs(d.outstanding_due)}</p>
+                </div>
+                <div className="rounded-2xl p-2.5 shrink-0 flex items-center justify-center text-teal-600 bg-teal-50 border border-teal-100/50">
+                  <CreditCard size={22} />
+                </div>
+              </div>
+            </motion.div>
 
             <VoucherStatCard title="GB Vouchers" vouchers={d.gb_vouchers || d.vouchers} icon={<Ticket size={22} />} iconColorClass="text-rose-600 bg-rose-50 border border-rose-100/50" valueColorClass="text-rose-600" />
             <VoucherStatCard title="Wallet Vouchers" vouchers={d.wallet_vouchers || d.vouchers} icon={<Wallet size={22} />} iconColorClass="text-purple-600 bg-purple-50 border border-purple-100/50" valueColorClass="text-purple-600" />
-            <StatCard label="GB Voucher Sales" value={<span className="text-blue-600">{rs(d.voucher_sales)}</span>} icon={<TrendingUp size={22} />} iconColorClass="text-blue-600 bg-blue-50 border border-blue-100/50" />
-            <StatCard label="Commission Due to Admin" value={<span className="text-orange-600">{rs(d.commission_due)} <span className="text-sm font-medium text-orange-400">({d.commission_percent}%)</span></span>} icon={<Receipt size={22} />} iconColorClass="text-orange-600 bg-orange-50 border border-orange-100/50" />
-            <StatCard label="Net Earnings (After Commission)" value={<span className="text-lime-600">{rs(d.commission_net_earnings)}</span>} icon={<Sparkles size={22} />} iconColorClass="text-lime-600 bg-lime-50 border border-lime-100/50" />
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+              className="glass-card p-5 flex flex-col justify-between gap-3"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-muted-foreground text-xs sm:text-sm font-medium truncate">GB Voucher Sales</p>
+                  <p className="text-xl font-bold mt-1 tracking-tight tabular-nums whitespace-nowrap text-rose-600">{rs(d.voucher_sales)}</p>
+                </div>
+                <div className="rounded-2xl p-2.5 shrink-0 flex items-center justify-center text-rose-600 bg-rose-50 border border-rose-100/50">
+                  <TrendingUp size={22} />
+                </div>
+              </div>
+              <div className="h-px bg-slate-200" />
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-muted-foreground text-xs sm:text-sm font-medium">Wallet Voucher Sales</p>
+                  <p className="text-xl font-bold mt-1 tracking-tight tabular-nums whitespace-nowrap text-purple-600">{rs(d.wallet_voucher_sales)}</p>
+                </div>
+                <div className="rounded-2xl p-2.5 shrink-0 flex items-center justify-center text-purple-600 bg-purple-50 border border-purple-100/50">
+                  <TrendingUp size={22} />
+                </div>
+              </div>
+            </motion.div>
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+              className="glass-card p-5 flex flex-col justify-between gap-3"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-muted-foreground text-xs sm:text-sm font-medium leading-snug">Commission Due (Wallet Voucher Sales)</p>
+                  <p className="text-xl font-bold mt-1 tracking-tight tabular-nums whitespace-nowrap text-orange-600">
+                    {rs(d.commission_due)} <span className="text-sm font-medium text-orange-400">({d.commission_percent}%)</span>
+                  </p>
+                </div>
+                <div className="rounded-2xl p-2.5 shrink-0 flex items-center justify-center text-orange-600 bg-orange-50 border border-orange-100/50">
+                  <Receipt size={22} />
+                </div>
+              </div>
+              <div className="h-px bg-slate-200" />
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-muted-foreground text-xs sm:text-sm font-medium leading-snug">Commission Earned (Wallet Voucher Sales)</p>
+                  <p className="text-xl font-bold mt-1 tracking-tight tabular-nums whitespace-nowrap text-lime-600">{rs(d.commission_net_earnings)}</p>
+                </div>
+                <div className="rounded-2xl p-2.5 shrink-0 flex items-center justify-center text-lime-600 bg-lime-50 border border-lime-100/50">
+                  <Sparkles size={22} />
+                </div>
+              </div>
+            </motion.div>
           </div>
 
           {/* Charts Row */}
           {d.daily_trend && d.daily_trend.length > 0 && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {/* Daily Sales Trend */}
-              <GlassCard>
-                <h3 className="font-bold mb-4 flex items-center gap-2 text-primary">
-                  <TrendingUp size={18} /> Daily Sales Trend
-                  <span className="ml-auto text-xs font-normal text-slate-400">Last 14 days</span>
-                </h3>
-                <ResponsiveContainer width="100%" height={200}>
-                  <AreaChart data={d.daily_trend} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="salesGradResellerGb" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="#f43f5e" stopOpacity={0} />
-                      </linearGradient>
-                      <linearGradient id="salesGradResellerWallet" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#a855f7" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="#a855f7" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                    <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#94a3b8' }} tickFormatter={(v) => v.slice(5)} />
-                    <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} width={52} tickFormatter={(v) => `Rs ${(v/1000).toFixed(0)}k`} />
-                    <Tooltip formatter={(v: any) => [`Rs ${Number(v).toLocaleString()}`, undefined]} labelStyle={{ fontSize: 11 }} contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', fontSize: 12 }} />
-                    <Legend wrapperStyle={{ fontSize: 11 }} />
-                    <Area type="monotone" dataKey="gb_sales" name="GB Sales" stackId="sales" stroke="#f43f5e" strokeWidth={2} fill="url(#salesGradResellerGb)" />
-                    <Area type="monotone" dataKey="wallet_sales" name="Wallet Sales" stackId="sales" stroke="#a855f7" strokeWidth={2} fill="url(#salesGradResellerWallet)" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </GlassCard>
+              <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
+                <GlassCard>
+                  <h3 className="font-bold mb-4 flex items-center gap-2 text-primary">
+                    <TrendingUp size={18} /> Daily Sales Trend
+                    <span className="ml-auto text-xs font-normal text-slate-400">Last 14 days</span>
+                  </h3>
+                  {dailyTrendHasActivity ? (
+                  <ResponsiveContainer width="100%" height={200} className="chart-reveal">
+                    <AreaChart data={d.daily_trend} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="salesGradResellerGb" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.3} />
+                          <stop offset="95%" stopColor="#f43f5e" stopOpacity={0} />
+                        </linearGradient>
+                        <linearGradient id="salesGradResellerWallet" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#a855f7" stopOpacity={0.3} />
+                          <stop offset="95%" stopColor="#a855f7" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                      <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#94a3b8' }} tickFormatter={(v) => v.slice(5)} />
+                      <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} width={52} tickFormatter={(v) => `Rs ${(v/1000).toFixed(0)}k`} />
+                      <Tooltip formatter={(v: any) => [`Rs ${Number(v).toLocaleString()}`, undefined]} labelStyle={{ fontSize: 11 }} contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', fontSize: 12 }} />
+                      <Legend wrapperStyle={{ fontSize: 11 }} />
+                      <Area type="monotone" dataKey="gb_sales" name="GB Sales" stackId="sales" stroke="#f43f5e" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" fill="url(#salesGradResellerGb)" isAnimationActive animationDuration={1700} animationEasing="ease-out" />
+                      <Area type="monotone" dataKey="wallet_sales" name="Wallet Sales" stackId="sales" stroke="#a855f7" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" fill="url(#salesGradResellerWallet)" isAnimationActive animationDuration={1700} animationEasing="ease-out" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                  ) : (
+                    <div style={{ height: 200 }} className="flex items-center justify-center">
+                      <EmptyState title="No sales yet" subtitle="This will fill in once a voucher is sold." />
+                    </div>
+                  )}
+                </GlassCard>
+              </motion.div>
 
               {/* No. of Vouchers Sold — split by GB vs Wallet */}
-              <GlassCard>
-                <h3 className="font-bold mb-4 flex items-center gap-2 text-primary">
-                  <Ticket size={18} /> No. of Vouchers Sold
-                  <span className="ml-auto text-xs font-normal text-slate-400">Last 14 days</span>
-                </h3>
-                <ResponsiveContainer width="100%" height={200}>
-                  <BarChart data={d.daily_trend} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                    <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#94a3b8' }} tickFormatter={(v) => v.slice(5)} />
-                    <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} width={32} allowDecimals={false} />
-                    <Tooltip contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', fontSize: 12 }} labelStyle={{ fontSize: 11 }} />
-                    <Legend wrapperStyle={{ fontSize: 11 }} />
-                    <Bar dataKey="gb_count" name="GB Vouchers" stackId="vouchers" fill="#f43f5e" radius={[0, 0, 0, 0]} />
-                    <Bar dataKey="wallet_count" name="Wallet Vouchers" stackId="vouchers" fill="#a855f7" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </GlassCard>
+              <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.1 }}>
+                <GlassCard>
+                  <h3 className="font-bold mb-4 flex items-center gap-2 text-primary">
+                    <Ticket size={18} /> No. of Vouchers Sold
+                    <span className="ml-auto text-xs font-normal text-slate-400">Last 14 days</span>
+                  </h3>
+                  {dailyTrendHasActivity ? (
+                  <ResponsiveContainer width="100%" height={200} className="chart-reveal">
+                    <BarChart data={d.daily_trend} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                      <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#94a3b8' }} tickFormatter={(v) => v.slice(5)} />
+                      <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} width={32} allowDecimals={false} />
+                      <Tooltip contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', fontSize: 12 }} labelStyle={{ fontSize: 11 }} />
+                      <Legend wrapperStyle={{ fontSize: 11 }} />
+                      <Bar dataKey="gb_count" name="GB Vouchers" stackId="vouchers" fill="#f43f5e" radius={[0, 0, 0, 0]} isAnimationActive animationDuration={1100} animationEasing="ease-out" />
+                      <Bar dataKey="wallet_count" name="Wallet Vouchers" stackId="vouchers" fill="#a855f7" radius={[4, 4, 0, 0]} isAnimationActive animationDuration={1100} animationEasing="ease-out" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                  ) : (
+                    <div style={{ height: 200 }} className="flex items-center justify-center">
+                      <EmptyState title="No vouchers sold yet" subtitle="This will fill in once a voucher is sold." />
+                    </div>
+                  )}
+                </GlassCard>
+              </motion.div>
             </div>
           )}
 
@@ -402,16 +548,16 @@ export default function Dashboard() {
                 ) : (
                   <div className="space-y-2">
                     {d.recent_wallet_transfers.map((t: any) => (
-                      <div key={t.id} className="flex justify-between items-center text-xs hover:bg-secondary/20 p-2 rounded-lg transition-colors">
-                        <div>
+                      <div key={t.id} className="flex justify-between items-center gap-3 text-xs hover:bg-secondary/20 p-2 rounded-lg transition-colors">
+                        <div className="min-w-0">
                           <p className="font-semibold text-slate-700 capitalize">{t.type} transaction</p>
                           <p className="text-muted-foreground mt-0.5">{t.note}</p>
                         </div>
-                        <div className="text-right">
-                          <p className={`font-bold ${t.type === 'load' || t.type === 'transfer' || t.is_positive ? 'text-emerald-600' : 'text-rose-500'}`}>
+                        <div className="text-right shrink-0">
+                          <p className={`font-bold whitespace-nowrap tabular-nums ${t.type === 'load' || t.type === 'transfer' || t.is_positive ? 'text-emerald-600' : 'text-rose-500'}`}>
                             {t.type === 'load' || t.type === 'transfer' || t.is_positive ? '+' : '-'}{rs(t.amount)}
                           </p>
-                          <p className="text-muted-foreground mt-0.5">{date(t.created_at)}</p>
+                          <p className="text-muted-foreground mt-0.5 whitespace-nowrap">{date(t.created_at)}</p>
                         </div>
                       </div>
                     ))}
@@ -446,50 +592,66 @@ export default function Dashboard() {
           {d.daily_trend && d.daily_trend.length > 0 && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {/* Daily Sales Trend */}
-              <GlassCard>
-                <h3 className="font-bold mb-4 flex items-center gap-2 text-primary">
-                  <TrendingUp size={18} /> Daily Sales Trend
-                  <span className="ml-auto text-xs font-normal text-slate-400">Last 14 days</span>
-                </h3>
-                <ResponsiveContainer width="100%" height={200}>
-                  <AreaChart data={d.daily_trend} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="salesGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.25} />
-                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                    <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#94a3b8' }} tickFormatter={(v) => v.slice(5)} />
-                    <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} width={52} tickFormatter={(v) => `Rs ${(v/1000).toFixed(0)}k`} />
-                    <Tooltip formatter={(v: any) => [`Rs ${Number(v).toLocaleString()}`, 'Sales']} labelStyle={{ fontSize: 11 }} contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', fontSize: 12 }} />
-                    <Area type="monotone" dataKey="sales" stroke="#6366f1" strokeWidth={2} fill="url(#salesGrad)" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </GlassCard>
+              <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
+                <GlassCard>
+                  <h3 className="font-bold mb-4 flex items-center gap-2 text-primary">
+                    <TrendingUp size={18} /> Daily Sales Trend
+                    <span className="ml-auto text-xs font-normal text-slate-400">Last 14 days</span>
+                  </h3>
+                  {dailyTrendHasActivity ? (
+                  <ResponsiveContainer width="100%" height={200} className="chart-reveal">
+                    <AreaChart data={d.daily_trend} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="salesGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#6366f1" stopOpacity={0.25} />
+                          <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                      <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#94a3b8' }} tickFormatter={(v) => v.slice(5)} />
+                      <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} width={52} tickFormatter={(v) => `Rs ${(v/1000).toFixed(0)}k`} />
+                      <Tooltip formatter={(v: any) => [`Rs ${Number(v).toLocaleString()}`, 'Sales']} labelStyle={{ fontSize: 11 }} contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', fontSize: 12 }} />
+                      <Area type="monotone" dataKey="sales" stroke="#6366f1" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" fill="url(#salesGrad)" isAnimationActive animationDuration={1700} animationEasing="ease-out" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                  ) : (
+                    <div style={{ height: 200 }} className="flex items-center justify-center">
+                      <EmptyState title="No sales yet" subtitle="This will fill in once a voucher is sold." />
+                    </div>
+                  )}
+                </GlassCard>
+              </motion.div>
 
               {/* No. of Vouchers Sold */}
-              <GlassCard>
-                <h3 className="font-bold mb-4 flex items-center gap-2 text-primary">
-                  <Ticket size={18} /> No. of Vouchers Sold
-                  <span className="ml-auto text-xs font-normal text-slate-400">Last 14 days</span>
-                </h3>
-                <ResponsiveContainer width="100%" height={200}>
-                  <BarChart data={d.daily_trend} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#0ea5e9" stopOpacity={0.9} />
-                        <stop offset="100%" stopColor="#6366f1" stopOpacity={0.7} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                    <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#94a3b8' }} tickFormatter={(v) => v.slice(5)} />
-                    <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} width={32} allowDecimals={false} />
-                    <Tooltip formatter={(v: any) => [v, 'Vouchers']} labelStyle={{ fontSize: 11 }} contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', fontSize: 12 }} />
-                    <Bar dataKey="count" fill="url(#barGrad)" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </GlassCard>
+              <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.1 }}>
+                <GlassCard>
+                  <h3 className="font-bold mb-4 flex items-center gap-2 text-primary">
+                    <Ticket size={18} /> No. of Vouchers Sold
+                    <span className="ml-auto text-xs font-normal text-slate-400">Last 14 days</span>
+                  </h3>
+                  {dailyTrendHasActivity ? (
+                  <ResponsiveContainer width="100%" height={200} className="chart-reveal">
+                    <BarChart data={d.daily_trend} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#0ea5e9" stopOpacity={0.9} />
+                          <stop offset="100%" stopColor="#6366f1" stopOpacity={0.7} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                      <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#94a3b8' }} tickFormatter={(v) => v.slice(5)} />
+                      <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} width={32} allowDecimals={false} />
+                      <Tooltip formatter={(v: any) => [v, 'Vouchers']} labelStyle={{ fontSize: 11 }} contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', fontSize: 12 }} />
+                      <Bar dataKey="count" fill="url(#barGrad)" radius={[4, 4, 0, 0]} isAnimationActive animationDuration={1100} animationEasing="ease-out" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                  ) : (
+                    <div style={{ height: 200 }} className="flex items-center justify-center">
+                      <EmptyState title="No vouchers sold yet" subtitle="This will fill in once a voucher is sold." />
+                    </div>
+                  )}
+                </GlassCard>
+              </motion.div>
             </div>
           )}
 
@@ -538,9 +700,20 @@ export default function Dashboard() {
       )}
 
       {/* Collect Payment Modal */}
-      <Modal open={collectOpen} onClose={() => setCollectOpen(false)} title="Collect Payment" subtitle="Record payment received from a downline user for pending GB allocation or commission due.">
+      <Modal
+        open={collectOpen}
+        onClose={() => setCollectOpen(false)}
+        title="Collect Payment"
+        subtitle={
+          canCollectCommission
+            ? 'Record payment received from a downline user for pending GB allocation or commission due.'
+            : 'Record payment received from a downline user for pending GB allocation.'
+        }
+        icon={<HandCoins size={20} />}
+      >
         <div className="space-y-4">
-          {/* Payment Type Switcher Tabs */}
+          {/* Payment Type Switcher Tabs — commission is admin-only */}
+          {canCollectCommission && (
           <div>
             <label className="text-xs font-bold text-slate-500 block mb-1.5">Collection Type</label>
             <div className="flex bg-slate-100/80 p-1 rounded-2xl gap-1">
@@ -551,13 +724,18 @@ export default function Dashboard() {
                   const chosen = downlines.find((u) => u.id === +collectForm.user_id)
                   if (chosen) setCollectForm({ ...collectForm, amount: String(chosen.wallet_due) })
                 }}
-                className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all ${
-                  collectType === 'gb'
-                    ? 'bg-white text-[#003164] shadow-sm'
-                    : 'text-slate-500 hover:text-slate-800'
+                className={`relative flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-colors ${
+                  collectType === 'gb' ? 'text-[#003164]' : 'text-slate-500 hover:text-slate-800'
                 }`}
               >
-                GB Wallet Pending Payment
+                {collectType === 'gb' && (
+                  <motion.div
+                    layoutId="collectTypePill"
+                    className="absolute inset-0 bg-white rounded-xl shadow-sm"
+                    transition={{ type: 'spring', stiffness: 500, damping: 35 }}
+                  />
+                )}
+                <span className="relative z-10">GB Wallet Pending Payment</span>
               </button>
               <button
                 type="button"
@@ -566,16 +744,22 @@ export default function Dashboard() {
                   const chosen = downlines.find((u) => u.id === +collectForm.user_id)
                   if (chosen) setCollectForm({ ...collectForm, amount: String(chosen.commission_due) })
                 }}
-                className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all ${
-                  collectType === 'commission'
-                    ? 'bg-white text-[#003164] shadow-sm'
-                    : 'text-slate-500 hover:text-slate-800'
+                className={`relative flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-colors ${
+                  collectType === 'commission' ? 'text-[#003164]' : 'text-slate-500 hover:text-slate-800'
                 }`}
               >
-                Commission Payment
+                {collectType === 'commission' && (
+                  <motion.div
+                    layoutId="collectTypePill"
+                    className="absolute inset-0 bg-white rounded-xl shadow-sm"
+                    transition={{ type: 'spring', stiffness: 500, damping: 35 }}
+                  />
+                )}
+                <span className="relative z-10">Commission Payment</span>
               </button>
             </div>
           </div>
+          )}
 
           <div>
             <label className="text-xs font-bold text-slate-500 block mb-1.5">Select User</label>
@@ -588,21 +772,22 @@ export default function Dashboard() {
                 setCollectForm({ 
                   ...collectForm, 
                   user_id: uId, 
-                  amount: chosen ? String(collectType === 'commission' ? chosen.commission_due : chosen.wallet_due) : '' 
+                  amount: chosen ? String(activeCollectType === 'commission' ? chosen.commission_due : chosen.wallet_due) : ''
                 })
               }}
             >
               <option value="">Choose a user...</option>
               {downlines.map((dl) => (
                 <option key={dl.id} value={dl.id}>
-                  {dl.name} ({dl.username}) — GB Due: {rs(dl.wallet_due)} | Comm Due: {rs(dl.commission_due)}
+                  {dl.name} ({dl.username}) — GB Due: {rs(dl.wallet_due)}
+                  {canCollectCommission ? ` | Comm Due: ${rs(dl.commission_due)}` : ''}
                 </option>
               ))}
             </select>
           </div>
 
           <div>
-            <label className="text-xs font-bold text-slate-500 block mb-1.5">Amount (Rs.) — {collectType === 'commission' ? 'Commission Settlement' : 'GB Pending Settlement'}</label>
+            <label className="text-xs font-bold text-slate-500 block mb-1.5">Amount (Rs.) — {activeCollectType === 'commission' ? 'Commission Settlement' : 'GB Pending Settlement'}</label>
             <input 
               className="input no-spinners" 
               type="text" 
@@ -627,7 +812,7 @@ export default function Dashboard() {
             <label className="text-xs font-bold text-slate-500 block mb-1.5">Payment Note</label>
             <input 
               className="input" 
-              placeholder={collectType === 'commission' ? 'e.g. Commission settlement' : 'e.g. Received via cash / bank transfer'}
+              placeholder={activeCollectType === 'commission' ? 'e.g. Commission settlement' : 'e.g. Received via cash / bank transfer'}
               value={collectForm.note} 
               onChange={(e) => setCollectForm({ ...collectForm, note: e.target.value })} 
             />
@@ -643,7 +828,7 @@ export default function Dashboard() {
               disabled={collectBusy || !collectForm.user_id || !collectForm.amount} 
               onClick={handleCollectPayment}
             >
-              {collectBusy ? 'Processing...' : `Collect ${collectType === 'commission' ? 'Commission' : 'GB Payment'}`}
+              {collectBusy ? 'Processing...' : `Collect ${activeCollectType === 'commission' ? 'Commission' : 'GB Payment'}`}
             </motion.button>
           </div>
         </div>

@@ -1,38 +1,60 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Ticket, CreditCard, Archive, Database, TrendingUp } from 'lucide-react'
+import { ArrowLeft, Ticket, CreditCard, Archive, Database, TrendingUp, Users, UserRound } from 'lucide-react'
 import { api } from '../lib/api'
 import { useQuery } from '../lib/cache'
 import { rs, gb, num } from '../lib/format'
-import { GlassCard, EmptyState, Spinner, StatCard } from '../components/ui'
+import { GlassCard, EmptyState, Spinner, StatCard, CustomSelect } from '../components/ui'
 
 export default function VoucherSalesSummaryTab() {
   const [selected, setSelected] = useState<any>(null)
+  // Reseller-level totals are the default view; 'seller' lists the individual
+  // seller accounts instead (all sellers for an admin, own sellers for a reseller).
+  const [group, setGroup] = useState<'reseller' | 'seller'>('reseller')
 
   return selected ? (
     <ResellerDetail account={selected} onBack={() => setSelected(null)} />
   ) : (
-    <ResellerList onSelect={setSelected} />
+    <ResellerList group={group} onGroupChange={setGroup} onSelect={setSelected} />
   )
 }
 
-function ResellerList({ onSelect }: { onSelect: (account: any) => void }) {
-  const { data, loading } = useQuery<any>('reports/reseller-summary', () =>
-    api.get('/reports/reseller-summary').then((r) => r.data.data),
+function ResellerList({
+  group,
+  onGroupChange,
+  onSelect,
+}: {
+  group: 'reseller' | 'seller'
+  onGroupChange: (g: 'reseller' | 'seller') => void
+  onSelect: (account: any) => void
+}) {
+  const { data, loading } = useQuery<any>(`reports/reseller-summary?group=${group}`, () =>
+    api.get('/reports/reseller-summary', { params: { group } }).then((r) => r.data.data),
   )
 
   const accounts = data?.accounts || []
   const totals = data?.totals
-  const roleLabel = data?.role_label === 'seller' ? 'Seller' : 'Reseller'
+  // Label follows the selected grouping, not the response, so it doesn't lag a refetch.
+  const roleLabel = group === 'seller' ? 'Seller' : 'Reseller'
 
   return (
     <GlassCard className="!p-0 overflow-hidden">
-      <div className="p-4 border-b border-slate-100 flex items-center justify-between flex-wrap gap-2">
+      <div className="p-4 border-b border-slate-100 flex items-center justify-between flex-wrap gap-3">
         <div>
           <h3 className="font-extrabold text-slate-800 text-sm">{roleLabel} Account Summary</h3>
           <p className="text-xs text-slate-400">Card generation and sales totals per {roleLabel.toLowerCase()}</p>
         </div>
-        {loading && <Spinner />}
+        <div className="flex items-center gap-3">
+          {loading && <Spinner />}
+          <CustomSelect
+            value={group}
+            onChange={(val) => onGroupChange(val)}
+            options={[
+              { value: 'reseller', label: 'By Reseller', icon: <Users size={14} className="text-indigo-500" /> },
+              { value: 'seller', label: 'By Seller', icon: <UserRound size={14} className="text-emerald-500" /> },
+            ]}
+          />
+        </div>
       </div>
 
       <div className="overflow-x-auto">

@@ -4,12 +4,20 @@ import { AnimatePresence, motion } from 'framer-motion'
 import {
   LayoutDashboard, Package, Users2, Store, Wallet as WalletIcon,
   Database, Ticket, LogOut, Wifi, Router, ShieldCheck, Shield,
-  ChevronDown, ChevronRight, Key, Gauge, ArrowLeftRight, Menu, X, Terminal, Calendar,
+  ChevronDown, ChevronRight, ChevronsLeft, Key, Gauge, ArrowLeftRight, Menu, X, Terminal, Calendar,
   BookOpen, Receipt, Scale, CreditCard
 } from 'lucide-react'
 import { Role, useAuth } from '../lib/auth'
 import { rs, gb } from '../lib/format'
 import ChangePasswordModal from '../components/ChangePasswordModal'
+
+// The panel's two widths, and the page offsets that track them. The rail is
+// sized so a 44px logo tile and a 40px avatar both land centered while the nav
+// icons keep the same x they have when open — the edge travels, the icons don't.
+const SIDEBAR_FULL = 256
+const SIDEBAR_RAIL = 68
+const CONTENT_OFFSET_FULL = '17rem'      // 16px gutter + 256px panel
+const CONTENT_OFFSET_RAIL = '5.25rem'    // 16px gutter + 68px panel
 
 interface NavItem {
   to?: string;
@@ -49,7 +57,7 @@ const NAV: NavItem[] = [
     color: 'text-slate-500',
     children: [
       { to: '/settings/payment-methods', label: 'Payment Methods', roles: ['admin'], icon: CreditCard, color: 'text-sky-500' },
-      { to: '/settings/chart-of-accounts', label: 'Chart of Accounts', roles: ['admin', 'reseller', 'seller'], icon: BookOpen, color: 'text-emerald-600' },
+      { to: '/settings/chart-of-accounts', label: 'Chart of Accounts', roles: ['admin'], icon: BookOpen, color: 'text-emerald-600' },
       { to: '/settings/system-load', label: 'System Load', roles: ['admin'], icon: WalletIcon, color: 'text-emerald-500' },
       { to: '/settings/voucher-card', label: 'Voucher Card', roles: ['admin', 'reseller', 'seller'], icon: Ticket, color: 'text-rose-500' },
       { to: '/settings/api-tokens', label: 'API Tokens', roles: ['admin', 'reseller', 'seller'], icon: Key, color: 'text-indigo-500', perm: 'manage_api_tokens' },
@@ -70,48 +78,87 @@ interface NavListProps {
   user: { role: Role; name: string };
   can: (perm?: string | string[]) => boolean;
   onNavigate?: () => void;
+  /** Icon rail: the panel clips its own labels, so nothing here changes shape. */
+  collapsed?: boolean;
+  /** Reopens the panel when a collapsed parent item is clicked. */
+  onExpandSidebar?: () => void;
 }
 
-const NavList = ({ items, location, expanded, toggleExpanded, user, can, onNavigate }: NavListProps) => (
-  <nav className="flex flex-col gap-1 flex-1 overflow-y-auto pr-1">
+// One markup path serves both states. Icons are `shrink-0` and labels are
+// `flex-1 min-w-0`, so the panel's own width animation squeezes every label out
+// on the same curve — no per-item layout animation, and no element swap that
+// could pop mid-transition.
+const NavList = ({ items, location, expanded, toggleExpanded, user, can, onNavigate, collapsed = false, onExpandSidebar }: NavListProps) => (
+  <nav className="flex flex-col gap-1 flex-1 overflow-y-auto overflow-x-hidden">
     {items.map((it) => {
+      const label = it.to === '/funds' && user.role !== 'admin' ? 'GB Allocation' : it.label
+      const fade = collapsed ? 'app-sidebar-label-out' : 'app-sidebar-label-in'
+      const labelClass = `app-sidebar-label ${fade} min-w-0 flex-1 overflow-hidden whitespace-nowrap text-left`
+
       if (it.children) {
         const hasActiveChild = it.children.some((c) => location.pathname === c.to)
+        const open = !!expanded[it.label] && !collapsed
+
         return (
           <div key={it.label} className="flex flex-col">
             <button
-              onClick={() => toggleExpanded(it.label)}
-              className={`app-sidebar-nav-item w-full flex items-center justify-between group ${
+              onClick={() => {
+                // The rail has no room for a nested list: reopen the panel and
+                // let the group unfold inside it.
+                if (collapsed) {
+                  onExpandSidebar?.()
+                  if (!expanded[it.label]) toggleExpanded(it.label)
+                  return
+                }
+                toggleExpanded(it.label)
+              }}
+              title={collapsed ? label : undefined}
+              aria-label={collapsed ? label : undefined}
+              aria-expanded={open}
+              className={`app-sidebar-nav-item w-full group ${
                 hasActiveChild ? 'app-sidebar-nav-item-active' : 'app-sidebar-nav-item-idle'
               }`}
             >
-              <div className="flex items-center gap-3">
-                <it.icon size={18} className={`transition-transform group-hover:scale-110 ${it.color}`} />
-                <span className="font-bold">{it.label}</span>
-              </div>
-              {expanded[it.label] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              <it.icon size={18} className={`shrink-0 transition-transform group-hover:scale-110 ${it.color}`} />
+              <span className={`${labelClass} font-bold`}>{label}</span>
+              {/* No `transition-transform` here — the utility layer would beat
+                  .app-sidebar-label and the fade would pop. That class already
+                  transitions transform and opacity together. */}
+              <ChevronRight size={14} className={`app-sidebar-label ${fade} shrink-0 ${open ? 'rotate-90' : ''}`} />
             </button>
-            {expanded[it.label] && (
-              <div className="pl-4 flex flex-col gap-1 mt-1 border-l border-slate-100 ml-4">
-                {it.children
-                  .filter((c) => c.roles.includes(user.role) && can(c.perm))
-                  .map((c) => (
-                    <NavLink
-                      key={c.to}
-                      to={c.to}
-                      onClick={onNavigate}
-                      className={({ isActive }) =>
-                        `app-sidebar-nav-item text-sm group ${
-                          isActive ? 'app-sidebar-nav-item-active' : 'app-sidebar-nav-item-idle'
-                        }`
-                      }
-                    >
-                      <c.icon size={16} className={`transition-transform group-hover:scale-110 ${c.color}`} />
-                      <span>{c.label}</span>
-                    </NavLink>
-                  ))}
-              </div>
-            )}
+
+            <AnimatePresence initial={false}>
+              {open && (
+                <motion.div
+                  key="submenu"
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
+                  className="overflow-hidden"
+                >
+                  <div className="pl-4 flex flex-col gap-1 mt-1 border-l border-slate-100 ml-4">
+                    {it.children
+                      .filter((c) => c.roles.includes(user.role) && can(c.perm))
+                      .map((c) => (
+                        <NavLink
+                          key={c.to}
+                          to={c.to}
+                          onClick={onNavigate}
+                          className={({ isActive }) =>
+                            `app-sidebar-nav-item text-sm group ${
+                              isActive ? 'app-sidebar-nav-item-active' : 'app-sidebar-nav-item-idle'
+                            }`
+                          }
+                        >
+                          <c.icon size={16} className={`shrink-0 transition-transform group-hover:scale-110 ${c.color}`} />
+                          <span className="min-w-0 flex-1 overflow-hidden whitespace-nowrap">{c.label}</span>
+                        </NavLink>
+                      ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         )
       }
@@ -121,12 +168,16 @@ const NavList = ({ items, location, expanded, toggleExpanded, user, can, onNavig
           to={it.to!}
           end={it.to === '/'}
           onClick={onNavigate}
+          title={collapsed ? label : undefined}
+          aria-label={collapsed ? label : undefined}
           className={({ isActive }) =>
-            `app-sidebar-nav-item group ${isActive ? 'app-sidebar-nav-item-active' : 'app-sidebar-nav-item-idle'}`
+            `app-sidebar-nav-item w-full group ${
+              isActive ? 'app-sidebar-nav-item-active' : 'app-sidebar-nav-item-idle'
+            }`
           }
         >
-          <it.icon size={18} className={`transition-transform group-hover:scale-110 ${it.color}`} />
-          {it.to === '/funds' && user.role !== 'admin' ? 'GB Allocation' : it.label}
+          <it.icon size={18} className={`shrink-0 transition-transform group-hover:scale-110 ${it.color}`} />
+          <span className={labelClass}>{label}</span>
         </NavLink>
       )
     })}
@@ -147,7 +198,14 @@ export default function AppShell() {
   const [profileOpen, setProfileOpen] = useState(false)
   const [passwordOpen, setPasswordOpen] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
+  // Desktop sidebar collapsed to an icon-only rail. Persisted so the choice
+  // survives reloads — the mobile drawer is unaffected.
+  const [collapsed, setCollapsed] = useState<boolean>(() => localStorage.getItem('airlink_sidebar_collapsed') === '1')
   const profileRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    localStorage.setItem('airlink_sidebar_collapsed', collapsed ? '1' : '0')
+  }, [collapsed])
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -193,13 +251,28 @@ export default function AppShell() {
   return (
     <div className="min-h-screen bg-background md:p-4 lg:p-5 md:flex md:gap-4">
       {/* Desktop Sidebar (Fixed) */}
-      <aside className="hidden md:flex flex-col w-64 shrink-0 app-sidebar-panel p-4 fixed top-4 left-4 lg:left-5 h-[calc(100vh-2rem)] z-30">
-        <div className="flex items-center gap-3 px-2 py-2 mb-4">
+      <aside
+        style={{ width: collapsed ? SIDEBAR_RAIL : SIDEBAR_FULL }}
+        className="app-sidebar-panel app-sidebar-motion hidden md:flex flex-col shrink-0 px-3 py-4 fixed top-4 left-4 lg:left-5 h-[calc(100vh-2rem)] z-30"
+      >
+        {/* Mounted on the panel's edge, so it rides the collapse instead of
+            jumping to a new home when the layout changes. */}
+        <button
+          type="button"
+          onClick={() => setCollapsed((c) => !c)}
+          title={collapsed ? 'Expand menu' : 'Collapse menu'}
+          aria-label={collapsed ? 'Expand menu' : 'Collapse menu'}
+          aria-expanded={!collapsed}
+          className="absolute -right-3 top-[34px] z-40 w-6 h-6 rounded-full bg-white border border-slate-200/90 text-slate-400 shadow-sm flex items-center justify-center hover:text-[#003164] hover:border-slate-300 hover:scale-110 active:scale-95 transition-all duration-200"
+        >
+          <ChevronsLeft size={13} className={`transition-transform duration-300 ease-out ${collapsed ? 'rotate-180' : ''}`} />
+        </button>
 
-          <div className="bg-[#003164] text-white rounded-2xl p-2.5 shadow-sm"><Wifi size={18} /></div>
-          <div>
-            <p className="font-medium text-2xl tracking-tight text-[#003164] leading-none">Airlink</p>
-            <p className="text-[10px] text-slate-400 font-bold tracking-wider mt-1 uppercase">Billing v3.0</p>
+        <div className="mb-4 flex items-center gap-3 py-2">
+          <div className="bg-[#003164] text-white rounded-2xl p-2.5 shadow-sm shrink-0"><Wifi size={18} /></div>
+          <div className={`app-sidebar-label ${collapsed ? 'app-sidebar-label-out' : 'app-sidebar-label-in'} min-w-0 flex-1 overflow-hidden`}>
+            <p className="font-medium text-2xl tracking-tight text-[#003164] leading-none whitespace-nowrap">Airlink</p>
+            <p className="text-[10px] text-slate-400 font-bold tracking-wider mt-1 uppercase whitespace-nowrap">Billing v3.0</p>
           </div>
         </div>
 
@@ -210,6 +283,8 @@ export default function AppShell() {
           toggleExpanded={toggleExpanded}
           user={user}
           can={canAny}
+          collapsed={collapsed}
+          onExpandSidebar={() => setCollapsed(false)}
         />
 
         {/* Profile Card Dropdown Container */}
@@ -218,7 +293,9 @@ export default function AppShell() {
             <motion.div
               initial={{ opacity: 0, y: 10, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
-              className="absolute bottom-[calc(100%+0.5rem)] left-0 w-full bg-white border border-slate-200/80 rounded-[24px] shadow-2xl p-2 z-40 flex flex-col gap-1"
+              className={`absolute bottom-[calc(100%+0.5rem)] left-0 bg-white border border-slate-200/80 rounded-[24px] shadow-2xl p-2 z-40 flex flex-col gap-1 ${
+                collapsed ? 'w-56' : 'w-full'
+              }`}
             >
               <button
                 onClick={() => {
@@ -250,18 +327,26 @@ export default function AppShell() {
 
           <button
             onClick={() => setProfileOpen(!profileOpen)}
-            className="w-full flex items-center justify-between p-2 rounded-2xl border border-slate-200/80 hover:bg-slate-50 bg-white transition-all text-left"
+            title={collapsed ? `${user.name} (${user.role})` : undefined}
+            className={`app-sidebar-profile w-full flex items-center gap-2.5 py-2 rounded-2xl border text-left ${
+              collapsed
+                ? 'px-px border-transparent bg-transparent'
+                : 'px-2 border-slate-200/80 bg-white hover:bg-slate-50'
+            }`}
           >
-            <div className="flex items-center gap-2.5 min-w-0 flex-1">
-              <div className="w-10 h-10 rounded-full bg-rose-50 border border-rose-100 text-rose-700 flex items-center justify-center font-extrabold text-sm shrink-0 shadow-inner uppercase">
-                {initials}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="font-extrabold text-sm text-[#003164] whitespace-normal break-words leading-tight select-none">{user.name}</p>
-                <p className="text-[10px] text-slate-400 font-bold capitalize tracking-wider mt-0.5 select-none">{user.role}</p>
-              </div>
+            <div className="w-10 h-10 rounded-full bg-rose-50 border border-rose-100 text-rose-700 flex items-center justify-center font-extrabold text-sm shrink-0 shadow-inner uppercase">
+              {initials}
             </div>
-            <ChevronDown size={14} className={`text-slate-400 transition-transform ${profileOpen ? 'rotate-180' : ''} shrink-0 ml-1`} />
+            <div className={`app-sidebar-label ${collapsed ? 'app-sidebar-label-out' : 'app-sidebar-label-in'} min-w-0 flex-1 overflow-hidden`}>
+              <p className="font-extrabold text-sm text-[#003164] truncate leading-tight select-none">{user.name}</p>
+              <p className="text-[10px] text-slate-400 font-bold capitalize tracking-wider mt-0.5 select-none">{user.role}</p>
+            </div>
+            <ChevronDown
+              size={14}
+              className={`app-sidebar-label ${collapsed ? 'app-sidebar-label-out' : 'app-sidebar-label-in'} text-slate-400 shrink-0 ${
+                profileOpen ? 'rotate-180' : ''
+              }`}
+            />
           </button>
         </div>
       </aside>
@@ -282,17 +367,18 @@ export default function AppShell() {
             <p className="font-medium text-lg tracking-tight text-[#003164] leading-none">Airlink</p>
           </div>
 
-          {/* Separate compact badges */}
-          <div className="flex items-center gap-1.5 select-none">
+          {/* Compact balance badges — icon substitutes for the label so large
+              values (Rs 900,000+) never wrap inside the pill on narrow phones. */}
+          <div className="flex items-center gap-1.5 select-none min-w-0">
             {user.role !== 'seller' && (
-              <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200/80 rounded-xl px-2.5 h-8 flex items-center text-[11px] shadow-2xs">
-                <span className="text-[10px] text-emerald-600 font-extrabold mr-1 capitalize">Wallet:</span>
-                <span className="font-extrabold text-emerald-950">{rs(user.wallet_balance)}</span>
+              <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200/80 rounded-xl px-2 h-8 flex items-center gap-1 text-[11px] shadow-2xs shrink-0">
+                <WalletIcon size={12} className="text-emerald-600 shrink-0" />
+                <span className="font-extrabold text-emerald-950 whitespace-nowrap">{rs(user.wallet_balance)}</span>
               </div>
             )}
-            <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200/80 rounded-xl px-2.5 h-8 flex items-center text-[11px] shadow-2xs">
-              <span className="text-[10px] text-purple-600 font-extrabold mr-1">GB:</span>
-              <span className="font-extrabold text-purple-950">{gb(user.gb_balance)}</span>
+            <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200/80 rounded-xl px-2 h-8 flex items-center gap-1 text-[11px] shadow-2xs shrink-0">
+              <Database size={12} className="text-purple-600 shrink-0" />
+              <span className="font-extrabold text-purple-950 whitespace-nowrap">{gb(user.gb_balance)}</span>
             </div>
           </div>
         </div>
@@ -378,7 +464,13 @@ export default function AppShell() {
       </AnimatePresence>
 
       {/* Main */}
-      <div className="flex-1 min-w-0 px-3 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:px-4 md:p-0 md:ml-[17rem]">
+      {/* The offset is a CSS variable so it only applies from md up (the drawer
+          layout below md keeps a zero margin) while still transitioning on the
+          same curve as the panel edge. */}
+      <div
+        style={{ ['--app-sidebar-offset' as string]: collapsed ? CONTENT_OFFSET_RAIL : CONTENT_OFFSET_FULL } as React.CSSProperties}
+        className="app-content-motion flex-1 min-w-0 px-3 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:px-4 md:p-0 md:ml-[var(--app-sidebar-offset)]"
+      >
         <motion.main initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
           <Outlet />
         </motion.main>

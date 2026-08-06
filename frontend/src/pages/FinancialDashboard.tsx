@@ -178,10 +178,12 @@ export default function FinancialDashboard() {
                     <p className="text-xs text-slate-400 italic">No revenue posted in this period.</p>
                   ) : (
                     <div className="space-y-2.5">
-                      <div className="flex justify-between text-xs text-slate-600 font-medium">
-                        <span>Wallet Voucher Commission Revenue</span>
-                        <span className="font-semibold text-slate-900">{rs(incomeStmt.commission_revenue || 0)}</span>
-                      </div>
+                      {incomeStmt.commission_revenue_applicable !== false && (
+                        <div className="flex justify-between text-xs text-slate-600 font-medium">
+                          <span>Wallet Voucher Commission Revenue</span>
+                          <span className="font-semibold text-slate-900">{rs(incomeStmt.commission_revenue || 0)}</span>
+                        </div>
+                      )}
                       <div className="flex justify-between text-xs text-slate-600 font-medium">
                         <span>GB Allocation Revenue</span>
                         <span className="font-semibold text-slate-900">{rs(incomeStmt.gb_allocation_revenue || 0)}</span>
@@ -276,13 +278,14 @@ export default function FinancialDashboard() {
 
 
                 <div className="space-y-4 py-1">
-                  {/* Liabilities */}
-                  {balanceSheet.liabilities_and_equity.liabilities?.some((l: any) => l.balance > 0) && (
+                  {/* Liabilities — the API only returns rows that apply to the
+                      signed-in role, so every returned row is listed as-is
+                      (a zero balance is meaningful information, not noise). */}
+                  {balanceSheet.liabilities_and_equity.liabilities?.length > 0 && (
                     <div>
                       <h4 className="text-xs font-bold text-slate-500 tracking-tight mb-2">Liabilities</h4>
                       <div className="space-y-2 text-xs">
                         {balanceSheet.liabilities_and_equity.liabilities
-                          .filter((l: any) => l.balance > 0)
                           .map((l: any) => (
                             <div key={l.code} className="flex justify-between text-slate-700 font-medium">
                               <span className="flex items-center gap-2">

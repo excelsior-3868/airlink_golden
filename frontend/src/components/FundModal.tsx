@@ -139,6 +139,10 @@ export default function FundModal({ open, onClose, onSuccess, defaultAllocType =
     return parseFloat(walletAmount) > +(user.wallet_balance || 0)
   }, [allocType, walletAmount, user])
 
+  // Only admins fund both wallet and GB. A reseller can only push GB down to
+  // its own sellers, so it never sees the type switch or a reseller recipient.
+  const recipientLabel = user?.role === 'admin' ? 'Reseller / Seller' : 'Seller'
+
   const handleFund = async () => {
     if (!targetUser) return
     setBusy(true)
@@ -184,7 +188,7 @@ export default function FundModal({ open, onClose, onSuccess, defaultAllocType =
       open={open}
       onClose={onClose}
       title={allocType === 'wallet' ? 'Load Wallet' : 'Allocate GB'}
-      subtitle={allocType === 'wallet' ? 'Select a reseller to load wallet.' : 'Select a reseller or seller to allocate GB data quota.'}
+      subtitle={allocType === 'wallet' ? 'Select a reseller to load wallet.' : `Select a ${recipientLabel.toLowerCase()} to allocate GB data quota.`}
       icon={<Send size={22} className="text-blue-600" />}
       bodyClassName="overflow-visible"
     >
@@ -192,7 +196,7 @@ export default function FundModal({ open, onClose, onSuccess, defaultAllocType =
         {/* User Selection */}
         <div>
           <label className="text-xs font-bold text-slate-500 block mb-1.5">
-            {allocType === 'wallet' ? 'Select Recipient (Reseller)' : 'Select Recipient (Reseller / Seller)'}
+            {allocType === 'wallet' ? 'Select Recipient (Reseller)' : `Select Recipient (${recipientLabel})`}
           </label>
           <CustomSelect
             className="w-full"
@@ -203,7 +207,7 @@ export default function FundModal({ open, onClose, onSuccess, defaultAllocType =
               setErr('')
               setSuccess('')
             }}
-            placeholder={allocType === 'wallet' ? 'Choose a reseller...' : 'Choose reseller or seller...'}
+            placeholder={allocType === 'wallet' ? 'Choose a reseller...' : `Choose ${recipientLabel.toLowerCase()}...`}
             options={selectOptions}
           />
         </div>

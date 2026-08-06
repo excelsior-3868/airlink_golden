@@ -84,17 +84,25 @@ class ReportController extends Controller
     {
         $actor = $request->user();
 
+        // The summary groups either by reseller account (default) or by seller
+        // account. An admin sees every reseller / every seller; a reseller sees
+        // itself at the reseller level and its own sellers at the seller level.
+        $group = $request->query('group') === 'seller' ? 'seller' : 'reseller';
+
         if ($actor->isAdmin()) {
-            $userQuery = User::query()->where('role', 'reseller');
-            $groupColumn = 'reseller_id';
-            $roleLabel = 'reseller';
+            $userQuery = $group === 'seller'
+                ? User::query()->where('role', 'seller')
+                : User::query()->where('role', 'reseller');
         } elseif ($actor->isReseller()) {
-            $userQuery = User::query()->where('role', 'seller')->where('parent_id', $actor->id);
-            $groupColumn = 'seller_id';
-            $roleLabel = 'seller';
+            $userQuery = $group === 'seller'
+                ? User::query()->where('role', 'seller')->where('parent_id', $actor->id)
+                : User::query()->whereKey($actor->id);
         } else {
             return $this->ok(['role_label' => null, 'accounts' => [], 'totals' => $this->emptyResellerSummaryTotals()]);
         }
+
+        $groupColumn = $group === 'seller' ? 'seller_id' : 'reseller_id';
+        $roleLabel = $group;
 
         if ($search = $request->query('search')) {
             $userQuery->where(fn ($q) => $q->where('name', 'like', "%{$search}%")->orWhere('username', 'like', "%{$search}%"));

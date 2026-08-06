@@ -79,10 +79,14 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Accounts Module (Sales Ledger, Financial Dashboard, COA & Expenses)
     Route::get('/accounts/financial-dashboard', [AccountController::class, 'financialDashboard']);
-    Route::get('/accounts/chart-of-accounts', [AccountController::class, 'chartOfAccountsIndex']);
-    Route::post('/accounts/chart-of-accounts', [AccountController::class, 'chartOfAccountsStore']);
-    Route::put('/accounts/chart-of-accounts/{account}', [AccountController::class, 'chartOfAccountsUpdate']);
-    Route::delete('/accounts/chart-of-accounts/{account}', [AccountController::class, 'chartOfAccountsDestroy']);
+    // Chart of Accounts is the system-wide GL master list — admin only. Resellers
+    // and sellers read their own role-scoped figures off the financial dashboard.
+    Route::middleware('role:admin')->group(function () {
+        Route::get('/accounts/chart-of-accounts', [AccountController::class, 'chartOfAccountsIndex']);
+        Route::post('/accounts/chart-of-accounts', [AccountController::class, 'chartOfAccountsStore']);
+        Route::put('/accounts/chart-of-accounts/{account}', [AccountController::class, 'chartOfAccountsUpdate']);
+        Route::delete('/accounts/chart-of-accounts/{account}', [AccountController::class, 'chartOfAccountsDestroy']);
+    });
 
     Route::get('/accounts/sales-ledger', [AccountController::class, 'salesLedger']);
     Route::get('/accounts/commission-report', [AccountController::class, 'commissionReport']);

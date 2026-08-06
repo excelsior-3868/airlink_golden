@@ -365,7 +365,12 @@ class AccountController extends Controller
         // between hierarchy levels, this is retail cash at the point of sale that
         // hasn't been remitted upward yet (it sits in wallet_due until it is).
         $overallGbVoucherSales = (float) $vouchers->filter(fn ($v) => ($v->plan->package_type ?? null) === 'gb')->sum('price');
-        $overallWalletVoucherSales = (float) $vouchers->filter(fn ($v) => ($v->plan->package_type ?? null) === 'wallet')->sum('price');
+        $walletVouchers = $vouchers->filter(fn ($v) => ($v->plan->package_type ?? null) === 'wallet');
+        $overallWalletVoucherSales = (float) $walletVouchers->sum('price');
+        // Commission actually earned on those wallet sales — the gross above is
+        // retail cash at the counter, most of which is owed upstream as the
+        // admin's cut. Null shares mean a pre-commission sale (0% admin cut).
+        $overallWalletVoucherCommission = (float) $walletVouchers->sum(fn ($v) => (float) ($v->reseller_share ?? $v->price));
 
         return $this->ok([
             'summary' => [
@@ -379,6 +384,7 @@ class AccountController extends Controller
                 'total_commission_paid' => $overallCommissionPaid,
                 'total_gb_voucher_sales' => $overallGbVoucherSales,
                 'total_wallet_voucher_sales' => $overallWalletVoucherSales,
+                'total_wallet_voucher_commission' => $overallWalletVoucherCommission,
                 'reseller_count' => $userSummaries->where('role', 'reseller')->count(),
                 'seller_count' => $userSummaries->where('role', 'seller')->count(),
             ],
@@ -770,26 +776,60 @@ class AccountController extends Controller
             }
         };
 
+        // GB Voucher Sales Revenue (4200) covers GB-package hotspot cards only —
+        // those carry no commission split, so the full price is the owner's
+        // revenue. Wallet-package cards are commission-based and are reported
+        // separately under Wallet Voucher Commission Revenue (4000) below.
         $gbVoucherRevenue = (float) Voucher::query()
             ->tap($applyVoucherScope)
-            ->whereHas('plan', fn ($q) => $q->where('type', 'hotspot'))
+            ->whereHas('plan', fn ($q) => $q->where('type', 'hotspot')->where('package_type', 'gb'))
             ->sum('price');
         $pppoeRevenue = (float) Voucher::query()
             ->tap($applyVoucherScope)
             ->whereHas('plan', fn ($q) => $q->where('type', 'pppoe'))
             ->sum('price');
 
-        // B. Wallet Voucher Commission Revenue — recognized only once actually
-        // collected (Payment type='commission'), not at accrual time. Until
-        // collected it sits on commission_due and is reported as Reseller Commission Receivable (1120) below.
-        $commissionPaymentQuery = Payment::query()->where('type', 'commission')->where('receiver_id', $actor->id);
-        if ($startDate && $endDate) {
-            $commissionPaymentQuery->whereBetween('payment_date', [$startDate, $endDate]);
-        }
-        $commissionRevenue = (float) $commissionPaymentQuery->sum('amount');
+        // Gross cash taken from end customers on wallet-package card sales. Only
+        // part of it is the seller's own revenue (see below) — the rest is owed
+        // upstream — but the whole amount lands in the till.
+        $walletVoucherQuery = fn () => Voucher::query()
+            ->tap($applyVoucherScope)
+            ->whereHas('plan', fn ($q) => $q->where('type', 'hotspot')->where('package_type', 'wallet'));
+        $walletVoucherGross = (float) $walletVoucherQuery()->sum('price');
 
-        // Outstanding commission accrued by downline resellers but not yet remitted
-        $commissionReceivable = (float) User::where('parent_id', $actor->id)->sum('commission_due');
+        // B. Wallet Voucher Commission Revenue (4000) — whose money this is
+        // depends on where the actor sits in the chain:
+        //  - Admin: their cut of downline wallet sales (admin_share), recognized
+        //    only once actually remitted (Payment type='commission'); until then
+        //    it sits on commission_due and shows as Commission Receivable (1120).
+        //    Plus admin's own direct card sales, which have no split at all.
+        //  - Reseller: their own cut (reseller_share) of every wallet card they
+        //    own, earned at the moment of sale.
+        //  - Seller: nothing. The commission split is strictly admin↔reseller
+        //    (see VoucherController@sell) — a seller collects on behalf of their
+        //    reseller and holds no commission of their own.
+        if ($actor->isAdmin()) {
+            $commissionPaymentQuery = Payment::query()->where('type', 'commission')->where('receiver_id', $actor->id);
+            if ($startDate && $endDate) {
+                $commissionPaymentQuery->whereBetween('payment_date', [$startDate, $endDate]);
+            }
+            $commissionRevenue = (float) $commissionPaymentQuery->sum('amount') + $walletVoucherGross;
+        } elseif ($actor->isReseller()) {
+            // Cards sold before the commission split existed have null shares —
+            // fall back to the full price (0% admin cut), same as the sales ledger.
+            $commissionRevenue = (float) $walletVoucherQuery()
+                ->sum(DB::raw('COALESCE(reseller_share, price)'));
+        } else {
+            $commissionRevenue = 0.0;
+        }
+
+        // Outstanding commission accrued by downline resellers but not yet
+        // remitted. Only resellers accrue commission_due (to their admin), so
+        // this is meaningful for an admin alone — a reseller's own sellers never
+        // owe them commission, and the 1120 row is hidden for non-admins.
+        $commissionReceivable = $actor->isAdmin()
+            ? (float) User::where('parent_id', $actor->id)->sum('commission_due')
+            : 0.0;
 
         // C. GB Allocation Revenue (Realized revenue from GB allocations collected via payments)
         $gbInvoiceQuery = Invoice::query();
@@ -836,7 +876,13 @@ class AccountController extends Controller
         }
         $cashPaymentsCollected = (float) (clone $paymentQuery)->where('payment_method', 'cash')->sum('amount');
         $bankPaymentsCollected = (float) (clone $paymentQuery)->where('payment_method', '!=', 'cash')->sum('amount');
-        $directVoucherSalesCash = $gbVoucherRevenue + $pppoeRevenue;
+        // Wallet card takings are excluded for a seller: the system models no
+        // seller-side due on them (nothing increments the seller's wallet_due on
+        // a wallet sale), so booking the cash would leave an asset with no
+        // matching payable. Admin/reseller keep the gross — the reseller's
+        // upstream cut is carried as Commission Payable (2200) below.
+        $directVoucherSalesCash = $gbVoucherRevenue + $pppoeRevenue
+            + ($actor->isSeller() ? 0.0 : $walletVoucherGross);
         $cashBalance = (float) ($cashPaymentsCollected + $directVoucherSalesCash);
         $bankBalance = (float) $bankPaymentsCollected;
 
@@ -853,8 +899,20 @@ class AccountController extends Controller
         $accountsReceivable = (float) max(0.0, $arInvoiceQuery->sum('total_amount') - $arInvoiceQuery->sum('paid_amount'));
 
 
-        // Asset Accounts from COA
-        $assetAccounts = ChartOfAccount::where('type', 'ASSET')->get()->map(function ($acct) use ($cashBalance, $bankBalance, $accountsReceivable, $commissionReceivable) {
+        // Asset Accounts from COA. Two are never reportable here:
+        //  - 1150 Customer Accounts Receivable: end customers pay cash up front
+        //    for cards, so no role (admin, reseller or seller) carries customer AR.
+        //  - 1120 Commission Receivable: only an admin is owed commission by a
+        //    downline, so it is dropped for resellers and sellers.
+        $hiddenAssetCodes = ['1150'];
+        if (! $actor->isAdmin()) {
+            $hiddenAssetCodes[] = '1120';
+        }
+
+        $assetAccounts = ChartOfAccount::where('type', 'ASSET')
+            ->whereNotIn('code', $hiddenAssetCodes)
+            ->orderBy('code')
+            ->get()->map(function ($acct) use ($cashBalance, $bankBalance, $accountsReceivable, $commissionReceivable) {
             $bal = 0.00;
             if ($acct->code === '1000') {
                 $bal = $cashBalance;
@@ -879,21 +937,53 @@ class AccountController extends Controller
         // Accounts Payable (Owed by actor to upstream admin/parent for GB allocations)
         $accountsPayable = $actor->isAdmin() ? 0.0 : (float) ($actor->wallet_due ?? 0);
 
+        // Commission Payable (2200) — a reseller's accrued but unremitted cut of
+        // wallet card sales owed upstream to their admin. Sellers never accrue
+        // commission and an admin sits at the top of the chain, so both are 0.
+        $commissionPayable = $actor->isReseller() ? (float) ($actor->commission_due ?? 0) : 0.0;
+
         // 4. Balance Sheet Liabilities & Equity
-        $liabilityAccounts = ChartOfAccount::where('type', 'LIABILITY')->get()->map(function ($acct) use ($accountsPayable) {
+        // Liability rows are role-scoped like the asset rows above: a row is
+        // reported only when the actor can actually carry a balance on it, and
+        // is then always listed — including at zero — so a reseller's sheet
+        // shows Commission Payable as a standing line rather than having it
+        // appear and vanish as settlements clear it.
+        $hiddenLiabilityCodes = ['2300']; // payroll accruals have no data source yet
+        if ($actor->isAdmin()) {
+            // An admin sits at the top of the chain: nothing owed upstream, and
+            // a reseller keeps their own share at the moment of sale, so the
+            // admin never carries a commission payable either.
+            $hiddenLiabilityCodes[] = '2100';
+            $hiddenLiabilityCodes[] = '2200';
+        } elseif ($actor->isSeller()) {
+            $hiddenLiabilityCodes[] = '2200'; // the split is admin↔reseller only
+        }
+
+        $liabilityAccounts = ChartOfAccount::where('type', 'LIABILITY')
+            ->whereNotIn('code', $hiddenLiabilityCodes)
+            ->orderBy('code')
+            ->get()->map(function ($acct) use ($actor, $accountsPayable, $commissionPayable) {
             $bal = 0.00;
+            $name = $acct->name;
             if ($acct->code === '2100') {
                 $bal = $accountsPayable;
+            } elseif ($acct->code === '2200') {
+                $bal = $commissionPayable;
+                // The stored label reads from the admin's side (owed *to* partners);
+                // for a reseller the same account is what they owe their admin.
+                if (! $actor->isAdmin()) {
+                    $name = 'Commission Payable — Upstream Admin';
+                }
             }
             return [
                 'id' => $acct->id,
                 'code' => $acct->code,
-                'name' => $acct->name,
+                'name' => $name,
                 'balance' => $bal,
             ];
         })->values();
 
-        $equityAccounts = ChartOfAccount::where('type', 'EQUITY')->get()->map(function ($acct) use ($netOperatingProfit) {
+        $equityAccounts = ChartOfAccount::where('type', 'EQUITY')->orderBy('code')->get()->map(function ($acct) use ($netOperatingProfit) {
             $bal = 0.00;
             if ($acct->code === '3100') {
                 $bal = $netOperatingProfit;
@@ -924,6 +1014,9 @@ class AccountController extends Controller
                 'gb_voucher_revenue' => $gbVoucherRevenue,
                 'pppoe_revenue' => $pppoeRevenue,
                 'commission_revenue' => $commissionRevenue,
+                // Sellers hold no commission of their own — hide the line for them
+                // rather than reporting a permanent zero.
+                'commission_revenue_applicable' => ! $actor->isSeller(),
                 'gb_allocation_revenue' => $gbAllocationRevenue,
                 'other_revenue' => $otherInvoiceRevenue,
             ],

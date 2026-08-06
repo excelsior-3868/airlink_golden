@@ -1,7 +1,7 @@
 import { useEffect, useState, Fragment } from 'react'
 import { useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Plus, Wallet, Database, UserPlus, Save, Users2, Store, FileText, CreditCard, CheckCircle2, RefreshCw, ChevronDown, ChevronUp, Percent, Coins, PlusCircle, Power, Eye, EyeOff, Edit3, UserMinus, UserCheck } from 'lucide-react'
+import { Plus, HandCoins, Wallet, Database, UserPlus, Save, Users2, Store, FileText, CreditCard, CheckCircle2, RefreshCw, ChevronDown, ChevronUp, Percent, Coins, PlusCircle, Power, Eye, EyeOff, Edit3, UserMinus, UserCheck } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useQuery, invalidateCache } from '../lib/cache'
 import { useAuth } from '../lib/auth'
@@ -309,12 +309,17 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
     } catch (e) { setErr(apiError(e)) } finally { setBusy(false) }
   }
 
+  // Commission is only ever collected by the admin from its resellers; a reseller
+  // settles GB dues with its sellers, so it never sees the commission option.
+  const canCollectCommission = user?.role === 'admin'
+  const activeCollectType = canCollectCommission ? collectType : 'gb'
+
   const savePayment = async () => {
     if (!collectUser) return
     setBusy(true)
     setErr('')
     try {
-      const endpoint = collectType === 'commission' ? '/billing/commission/collect' : '/billing/payments/collect'
+      const endpoint = activeCollectType === 'commission' ? '/billing/commission/collect' : '/billing/payments/collect'
       await api.post(endpoint, {
         user_id: collectUser.id,
         amount: +collectAmount,
@@ -949,21 +954,24 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
         </div>
       </Modal>
 
-      <Modal open={!!collectUser} onClose={() => setCollectUser(null)} title={`Collect Payment — ${collectUser?.name || ''}`}>
+      <Modal open={!!collectUser} onClose={() => setCollectUser(null)} title={`Collect Payment — ${collectUser?.name || ''}`} icon={<HandCoins size={20} />}>
         <div className="space-y-4">
-          {/* Header Summary Cards for both Dues */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className={`p-3 rounded-2xl border transition-all text-xs ${collectType === 'gb' ? 'bg-emerald-50/60 border-emerald-200' : 'bg-slate-50/50 border-slate-200/50'}`}>
+          {/* Header Summary Cards — commission due only applies to admin collections */}
+          <div className={`grid gap-3 ${canCollectCommission ? 'grid-cols-2' : 'grid-cols-1'}`}>
+            <div className={`p-3 rounded-2xl border transition-all text-xs ${activeCollectType === 'gb' ? 'bg-emerald-50/60 border-emerald-200' : 'bg-slate-50/50 border-slate-200/50'}`}>
               <p className="text-slate-400 font-semibold">GB Allocation Due:</p>
               <p className="text-emerald-600 font-extrabold text-sm mt-0.5">{rs(collectUser?.wallet_due)}</p>
             </div>
-            <div className={`p-3 rounded-2xl border transition-all text-xs ${collectType === 'commission' ? 'bg-rose-50/60 border-rose-200' : 'bg-slate-50/50 border-slate-200/50'}`}>
-              <p className="text-slate-400 font-semibold">Commission Due:</p>
-              <p className="text-rose-600 font-extrabold text-sm mt-0.5">{rs(collectUser?.commission_due)}</p>
-            </div>
+            {canCollectCommission && (
+              <div className={`p-3 rounded-2xl border transition-all text-xs ${collectType === 'commission' ? 'bg-rose-50/60 border-rose-200' : 'bg-slate-50/50 border-slate-200/50'}`}>
+                <p className="text-slate-400 font-semibold">Commission Due:</p>
+                <p className="text-rose-600 font-extrabold text-sm mt-0.5">{rs(collectUser?.commission_due)}</p>
+              </div>
+            )}
           </div>
 
-          {/* Payment Type Switcher Tabs */}
+          {/* Payment Type Switcher Tabs — commission is admin-only */}
+          {canCollectCommission && (
           <div>
             <label className="text-xs font-bold text-slate-500 block mb-1.5">Collection Type</label>
             <div className="flex bg-slate-100/80 p-1 rounded-2xl gap-1">
@@ -991,13 +999,14 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
               </button>
             </div>
           </div>
+          )}
 
           {/* Target Due & Remaining Display */}
           {+collectAmount > 0 && (
             <div className="bg-blue-50/50 border border-blue-100 p-3 rounded-2xl text-xs flex justify-between items-center">
-              <span className="text-slate-500 font-semibold">Remaining {collectType === 'commission' ? 'Commission' : 'GB'} Due:</span>
+              <span className="text-slate-500 font-semibold">Remaining {activeCollectType === 'commission' ? 'Commission' : 'GB'} Due:</span>
               <span className="text-blue-900 font-extrabold text-sm">
-                {rs(Math.max((collectType === 'commission' ? +(collectUser?.commission_due || 0) : +(collectUser?.wallet_due || 0)) - +collectAmount, 0))}
+                {rs(Math.max((activeCollectType === 'commission' ? +(collectUser?.commission_due || 0) : +(collectUser?.wallet_due || 0)) - +collectAmount, 0))}
               </span>
             </div>
           )}
@@ -1005,7 +1014,7 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
           <div>
             <label className="text-xs font-bold text-slate-500 block mb-1.5 flex items-center gap-1">
               <Wallet size={14} className="text-emerald-500" />
-              Payment Amount (Rs) — {collectType === 'commission' ? 'Commission Settlement' : 'GB Pending Settlement'}
+              Payment Amount (Rs) — {activeCollectType === 'commission' ? 'Commission Settlement' : 'GB Pending Settlement'}
             </label>
             <input
               className="input no-spinners"
@@ -1035,7 +1044,7 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
             </label>
             <input
               className="input"
-              placeholder={collectType === 'commission' ? 'e.g. Commission settlement' : 'e.g. GB allocation cash settlement'}
+              placeholder={activeCollectType === 'commission' ? 'e.g. Commission settlement' : 'e.g. GB allocation cash settlement'}
               value={collectNote}
               onChange={(e) => setCollectNote(e.target.value)}
             />
@@ -1052,7 +1061,7 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
               onClick={savePayment}
             >
               {busy && <div className="h-4 w-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />}
-              {busy ? 'Processing…' : `Collect ${collectType === 'commission' ? 'Commission' : 'GB Payment'}`}
+              {busy ? 'Processing…' : `Collect ${activeCollectType === 'commission' ? 'Commission' : 'GB Payment'}`}
             </motion.button>
           </div>
         </div>

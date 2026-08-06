@@ -97,8 +97,13 @@ class DashboardController extends Controller
         // commission_due/commission_net_earnings below — folding them in here too
         // would double-count that same revenue under a second framing.
         $gbVoucherSales = fn () => $directVoucherSales()->whereHas('plan', fn ($q) => $q->where('package_type', 'gb'));
+        // Wallet Package direct sales — informational only (see note above); not
+        // folded into $totalSales/$voucherTotal to avoid double-counting revenue
+        // already represented via commission_due/commission_net_earnings.
+        $walletVoucherSales = fn () => $directVoucherSales()->whereHas('plan', fn ($q) => $q->where('package_type', 'wallet'));
 
         $voucherTotal = (float) $gbVoucherSales()->sum('price');
+        $walletVoucherTotal = (float) $walletVoucherSales()->sum('price');
         $voucherToday = (float) $gbVoucherSales()
             ->whereRaw('COALESCE(sold_at, activated_at) >= ?', [now()->startOfDay()])
             ->sum('price');
@@ -212,6 +217,7 @@ class DashboardController extends Controller
             'revenue_sellers' => $revenueSellers,
             'collected_from_sellers' => $collectedFromSellers,
             'voucher_sales' => $voucherTotal,
+            'wallet_voucher_sales' => $walletVoucherTotal,
             'retail_profit' => (float) $retailProfit,
             'today_sales' => $todaySales,
             'monthly_sales' => $monthlySales,

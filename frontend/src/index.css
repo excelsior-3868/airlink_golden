@@ -127,7 +127,7 @@
     box-shadow: 0 22px 70px -32px hsl(var(--primary) / 0.22);
   }
   .app-sidebar-nav-item {
-    display: flex; align-items: center; gap: 0.75rem; padding: 0.7rem 0.9rem;
+    display: flex; align-items: center; gap: 0.75rem; padding: 0.7rem 0.75rem;
     border-radius: 16px; font-weight: 600; font-size: 0.875rem; transition: all 0.15s ease;
   }
   .app-sidebar-nav-item-idle { color: rgb(100 116 139); }
@@ -137,6 +137,19 @@
     color: #003164;
     box-shadow: 0 14px 34px -24px hsl(211 100% 20% / 0.3);
   }
+
+  /* Sidebar collapse. The panel edge and the page's left edge share one duration
+     and one curve, so the content can never drift away from the panel it's
+     following. Icons keep their x through both states — only the edge travels. */
+  .app-sidebar-motion { transition: width 320ms cubic-bezier(0.16, 1, 0.3, 1); }
+  .app-content-motion { transition: margin-left 320ms cubic-bezier(0.16, 1, 0.3, 1); }
+  /* Labels ride the closing edge: they leave immediately toward the icon column,
+     and on the way back they wait for the panel to make room for them. */
+  .app-sidebar-label { transition: opacity 150ms ease-out, transform 260ms cubic-bezier(0.16, 1, 0.3, 1); }
+  .app-sidebar-label-in { opacity: 1; transform: none; transition-delay: 110ms; }
+  .app-sidebar-label-out { opacity: 0; transform: translateX(-8px); transition-delay: 0ms; }
+  /* The profile card sheds its container on the rail, leaving just the avatar. */
+  .app-sidebar-profile { transition: padding 320ms cubic-bezier(0.16, 1, 0.3, 1), background-color 220ms ease-out, border-color 220ms ease-out; }
 
   .pill { display: inline-flex; align-items: center; padding: 0.15rem 0.6rem; border-radius: 999px; font-size: 0.7rem; font-weight: 700; border: 1px solid; }
   .pill.success { background: rgb(236 253 245); color: rgb(5 150 105); border-color: rgb(209 250 229); }
@@ -161,6 +174,26 @@
   }
   .animate-progress-slide {
     animation: progressSlide 1.6s ease-in-out infinite;
+  }
+
+  /* Left-to-right reveal for charts — a CSS clip-path wipe rather than relying
+     on Recharts' own animation, which doesn't fire in this app/library
+     combination (verified: its SVG paths render at final state immediately,
+     no interpolation). Applied via ResponsiveContainer's className prop. */
+  @keyframes chartReveal {
+    from { clip-path: inset(0 100% 0 0); }
+    to { clip-path: inset(0 0% 0 0); }
+  }
+  .chart-reveal {
+    animation: chartReveal 1300ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .chart-reveal { animation: none; }
+    /* The collapse still has to land — it just lands at once. */
+    .app-sidebar-motion, .app-content-motion, .app-sidebar-label, .app-sidebar-profile {
+      transition-duration: 1ms;
+      transition-delay: 0ms;
+    }
   }
 }
 

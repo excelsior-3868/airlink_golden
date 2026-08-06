@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Ticket, Download, Zap, Printer, Layers, BarChart3, Calendar, Sparkles, Sun, Leaf, Snowflake } from 'lucide-react'
@@ -76,25 +76,64 @@ export default function Vouchers() {
   // Vouchers state — includes the reporting filters merged in from the old
   // standalone Voucher Usage Report page (season/date range/package/reseller/seller).
   const [page, setPage] = useState(1)
-  const [filters, setFilters] = useState<any>({
+  const EMPTY_FILTERS = {
     status: '', code: '', batch: '',
     from: '', to: '', plan_id: '', reseller_id: '', seller_id: '', season_id: '',
-  })
-  // Applied filter signature — only changes on Apply, so typing doesn't refetch.
-  const [appliedVoucherKey, setAppliedVoucherKey] = useState('{}')
+  }
+  const [filters, setFilters] = useState<any>(EMPTY_FILTERS)
+  // Filters apply as soon as they change. Only the free-text fields are debounced
+  // so typing doesn't fire a request per keystroke; selects/dates take effect at once.
+  const [debouncedText, setDebouncedText] = useState({ code: '', batch: '' })
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedText({ code: filters.code, batch: filters.batch }), 400)
+    return () => clearTimeout(t)
+  }, [filters.code, filters.batch])
 
   // Batches state
   const [batchesPage, setBatchesPage] = useState(1)
   const [batchFilters, setBatchFilters] = useState<any>({ plan_id: '', batch_code: '' })
-  const [appliedBatchKey, setAppliedBatchKey] = useState('{}')
+  // Same live-filter behaviour as the vouchers tab: the batch code text is debounced,
+  // the plan select takes effect at once.
+  const [debouncedBatchCode, setDebouncedBatchCode] = useState('')
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedBatchCode(batchFilters.batch_code), 400)
+    return () => clearTimeout(t)
+  }, [batchFilters.batch_code])
 
   // Sell state
   const [sellVoucher, setSellVoucher] = useState<any>(null)
   const [customerUsername, setCustomerUsername] = useState('')
   const [selling, setSelling] = useState(false)
 
-  const cleanFilters = () => Object.fromEntries(Object.entries(filters).filter(([, v]) => v))
-  const cleanBatchFilters = () => Object.fromEntries(Object.entries(batchFilters).filter(([, v]) => v))
+  // The Seller select starts unset ("Select Seller"); 'all' is the explicit
+  // "All Sellers" choice, which sends no seller_id — same as unset.
+  const effectiveFilters = {
+    ...filters,
+    code: debouncedText.code,
+    batch: debouncedText.batch,
+    seller_id: filters.seller_id === 'all' ? '' : filters.seller_id,
+  }
+  const cleanFilters = () => Object.fromEntries(Object.entries(effectiveFilters).filter(([, v]) => v))
+  const cleanBatchFilters = () => Object.fromEntries(
+    Object.entries({ ...batchFilters, batch_code: debouncedBatchCode }).filter(([, v]) => v),
+  )
+
+  // Signature of the filters currently in effect — drives the queries below.
+  const voucherKey = JSON.stringify(cleanFilters())
+  // Any filter change goes back to page 1. Done during render (not in an effect)
+  // so the queries below never fire once for a stale page first.
+  const prevVoucherKey = useRef(voucherKey)
+  if (prevVoucherKey.current !== voucherKey) {
+    prevVoucherKey.current = voucherKey
+    if (page !== 1) setPage(1)
+  }
+
+  const batchKey = JSON.stringify(cleanBatchFilters())
+  const prevBatchKey = useRef(batchKey)
+  if (prevBatchKey.current !== batchKey) {
+    prevBatchKey.current = batchKey
+    if (batchesPage !== 1) setBatchesPage(1)
+  }
 
   const { data: plans = [], refetch: refetchPlans } = useQuery<any[]>('plans?active_only=1', () => api.get('/plans', { params: { active_only: 1 } }).then((r) => r.data.data))
   // Reporting extras (season filter, summary cards) are only relevant — and only
@@ -105,13 +144,13 @@ export default function Vouchers() {
   const { data: sellers = [] } = useQuery<any[]>('users?role=seller&per_page=500', () => api.get('/users', { params: { role: 'seller', per_page: 500 } }).then((r) => r.data.data.data), { enabled: canSeeReports && (user?.role === 'admin' || user?.role === 'reseller') })
 
   const { data, loading: vouchersLoading, refetch: load } = useQuery<any>(
-    `vouchers?page=${page}&${appliedVoucherKey}`,
+    `vouchers?page=${page}&${voucherKey}`,
     () => api.get('/vouchers', { params: { page, ...cleanFilters() } }).then((r) => r.data.data),
   )
 
   // Usage summary cards, merged in from the old standalone Voucher Usage Report page.
   const { data: summary, loading: summaryLoading } = useQuery<any>(
-    `vouchers/package-summary?${appliedVoucherKey}`,
+    `vouchers/package-summary?${voucherKey}`,
     () => api.get('/reports/package-summary', { params: cleanFilters() }).then((r) => r.data.data),
     { enabled: activeTab === 'vouchers' && canSeeReports },
   )
@@ -134,7 +173,7 @@ export default function Vouchers() {
   }
 
   const { data: batchesData, loading: batchesLoading, refetch: refetchBatches } = useQuery<any>(
-    `batches?page=${batchesPage}&${appliedBatchKey}`,
+    `batches?page=${batchesPage}&${batchKey}`,
     () => api.get('/batches', { params: { page: batchesPage, ...cleanBatchFilters() } }).then((r) => r.data.data),
     { enabled: activeTab === 'batches' },
   )
@@ -321,9 +360,10 @@ export default function Vouchers() {
                   <label className="text-xs font-semibold text-slate-500 block mb-1">Seller</label>
                   <CustomSelect
                     className="w-full"
-                    value={filters.seller_id ? +filters.seller_id : ''}
+                    placeholder="Select Seller"
+                    value={filters.seller_id === 'all' ? 'all' : (filters.seller_id ? +filters.seller_id : '')}
                     onChange={(val) => setFilters({ ...filters, seller_id: val })}
-                    options={[{ value: '', label: 'All Sellers' }, ...sellers.map((s: any) => ({ value: s.id, label: s.name || s.username }))]}
+                    options={[{ value: 'all', label: 'All Sellers' }, ...sellers.map((s: any) => ({ value: s.id, label: s.name || s.username }))]}
                   />
                 </div>
               )}
@@ -338,11 +378,10 @@ export default function Vouchers() {
               <div className="md:ml-auto flex gap-2 shrink-0 w-full md:w-auto">
                 <button
                   className="btn-ghost flex-1 md:flex-initial"
-                  onClick={() => { const reset = { status: '', code: '', batch: '', from: '', to: '', plan_id: '', reseller_id: '', seller_id: '', season_id: '' }; setFilters(reset); setPage(1); setAppliedVoucherKey('{}') }}
+                  onClick={() => { setFilters(EMPTY_FILTERS); setDebouncedText({ code: '', batch: '' }) }}
                 >
                   Clear
                 </button>
-                <button className="btn-primary flex-1 md:flex-initial" onClick={() => { setPage(1); setAppliedVoucherKey(JSON.stringify(cleanFilters())) }}>Apply Filters</button>
               </div>
             </div>
           </GlassCard>
@@ -455,7 +494,12 @@ export default function Vouchers() {
               <label className="text-xs font-semibold text-slate-500">Batch Code</label>
               <input className="input mt-1" value={batchFilters.batch_code} onChange={(e) => setBatchFilters({ ...batchFilters, batch_code: e.target.value })} placeholder="Search batch" />
             </div>
-            <button className="btn-primary" onClick={() => { setBatchesPage(1); setAppliedBatchKey(JSON.stringify(cleanBatchFilters())) }}>Apply</button>
+            <button
+              className="btn-ghost"
+              onClick={() => { setBatchFilters({ plan_id: '', batch_code: '' }); setDebouncedBatchCode('') }}
+            >
+              Clear
+            </button>
           </GlassCard>
 
           <GlassCard className="!p-0 overflow-hidden">

@@ -3,7 +3,7 @@ import { motion } from 'framer-motion'
 import { Save, CheckCircle, Image as ImageIcon, Plus, Trash2, RotateCcw, Palette, Users as Users2, UserCheck, ShieldCheck } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
-import { GlassCard, PageTitle, EmptyState, CustomSelect, SelectOption, ConfirmModal } from '../components/ui'
+import { GlassCard, PageTitle, EmptyState, Spinner, CustomSelect, SelectOption, ConfirmModal } from '../components/ui'
 import { CardElement, CardTemplate } from '../components/VoucherCard'
 
 const CANVAS_W = 640
@@ -180,7 +180,7 @@ export default function VoucherCardDesigner() {
     } catch (e) { setErr(apiError(e)) } finally { setReverting(false) }
   }
 
-  if (loading) return <EmptyState>Loading voucher card designer…</EmptyState>
+  if (loading) return <Spinner />
   if (!tpl) return <EmptyState>{err || 'Failed to load template.'}</EmptyState>
 
   const scale = CANVAS_W / tpl.width
@@ -227,7 +227,10 @@ export default function VoucherCardDesigner() {
                 disabled={saving || reverting}
                 onClick={revertToDefault}
               >
-                <RotateCcw size={16} /> {reverting ? 'Reverting...' : 'Revert to Default'}
+                {reverting
+                  ? <span className="h-4 w-4 rounded-full border-2 border-rose-200 border-t-rose-600 animate-spin shrink-0" />
+                  : <RotateCcw size={16} />}
+                Revert to Default
               </motion.button>
             )}
             <motion.button
@@ -236,7 +239,10 @@ export default function VoucherCardDesigner() {
               disabled={saving || reverting}
               onClick={save}
             >
-              <Save size={16} /> {saving ? 'Saving...' : 'Save Design'}
+              {saving
+                ? <span className="h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin shrink-0" />
+                : <Save size={16} />}
+              Save Design
             </motion.button>
           </div>
         }
