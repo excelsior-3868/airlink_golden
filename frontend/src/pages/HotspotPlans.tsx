@@ -351,13 +351,16 @@ export default function HotspotPlans() {
         </div>
       )}
 
-      <div className="mb-6 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3 bg-slate-50/70 p-3.5 rounded-xl border border-slate-200/60 items-center">
-        <CustomSelect value={typeFilter} onChange={setTypeFilter} options={typeFilterOptions} />
-        <CustomSelect value={nasFilter} onChange={setNasFilter} options={yesNoOptions('NAS')} />
-        <CustomSelect value={macFilter} onChange={setMacFilter} options={yesNoOptions('MAC Bind')} />
-        <CustomSelect value={bandwidthFilter} onChange={setBandwidthFilter} options={bandwidthFilterOptions} />
-        <CustomSelect value={statusFilter} onChange={setStatusFilter} options={statusFilterOptions} />
-        <CustomSelect value={validityFilter} onChange={setValidityFilter} options={validityFilterOptions} />
+      {/* Each control sizes to its own label and wraps to the next line when the row
+          runs out of room. A fixed column count forced every select to the same
+          track width, which its 180px minimum then overflowed into its neighbour. */}
+      <div className="mb-6 flex flex-wrap items-center gap-3 bg-slate-50/70 p-3.5 rounded-xl border border-slate-200/60">
+        <CustomSelect className="!min-w-0" value={typeFilter} onChange={setTypeFilter} options={typeFilterOptions} />
+        <CustomSelect className="!min-w-0" value={nasFilter} onChange={setNasFilter} options={yesNoOptions('NAS')} />
+        <CustomSelect className="!min-w-0" value={macFilter} onChange={setMacFilter} options={yesNoOptions('MAC Bind')} />
+        <CustomSelect className="!min-w-0" value={bandwidthFilter} onChange={setBandwidthFilter} options={bandwidthFilterOptions} />
+        <CustomSelect className="!min-w-0" value={statusFilter} onChange={setStatusFilter} options={statusFilterOptions} />
+        <CustomSelect className="!min-w-0" value={validityFilter} onChange={setValidityFilter} options={validityFilterOptions} />
         <button
           onClick={clearFilters}
           disabled={!isFiltered}
@@ -383,7 +386,7 @@ export default function HotspotPlans() {
                 <tr>
                   <th>Name</th>
                   <th>Type</th>
-                  <th>Package Type</th>
+                  <th>Package Category</th>
                   <th>Package Owner</th>
                   <th>Bandwidth</th>
                   <th>Data</th>

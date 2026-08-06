@@ -47,6 +47,7 @@ class SystemPermission extends Model
             // Default fallbacks if permission record is missing
             if ($role === 'admin') return true;
             if ($role === 'reseller' && in_array($feature, ['allocate_gb', 'create_seller', 'generate_voucher', 'dashboard', 'reports', 'view_plans', 'view_sellers', 'view_transactions'])) return true;
+            if ($role === 'seller' && in_array($feature, ['generate_voucher', 'dashboard', 'reports', 'view_plans', 'view_transactions'])) return true;
             if ($feature === 'generate_voucher' || $feature === 'dashboard') return true;
             return false;
         }

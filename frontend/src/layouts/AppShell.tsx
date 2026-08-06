@@ -35,15 +35,16 @@ const NAV: NavItem[] = [
   {
     label: 'Plan',
     icon: Package,
-    roles: ['admin', 'reseller', 'seller'],
+    roles: ['admin'],
     color: 'text-indigo-500',
     perm: 'view_plans',
     children: [
-      { to: '/plans/hotspot', label: 'Hotspot Plans', roles: ['admin', 'reseller', 'seller'], icon: Wifi, color: 'text-sky-500' },
-      { to: '/plans/pppoe', label: 'PPPOE Plans', roles: ['admin', 'reseller', 'seller'], icon: Router, color: 'text-indigo-500' },
-      { to: '/plans/bandwidth', label: 'Bandwidth Plan', roles: ['admin', 'reseller', 'seller'], icon: Gauge, color: 'text-violet-500' },
+      { to: '/plans/hotspot', label: 'Hotspot Plans', roles: ['admin'], icon: Wifi, color: 'text-sky-500' },
+      { to: '/plans/pppoe', label: 'PPPOE Plans', roles: ['admin'], icon: Router, color: 'text-indigo-500' },
+      { to: '/plans/bandwidth', label: 'Bandwidth Plan', roles: ['admin'], icon: Gauge, color: 'text-violet-500' },
     ]
   },
+  { to: '/plans/hotspot', label: 'Hotspot Plan', icon: Wifi, roles: ['reseller', 'seller'], color: 'text-sky-500', perm: 'view_plans' },
   { to: '/resellers', label: 'Add/View Resellers', icon: Users2, roles: ['admin'], color: 'text-purple-500', perm: 'view_resellers' },
   { to: '/sellers', label: 'Add/View Sellers', icon: Store, roles: ['admin', 'reseller'], color: 'text-amber-500', perm: 'view_sellers' },
   { to: '/funds', label: 'Wallet / GB Allocation', icon: WalletIcon, roles: ['admin', 'reseller', 'seller'], color: 'text-emerald-500' },

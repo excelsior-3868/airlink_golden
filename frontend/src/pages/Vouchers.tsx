@@ -397,12 +397,21 @@ export default function Vouchers() {
                     placeholder="Select Seller"
                     value={sellerScope === 'all' || sellerScope === 'own' ? sellerScope : (sellerScope ? +sellerScope : '')}
                     onChange={(val) => setFilters({ ...filters, seller_id: val })}
-                    options={[
-                      // No "My Own Cards" for an admin — it holds no cards of its own.
-                      ...(user?.role === 'admin' ? [] : [{ value: 'own', label: 'My Own Cards' }]),
-                      { value: 'all', label: 'All Sellers' },
-                      ...sellers.map((s: any) => ({ value: s.id, label: s.name || s.username })),
-                    ]}
+                    options={
+                      user?.role === 'admin'
+                        // An admin holds no cards of its own, so there is no "My Own
+                        // Cards" to exclude: "All Sellers" is simply the unfiltered
+                        // tree, matching how "All Resellers" behaves beside it.
+                        ? [
+                            { value: '', label: 'All Sellers' },
+                            ...sellers.map((s: any) => ({ value: s.id, label: s.name || s.username })),
+                          ]
+                        : [
+                            { value: 'own', label: 'My Own Cards' },
+                            { value: 'all', label: 'All Sellers' },
+                            ...sellers.map((s: any) => ({ value: s.id, label: s.name || s.username })),
+                          ]
+                    }
                   />
                 </div>
               )}
