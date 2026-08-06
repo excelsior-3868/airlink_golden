@@ -784,27 +784,37 @@ export default function Dashboard() {
 
           <div>
             <label className="text-xs font-bold text-slate-500 block mb-1.5">Select User</label>
-            <select 
-              className="input" 
-              value={collectForm.user_id} 
-              onChange={(e) => {
-                const uId = e.target.value
+            <CustomSelect
+              className="w-full"
+              placeholder="Choose a user..."
+              searchable={downlines.length > 5}
+              value={collectForm.user_id}
+              onChange={(val) => {
+                const uId = String(val)
                 const chosen = downlines.find((u) => u.id === +uId)
-                setCollectForm({ 
-                  ...collectForm, 
-                  user_id: uId, 
+                setCollectForm({
+                  ...collectForm,
+                  user_id: uId,
                   amount: chosen ? String(activeCollectType === 'commission' ? chosen.commission_due : chosen.wallet_due) : ''
                 })
               }}
-            >
-              <option value="">Choose a user...</option>
-              {downlines.map((dl) => (
-                <option key={dl.id} value={dl.id}>
-                  {dl.name} ({dl.username}) — GB Due: {rs(dl.wallet_due)}
-                  {canCollectCommission ? ` | Comm Due: ${rs(dl.commission_due)}` : ''}
-                </option>
-              ))}
-            </select>
+              options={downlines.map((dl) => ({
+                value: String(dl.id),
+                label: `${dl.name} (${dl.username})`,
+                badge: (
+                  <span className="text-[10px] font-bold shrink-0 flex items-center gap-1.5">
+                    <span className="bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-full border border-emerald-100/50">
+                      GB Due: {rs(dl.wallet_due)}
+                    </span>
+                    {canCollectCommission && (
+                      <span className="bg-amber-50 text-amber-600 px-2 py-0.5 rounded-full border border-amber-100/50">
+                        Comm: {rs(dl.commission_due)}
+                      </span>
+                    )}
+                  </span>
+                )
+              }))}
+            />
           </div>
 
           <div>

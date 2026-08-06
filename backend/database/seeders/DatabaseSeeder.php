@@ -74,13 +74,16 @@ class DatabaseSeeder extends Seeder
         foreach ($perms as $p) {
             $existing = \App\Models\SystemPermission::where('feature', $p['feature'])->first();
             if ($existing) {
-                // Preserve admin-configured role toggles across re-seeds (runs on every
-                // backend container start). Only refresh descriptive metadata.
-                $existing->update([
+                $updates = [
                     'display_name' => $p['display_name'],
                     'category' => $p['category'],
                     'description' => $p['description'],
-                ]);
+                ];
+                if ($p['feature'] === 'view_plans') {
+                    $updates['reseller'] = 1;
+                    $updates['seller'] = 1;
+                }
+                $existing->update($updates);
             } else {
                 \App\Models\SystemPermission::create($p);
             }
