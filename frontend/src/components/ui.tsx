@@ -8,6 +8,8 @@ import { ComposedChart, Bar, Cell, Line, XAxis, Tooltip, ResponsiveContainer } f
 export { DualDatePicker } from './DualDatePicker'
 export { ConfirmModal } from './ConfirmModal'
 export type { ConfirmState } from './ConfirmModal'
+import { OnlineUsersBadge, OnlineUsersModal } from './OnlineUsersModal'
+export { OnlineUsersBadge, OnlineUsersModal } from './OnlineUsersModal'
 
 export function GlassCard({ children, className = '', onClick }: { children: ReactNode; className?: string; onClick?: () => void }) {
   return <div className={`glass-card p-5 sm:p-6 ${className}`} onClick={onClick}>{children}</div>
@@ -184,6 +186,7 @@ export function VoucherStatCard({
 
 export function PageTitle({ title, subtitle, action, icon, showBalances = false }: { title: string; subtitle?: string; action?: ReactNode; icon?: ReactNode; showBalances?: boolean }) {
   const { user } = useAuth()
+
   return (
     <div className="flex items-start justify-between mb-6 flex-wrap gap-4 pt-4">
       <div className="flex items-start gap-4">
@@ -224,6 +227,10 @@ export function PageTitle({ title, subtitle, action, icon, showBalances = false 
                 <span className="font-extrabold text-purple-950 text-xs">{gb(user.gb_balance)}</span>
               </div>
             </div>
+
+            {user.role === 'admin' && (
+              <OnlineUsersBadge />
+            )}
           </div>
         )}
         {action}

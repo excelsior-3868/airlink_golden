@@ -5,7 +5,7 @@ import { api, apiError } from '../lib/api'
 import { useQuery } from '../lib/cache'
 import { useAuth } from '../lib/auth'
 import { GlassCard, PageTitle, Modal, Pill, EmptyState, CustomSelect, SelectOption, Pagination, ConfirmModal, Spinner } from '../components/ui'
-import { num } from '../lib/format'
+import { num, datet } from '../lib/format'
 
 const blank = { name: '', nasname: '', shortname: '', type: 'mikrotik', secret: '', description: '', status: 'active', require_message_authenticator: 'auto', owner_id: '' }
 
@@ -474,7 +474,7 @@ export default function Nas() {
                         </span>
                       </td>
                       <td className="text-xs text-slate-500 font-medium">
-                        {new Date(log.authdate).toLocaleString()}
+                        {datet(log.authdate)}
                       </td>
                     </motion.tr>
                   ))}

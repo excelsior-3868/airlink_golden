@@ -151,7 +151,7 @@ class VoucherGenerationTest extends TestCase
 
         $res->assertStatus(200);
         $this->assertEquals(50.0, $reseller->fresh()->gb_balance);
-        $this->assertEquals('active', $voucher->fresh()->status);
+        $this->assertEquals('used', $voucher->fresh()->status);
         $this->assertEquals(0, DB::table('radcheck')->where('username', 'REDEEM123')->count());
     }
 
@@ -162,12 +162,37 @@ class VoucherGenerationTest extends TestCase
 
         $voucher = \App\Models\Voucher::create([
             'code' => 'REDEEM123', 'username' => 'REDEEM123', 'password' => 'REDEEM123',
-            'plan_id' => $plan->id, 'owner_id' => $reseller->id, 'data_gb' => 50.0, 'price' => 150, 'status' => 'active'
+            'plan_id' => $plan->id, 'owner_id' => $reseller->id, 'data_gb' => 50.0, 'price' => 150, 'status' => 'used'
         ]);
 
         $res = $this->actingAs($reseller, 'sanctum')
             ->postJson('/api/vouchers/redeem', ['code' => 'REDEEM123']);
 
         $res->assertStatus(422);
+    }
+
+    public function test_activated_voucher_counts_as_sold_and_used_in_reports(): void
+    {
+        $admin = $this->makeUser('admin');
+        $reseller = $this->makeUser('reseller', ['parent_id' => $admin->id]);
+        $plan = $this->plan();
+
+        $voucher = \App\Models\Voucher::create([
+            'code' => 'LOGGEDIN1', 'username' => 'LOGGEDIN1', 'password' => 'LOGGEDIN1',
+            'plan_id' => $plan->id, 'owner_id' => $reseller->id, 'reseller_id' => $reseller->id,
+            'price' => 1200, 'status' => 'used', 'activated_at' => now(),
+        ]);
+
+        $res = $this->actingAs($admin, 'sanctum')
+            ->getJson("/api/reports/package-summary?reseller_id={$reseller->id}");
+
+        $res->assertStatus(200);
+        $packages = $res->json('data.packages');
+        $this->assertNotEmpty($packages);
+        $pkg = $packages[0];
+        $this->assertEquals(1, $pkg['generated']);
+        $this->assertEquals(1, $pkg['sold']);
+        $this->assertEquals(1, $pkg['used']);
+        $this->assertEquals(0, $pkg['remaining']);
     }
 }

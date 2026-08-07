@@ -6,8 +6,19 @@ export const gb = (n: number | string) =>
 
 export const num = (n: number | string) => Number(n).toLocaleString('en-US')
 
-export const datet = (s: string | null) => (s ? new Date(s).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }) : '—')
-export const date = (s: string | null) => (s ? new Date(s).toLocaleDateString('en-GB', { dateStyle: 'medium' }) : '—')
+const TZ = 'Asia/Kathmandu'
+
+// Everything is stored UTC (Laravel's app.timezone, and FreeRADIUS via FROM_UNIXTIME
+// inside the UTC mariadb container). Eloquent serializes with a trailing Z, but raw
+// DB::table() selects — radacct session times especially — come back as bare
+// "2026-08-07 09:58:15", which JS parses as *browser-local* and so renders 5h45m
+// early in Nepal. Tag those as UTC before formatting, then pin output to NPT so the
+// display doesn't drift with whatever timezone the viewer's machine is set to.
+const NAIVE = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2})?(\.\d+)?$/
+const parse = (s: string) => new Date(NAIVE.test(s) ? s.replace(' ', 'T') + 'Z' : s)
+
+export const datet = (s: string | null) => (s ? parse(s).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short', timeZone: TZ }) : '—')
+export const date = (s: string | null) => (s ? parse(s).toLocaleDateString('en-GB', { dateStyle: 'medium', timeZone: TZ }) : '—')
 
 export const statusPill: Record<string, string> = {
   new: 'info',

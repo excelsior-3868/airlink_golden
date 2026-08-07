@@ -10,8 +10,12 @@ use Illuminate\Support\Facades\DB;
 /**
  * Drives voucher lifecycle from RADIUS accounting + expiry dates.
  * Runs on a schedule (see routes/console.php).
- *   active/sold + cumulative radacct usage ≥ its data cap → used
+ *   active/sold/used + cumulative radacct usage ≥ its data cap → expired
  *   any non-terminal + past expires_at → expired
+ *
+ * 'used' is not a terminal state — FreeRADIUS post-auth sets it on the
+ * customer's first login to mean "activated". Exhausting the data cap is
+ * what actually ends the card's life, so that lands on 'expired'.
  *
  * Either transition now also sends a CoA Disconnect-Request for any live
  * session, instead of leaving the user connected until the NAS's own
@@ -30,9 +34,10 @@ class SyncVoucherStatus extends Command
 
     public function handle(): int
     {
-        // 1. Usernames whose active/sold voucher has a data cap and whose
-        //    cumulative radacct usage has met or exceeded it.
-        $usedUsernames = collect(DB::select(
+        // 1. Usernames whose live voucher has a data cap and whose cumulative
+        //    radacct usage has met or exceeded it. 'used' counts here too —
+        //    it means activated, so a card in use is exactly what runs out.
+        $exhaustedUsernames = collect(DB::select(
             "SELECT v.username
              FROM vouchers v
              JOIN (
@@ -40,16 +45,16 @@ class SyncVoucherStatus extends Command
                  FROM radacct
                  GROUP BY username
              ) u ON u.username = v.username
-             WHERE v.status IN ('active', 'sold')
+             WHERE v.status IN ('active', 'sold', 'used')
                AND v.data_gb IS NOT NULL AND v.data_gb > 0
                AND u.bytes_used >= v.data_gb * 1073741824"
         ))->pluck('username');
 
-        $used = 0;
-        if ($usedUsernames->isNotEmpty()) {
-            $used = Voucher::whereIn('username', $usedUsernames)
-                ->whereIn('status', ['active', 'sold'])
-                ->update(['status' => 'used']);
+        $exhausted = 0;
+        if ($exhaustedUsernames->isNotEmpty()) {
+            $exhausted = Voucher::whereIn('username', $exhaustedUsernames)
+                ->whereIn('status', ['active', 'sold', 'used'])
+                ->update(['status' => 'expired']);
         }
 
         // 2. Anything past its expiry that has been activated and isn't already terminal.
@@ -64,11 +69,11 @@ class SyncVoucherStatus extends Command
             Voucher::whereIn('id', $expiredVouchers->pluck('id'))->update(['status' => 'expired']);
         }
 
-        $usedUsernames->merge($expiredVouchers->pluck('username'))
+        $exhaustedUsernames->merge($expiredVouchers->pluck('username'))
             ->unique()
             ->each(fn (string $username) => $this->coa->disconnectUsername($username));
 
-        $this->info("Sync complete: {$used} used, {$expired} expired.");
+        $this->info("Sync complete: {$exhausted} quota-exhausted, {$expired} past expiry — all set to expired.");
 
         return self::SUCCESS;
     }

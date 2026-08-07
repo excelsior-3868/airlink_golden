@@ -11,7 +11,92 @@ use Exception;
 
 class RadiusController extends Controller
 {
-    public function __construct(private ClientsConfService $clientsConf) {}
+    public function __construct(
+        private ClientsConfService $clientsConf,
+        private \App\Services\Radius\CoaService $coa,
+    ) {}
+
+    /** Fetch list of active RADIUS sessions & activated voucher users currently accessing the Internet. */
+    public function onlineUsers(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        $query = DB::table('vouchers')
+            ->whereNotNull('vouchers.activated_at')
+            ->whereIn('vouchers.status', ['used', 'active'])
+            ->where(function ($q) {
+                $q->whereNull('vouchers.expires_at')->orWhere('vouchers.expires_at', '>', now());
+            })
+            ->leftJoin('internet_plans as p', 'p.id', '=', 'vouchers.plan_id')
+            ->leftJoin('users as reseller', 'reseller.id', '=', 'vouchers.reseller_id')
+            ->leftJoin('users as seller', 'seller.id', '=', 'vouchers.seller_id')
+            ->leftJoin('radacct', function ($j) {
+                $j->on('radacct.username', '=', 'vouchers.username')->whereNull('radacct.acctstoptime');
+            })
+            ->select(
+                'vouchers.id as radacctid',
+                'vouchers.id as voucher_id',
+                'vouchers.code as voucher_code',
+                'vouchers.username',
+                'vouchers.customer_username',
+                'vouchers.price',
+                'vouchers.status as voucher_status',
+                'vouchers.activated_at as start_time',
+                'vouchers.expires_at',
+                'p.name as plan_name',
+                'p.package_type',
+                DB::raw('COALESCE(radacct.framedipaddress, vouchers.nas_ip) as ip_address'),
+                DB::raw('COALESCE(radacct.callingstationid, vouchers.mac_address) as mac_address'),
+                DB::raw('COALESCE(radacct.nasipaddress, vouchers.nas_ip) as nas_ip'),
+                DB::raw('COALESCE(radacct.acctsessiontime, TIMESTAMPDIFF(SECOND, vouchers.activated_at, NOW())) as session_time'),
+                DB::raw('COALESCE(radacct.acctinputoctets + radacct.acctoutputoctets, vouchers.daily_used_bytes, 0) as total_bytes'),
+                'reseller.username as reseller_username',
+                'reseller.name as reseller_name',
+                'seller.username as seller_username',
+                'seller.name as seller_name'
+            );
+
+        if ($user) {
+            if ($user->role === 'reseller') {
+                $query->where(function ($q) use ($user) {
+                    $q->where('vouchers.reseller_id', $user->id)
+                      ->orWhere('vouchers.owner_id', $user->id);
+                });
+            } elseif ($user->role === 'seller') {
+                $query->where('vouchers.seller_id', $user->id);
+            }
+        }
+
+        if ($search = $request->query('search')) {
+            $query->where(function ($q) use ($search) {
+                $q->where('vouchers.code', 'like', "%{$search}%")
+                  ->orWhere('vouchers.username', 'like', "%{$search}%")
+                  ->orWhere('vouchers.customer_username', 'like', "%{$search}%")
+                  ->orWhere('vouchers.mac_address', 'like', "%{$search}%")
+                  ->orWhere('vouchers.nas_ip', 'like', "%{$search}%")
+                  ->orWhere('p.name', 'like', "%{$search}%");
+            });
+        }
+
+        $sessions = $query->orderBy('vouchers.activated_at', 'desc')->get();
+
+        return $this->ok([
+            'count' => $sessions->count(),
+            'sessions' => $sessions,
+        ]);
+    }
+
+    /** Disconnect a live session by username using CoA. */
+    public function disconnectUser(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'username' => ['required', 'string'],
+        ]);
+
+        $this->coa->disconnectUsername($data['username']);
+
+        return $this->ok(null, "Disconnect command sent for user {$data['username']}.");
+    }
 
     /** Get FreeRADIUS server status and stats (admin only). */
     public function status(): JsonResponse

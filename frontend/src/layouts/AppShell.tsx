@@ -32,6 +32,7 @@ interface NavItem {
 const NAV: NavItem[] = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'reseller', 'seller'], color: 'text-blue-500', perm: 'dashboard' },
   { to: '/financial-dashboard', label: 'Financial Dashboard', icon: Scale, roles: ['admin', 'reseller', 'seller'], color: 'text-blue-600' },
+  { to: '/online-users', label: 'Online Users', icon: Wifi, roles: ['admin', 'reseller', 'seller'], color: 'text-cyan-500' },
   {
     label: 'Plan',
     icon: Package,

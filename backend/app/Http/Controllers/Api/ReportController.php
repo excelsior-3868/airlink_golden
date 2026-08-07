@@ -22,8 +22,12 @@ class ReportController extends Controller
 
         $rows = (clone $q)
             ->join('internet_plans as p', 'p.id', '=', 'vouchers.plan_id')
-            ->select('p.id as plan_id', 'p.name as plan', 'p.package_type', 'vouchers.status', DB::raw('count(*) as c'), DB::raw('sum(vouchers.price) as revenue'), DB::raw('sum(vouchers.data_gb) as gb'))
-            ->groupBy('p.id', 'p.name', 'p.package_type', 'vouchers.status')
+            ->select(
+                'p.id as plan_id', 'p.name as plan', 'p.package_type', 'vouchers.status',
+                DB::raw('CASE WHEN vouchers.activated_at IS NOT NULL THEN 1 ELSE 0 END as is_activated'),
+                DB::raw('count(*) as c'), DB::raw('sum(vouchers.price) as revenue'), DB::raw('sum(vouchers.data_gb) as gb')
+            )
+            ->groupBy('p.id', 'p.name', 'p.package_type', 'vouchers.status', DB::raw('CASE WHEN vouchers.activated_at IS NOT NULL THEN 1 ELSE 0 END'))
             ->get();
 
         // Cards come in two flavours a reseller prices and settles differently —
@@ -37,10 +41,11 @@ class ReportController extends Controller
 
         $summary = [];
         foreach ($rows as $r) {
+            $status = ($r->is_activated && in_array($r->status, ['active', 'sold'], true)) ? 'used' : $r->status;
             if (isset($byPackageType[$r->package_type])) {
                 $byPackageType[$r->package_type]['generated'] += (int) $r->c;
-                $byPackageType[$r->package_type]['by_status'][$r->status] += (int) $r->c;
-                if (in_array($r->status, ['sold', 'used', 'expired'], true)) {
+                $byPackageType[$r->package_type]['by_status'][$status] += (int) $r->c;
+                if (in_array($status, ['sold', 'used', 'expired'], true)) {
                     $byPackageType[$r->package_type]['sold'] += (int) $r->c;
                 }
             }
@@ -50,21 +55,21 @@ class ReportController extends Controller
                 'by_status' => ['new' => 0, 'sold' => 0, 'active' => 0, 'used' => 0, 'expired' => 0, 'disabled' => 0],
             ];
             $summary[$r->plan_id]['generated'] += (int) $r->c;
-            $summary[$r->plan_id]['by_status'][$r->status] = (int) $r->c;
+            $summary[$r->plan_id]['by_status'][$status] += (int) $r->c;
             // Only cards actually handed off to a customer count toward sales
             // — 'active' is printed but still sitting in stock.
-            if (in_array($r->status, ['sold', 'used', 'expired'], true)) {
+            if (in_array($status, ['sold', 'used', 'expired'], true)) {
                 $summary[$r->plan_id]['revenue'] += (float) $r->revenue;
                 $summary[$r->plan_id]['gb_sold'] += (float) $r->gb;
             }
             // "Used" = vouchers that are fully used/redeemed or expired.
-            if (in_array($r->status, ['used', 'expired'], true)) {
+            if (in_array($status, ['used', 'expired'], true)) {
                 $summary[$r->plan_id]['used'] += (int) $r->c;
             }
         }
         $totalsByStatus = ['new' => 0, 'sold' => 0, 'active' => 0, 'used' => 0, 'expired' => 0, 'disabled' => 0];
         foreach ($summary as &$s) {
-            $s['remaining'] = $s['generated'] - $s['used'];
+            $s['remaining'] = max(0, $s['generated'] - $s['used']);
             // "Sold" = actually handed off to a customer — 'active' is printed
             // but still sitting in stock (mirrors reseller-summary's stock math).
             $s['sold'] = $s['by_status']['sold'] + $s['by_status']['used'] + $s['by_status']['expired'];
@@ -138,9 +143,9 @@ class ReportController extends Controller
             ->select(
                 "{$groupColumn} as uid",
                 DB::raw('count(*) as generated'),
-                DB::raw("sum(case when status in ({$cardsSoldSet}) then 1 else 0 end) as sold"),
-                DB::raw("sum(case when status in ({$cardsSoldSet}) then data_gb else 0 end) as gb_sold"),
-                DB::raw("sum(case when status in ({$cardsSoldSet}) then price else 0 end) as sales_amount")
+                DB::raw("sum(case when status in ({$cardsSoldSet}) or activated_at is not null then 1 else 0 end) as sold"),
+                DB::raw("sum(case when status in ({$cardsSoldSet}) or activated_at is not null then data_gb else 0 end) as gb_sold"),
+                DB::raw("sum(case when status in ({$cardsSoldSet}) or activated_at is not null then price else 0 end) as sales_amount")
             )
             ->groupBy($groupColumn)
             ->get()

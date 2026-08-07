@@ -26,6 +26,7 @@ import ApiTokens from './pages/ApiTokens'
 import FinancialDashboard from './pages/FinancialDashboard'
 import ChartOfAccounts from './pages/ChartOfAccounts'
 import PaymentMethods from './pages/PaymentMethods'
+import OnlineUsers from './pages/OnlineUsers'
 
 function Protected({ children }: { children: JSX.Element }) {
   const { user, loading } = useAuth()
@@ -75,6 +76,7 @@ export default function App() {
       >
         <Route path="/" element={<Guard perm="dashboard"><Dashboard /></Guard>} />
         <Route path="/financial-dashboard" element={<Guard roles={['admin', 'reseller', 'seller']}><FinancialDashboard /></Guard>} />
+        <Route path="/online-users" element={<Guard roles={['admin', 'reseller', 'seller']}><OnlineUsers /></Guard>} />
         <Route path="/plans" element={<Navigate to="/plans/hotspot" replace />} />
         <Route path="/plans/hotspot" element={<Guard perm="view_plans"><HotspotPlans /></Guard>} />
         <Route path="/plans/pppoe" element={<Guard perm="view_plans"><PppoePlans /></Guard>} />

@@ -32,16 +32,18 @@ server default {
 
         # Voucher lifecycle check, straight from the `vouchers` table (not
         # radcheck) so it's correct even if the 5-min status-sync job
-        # hasn't caught up yet: reject expired/used/quota-exhausted vouchers
+        # Voucher lifecycle check, straight from the `vouchers` table (not
+        # radcheck) so it's correct even if the 5-min status-sync job
+        # hasn't caught up yet: reject expired/disabled/quota-exhausted vouchers
         # with a distinct Reply-Message before ever touching Cleartext-Password.
         # Volume is summed across all radacct rows for this username so a
         # voucher can be reconnected on repeatedly until its cap is hit —
         # activation/expiry are lazy (see post-auth) so first login is what
-        # starts the clock, not voucher generation.
+        # starts the clock and sets status to 'used'.
         update control {
             Tmp-String-0 := "%{sql: SELECT \
                 CASE \
-                    WHEN status = 'used' THEN 'used' \
+                    WHEN status = 'disabled' THEN 'disabled' \
                     WHEN status = 'expired' THEN 'expired' \
                     WHEN expires_at IS NOT NULL AND expires_at < NOW() THEN 'expired' \
                     WHEN data_gb IS NOT NULL AND data_gb > 0 AND ( \
@@ -59,15 +61,15 @@ server default {
         }
 
         switch &control:Tmp-String-0 {
-            case "expired" {
+            case "disabled" {
                 update reply {
-                    Reply-Message := "This voucher has expired. Please purchase a new one."
+                    Reply-Message := "This voucher is disabled. Please contact support."
                 }
                 reject
             }
-            case "used" {
+            case "expired" {
                 update reply {
-                    Reply-Message := "This voucher has already been used."
+                    Reply-Message := "This voucher has expired. Please purchase a new one."
                 }
                 reject
             }
@@ -120,18 +122,16 @@ server default {
     }
 
     post-auth {
-        # First login starts the clock: stamp activated_at and derive
-        # expires_at from validity_days, but only the first time (IFNULL) —
-        # status is left alone so the voucher can be reconnected until it
-        # actually expires or hits its data cap (see authorize, above). For
-        # MAC-bind vouchers, also capture the client's MAC on this same first
-        # login (IFNULL again) — every later login just compares against it.
+        # First login starts the clock: set status = 'used', stamp activated_at
+        # and derive expires_at from validity_days (IFNULL preserves initial timestamp).
+        # For MAC-bind vouchers, also capture the client's MAC on this same first login.
         update control {
             Tmp-String-1 := "%{sql: UPDATE vouchers SET \
+                status = 'used', \
                 activated_at = IFNULL(activated_at, NOW()), \
                 expires_at = IFNULL(expires_at, DATE_ADD(NOW(), INTERVAL validity_days DAY)), \
                 mac_address = CASE WHEN mac_bind = 1 THEN IFNULL(mac_address, NULLIF('%{Calling-Station-Id}', '')) ELSE mac_address END \
-                WHERE username = '%{User-Name}' AND status IN ('active','sold')}"
+                WHERE username = '%{User-Name}' AND status IN ('active','sold','used')}"
         }
 
         sql          # write radpostauth

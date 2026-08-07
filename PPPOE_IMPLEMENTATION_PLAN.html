@@ -1,0 +1,853 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+/* Standalone fallback: the artifact runtime renders mermaid natively; offline
+   we degrade the diagram to legible monospace instead of a blank box. */
+pre.mermaid{font-family:var(--mono);font-size:12px;line-height:1.6;text-align:left;
+  white-space:pre;color:var(--muted);margin:0}
+</style>
+</head>
+<body>
+<title>PPPoE Implementation Plan — Airlink 3.0</title>
+<style>
+:root{
+  --paper:#f6f8fa; --panel:#ffffff; --sunken:#eef2f6; --rail:#e9eef3;
+  --ink:#0f1720; --body:#2b3846; --muted:#5b6a7a; --faint:#8b99a8;
+  --rule:#d8e0e8; --rule-soft:#e7ecf1;
+  --accent:#00548f; --accent-deep:#003164; --accent-soft:#e4eef6;
+  --ok:#1a6b49; --ok-soft:#e3f3ec; --ok-rule:#a9d6c2;
+  --warn:#8a5712; --warn-soft:#fbf1de; --warn-rule:#e0c48d;
+  --crit:#9d2f2c; --crit-soft:#fbeceb; --crit-rule:#e3b2ae;
+  --shadow:0 1px 2px rgba(15,23,32,.05), 0 10px 28px -16px rgba(15,23,32,.18);
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,"JetBrains Mono","Cascadia Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --paper:#0a1017; --panel:#111a24; --sunken:#16212d; --rail:#0d151d;
+    --ink:#e2e9f1; --body:#c2cdda; --muted:#8998a8; --faint:#677686;
+    --rule:#22303e; --rule-soft:#1a2632;
+    --accent:#63b6e6; --accent-deep:#8ecdf2; --accent-soft:#0e2637;
+    --ok:#5cc196; --ok-soft:#0e2620; --ok-rule:#245243;
+    --warn:#dca95f; --warn-soft:#271f12; --warn-rule:#4d3c1f;
+    --crit:#e79289; --crit-soft:#2a1917; --crit-rule:#563230;
+    --shadow:0 1px 2px rgba(0,0,0,.5), 0 12px 32px -18px rgba(0,0,0,.8);
+  }
+}
+:root[data-theme="light"]{
+  --paper:#f6f8fa; --panel:#ffffff; --sunken:#eef2f6; --rail:#e9eef3;
+  --ink:#0f1720; --body:#2b3846; --muted:#5b6a7a; --faint:#8b99a8;
+  --rule:#d8e0e8; --rule-soft:#e7ecf1;
+  --accent:#00548f; --accent-deep:#003164; --accent-soft:#e4eef6;
+  --ok:#1a6b49; --ok-soft:#e3f3ec; --ok-rule:#a9d6c2;
+  --warn:#8a5712; --warn-soft:#fbf1de; --warn-rule:#e0c48d;
+  --crit:#9d2f2c; --crit-soft:#fbeceb; --crit-rule:#e3b2ae;
+  --shadow:0 1px 2px rgba(15,23,32,.05), 0 10px 28px -16px rgba(15,23,32,.18);
+}
+:root[data-theme="dark"]{
+  --paper:#0a1017; --panel:#111a24; --sunken:#16212d; --rail:#0d151d;
+  --ink:#e2e9f1; --body:#c2cdda; --muted:#8998a8; --faint:#677686;
+  --rule:#22303e; --rule-soft:#1a2632;
+  --accent:#63b6e6; --accent-deep:#8ecdf2; --accent-soft:#0e2637;
+  --ok:#5cc196; --ok-soft:#0e2620; --ok-rule:#245243;
+  --warn:#dca95f; --warn-soft:#271f12; --warn-rule:#4d3c1f;
+  --crit:#e79289; --crit-soft:#2a1917; --crit-rule:#563230;
+  --shadow:0 1px 2px rgba(0,0,0,.5), 0 12px 32px -18px rgba(0,0,0,.8);
+}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--body);
+  font-family:var(--sans);font-size:15px;line-height:1.65;-webkit-font-smoothing:antialiased}
+a{color:var(--accent);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 30%,transparent)}
+a:hover{border-bottom-color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:2px}
+strong{color:var(--ink);font-weight:650}
+
+/* masthead */
+.mast{position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:16px;
+  padding:11px 24px;background:color-mix(in srgb,var(--paper) 86%,transparent);
+  backdrop-filter:saturate(170%) blur(10px);border-bottom:1px solid var(--rule)}
+.mast b{font-size:15px;font-weight:680;letter-spacing:-.012em;color:var(--ink);white-space:nowrap}
+.mast .meta{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mast .sp{flex:1}
+.btn{font-family:var(--mono);font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;
+  padding:7px 13px;border:1px solid var(--rule);border-radius:3px;background:var(--panel);
+  color:var(--body);cursor:pointer;white-space:nowrap}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+
+/* shell */
+.shell{display:grid;grid-template-columns:250px minmax(0,1fr)}
+nav.toc{position:sticky;top:54px;height:calc(100vh - 54px);overflow-y:auto;
+  padding:26px 14px 60px 24px;border-right:1px solid var(--rule);background:var(--rail)}
+nav.toc .lbl{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--faint);padding:0 0 12px 2px}
+nav.toc a{display:flex;gap:9px;align-items:baseline;border:0;line-height:1.35;
+  font-size:13.5px;color:var(--body);padding:7px 6px 7px 2px;
+  border-top:1px solid var(--rule-soft)}
+nav.toc a:first-of-type{border-top:0}
+nav.toc a .n{font-family:var(--mono);font-size:10px;color:var(--faint);flex:none;
+  font-variant-numeric:tabular-nums;padding-top:1px}
+nav.toc a:hover{color:var(--accent)}
+nav.toc a:hover .n{color:var(--accent)}
+
+main{padding:0 40px 130px;min-width:0}
+.wrap{max-width:760px;margin:0 auto}
+
+/* sections */
+section{padding-top:54px;scroll-margin-top:64px}
+.eyebrow{font-family:var(--mono);font-size:10px;letter-spacing:.15em;text-transform:uppercase;
+  color:var(--accent);margin-bottom:9px}
+h1{font-size:31px;line-height:1.12;letter-spacing:-.022em;font-weight:700;color:var(--ink);
+  margin:0 0 14px;text-wrap:balance}
+h2{font-size:20px;line-height:1.25;letter-spacing:-.014em;font-weight:680;color:var(--ink);
+  margin:44px 0 12px;padding-top:16px;border-top:1px solid var(--rule);text-wrap:balance}
+h3{font-size:15px;font-weight:670;color:var(--ink);margin:30px 0 9px;letter-spacing:-.004em}
+h4{font-family:var(--mono);font-size:11.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--muted);margin:24px 0 8px}
+p{margin:0 0 13px}
+ul,ol{margin:0 0 15px;padding-left:21px}
+li{margin:0 0 6px}
+li::marker{color:var(--faint)}
+.lede{font-size:16.5px;line-height:1.6;color:var(--muted);margin-bottom:22px}
+hr{border:0;border-top:1px solid var(--rule);margin:32px 0}
+
+/* code */
+code{font-family:var(--mono);font-size:.85em;background:var(--sunken);
+  border:1px solid var(--rule-soft);padding:.08em .34em;border-radius:3px;white-space:nowrap}
+.code{overflow-x:auto;background:var(--panel);border:1px solid var(--rule);
+  border-left:3px solid var(--accent);border-radius:3px;margin:0 0 18px}
+.code pre{margin:0;padding:14px 16px}
+.code code{background:none;border:0;padding:0;white-space:pre;font-size:12.3px;
+  line-height:1.62;display:block;color:var(--body)}
+
+/* tables */
+.tw{overflow-x:auto;margin:0 0 20px;border:1px solid var(--rule);border-radius:3px;background:var(--panel)}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:8px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--rule-soft)}
+thead th{font-family:var(--mono);font-size:10px;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--muted);font-weight:600;background:var(--sunken);border-bottom:1px solid var(--rule);white-space:nowrap}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:hover{background:color-mix(in srgb,var(--accent) 4%,transparent)}
+td code{white-space:normal;word-break:break-word}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+
+/* decisions — settled spec, not options */
+.decisions{border:1px solid var(--accent-soft);border-left:3px solid var(--accent);
+  background:var(--accent-soft);border-radius:3px;padding:4px 0;margin:0 0 22px}
+.decisions .row{display:grid;grid-template-columns:150px minmax(0,1fr);gap:14px;
+  padding:10px 16px;border-bottom:1px solid color-mix(in srgb,var(--accent) 12%,transparent)}
+.decisions .row:last-child{border-bottom:0}
+.decisions dt{font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--accent);padding-top:3px}
+.decisions dd{margin:0;font-size:13.5px;color:var(--body)}
+.decisions dd b{color:var(--ink)}
+
+/* callouts, severity encoded in the stripe */
+.note{margin:0 0 18px;padding:12px 15px;border-radius:3px;font-size:13.5px;
+  background:var(--sunken);border:1px solid var(--rule);border-left:3px solid var(--muted)}
+.note.warn{background:var(--warn-soft);border-color:var(--warn-rule);border-left-color:var(--warn)}
+.note.crit{background:var(--crit-soft);border-color:var(--crit-rule);border-left-color:var(--crit)}
+.note.ok{background:var(--ok-soft);border-color:var(--ok-rule);border-left-color:var(--ok)}
+.note p{margin:0}
+.note p + p{margin-top:8px}
+.note .tag{font-family:var(--mono);font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;
+  display:block;margin-bottom:5px;color:var(--muted)}
+.note.warn .tag{color:var(--warn)}
+.note.crit .tag{color:var(--crit)}
+.note.ok .tag{color:var(--ok)}
+
+/* phases — ordered, because order is load-bearing */
+.phases{list-style:none;padding:0;margin:0 0 8px;counter-reset:ph -1}
+.phases li{display:grid;grid-template-columns:34px minmax(0,1fr);gap:14px;
+  padding:13px 0;border-top:1px solid var(--rule-soft);margin:0}
+.phases li:first-child{border-top:0}
+.phases .n{font-family:var(--mono);font-size:12px;font-variant-numeric:tabular-nums;
+  color:var(--accent);font-weight:600;padding-top:2px;
+  border-right:1px solid var(--rule);padding-right:10px;text-align:right}
+.phases .t{font-weight:640;color:var(--ink);font-size:14px;display:block;margin-bottom:2px}
+.phases .d{font-size:13px;color:var(--muted)}
+.phases li.paired{background:color-mix(in srgb,var(--warn) 7%,transparent);
+  margin-left:-10px;padding-left:10px;margin-right:-10px;padding-right:10px;border-radius:3px}
+
+/* rejected legacy — muted, because rejection is the point */
+.rejected td:first-child{color:var(--muted)}
+.rejected td:first-child code{opacity:.75}
+
+figure.dia{margin:0 0 22px;padding:18px 12px;background:var(--panel);border:1px solid var(--rule);
+  border-radius:3px;overflow-x:auto;text-align:center}
+figure.dia pre.mermaid{margin:0;display:inline-block;min-width:100%}
+figcaption{font-family:var(--mono);font-size:10.5px;letter-spacing:.05em;color:var(--faint);
+  margin-top:10px;text-transform:uppercase}
+
+@media (max-width:900px){
+  .shell{grid-template-columns:1fr}
+  nav.toc{position:static;height:auto;max-height:230px;border-right:0;
+    border-bottom:1px solid var(--rule);padding:18px 22px}
+  main{padding:0 22px 90px}
+  .mast .meta{display:none}
+  .decisions .row{grid-template-columns:1fr;gap:4px}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+@media print{
+  .mast,nav.toc{display:none}
+  .shell{display:block}
+  main{padding:0}
+  body{background:#fff;color:#000;font-size:10.5pt}
+  .tw,.code,figure.dia,.note,.phases li{break-inside:avoid}
+  h2,h3{break-after:avoid}
+  a{color:#000;border:0}
+}
+</style>
+
+<div class="mast">
+  <b>PPPoE Implementation Plan</b>
+  <span class="meta">Airlink 3.0 &middot; approved decisions &middot; 2026-08-07</span>
+  <span class="sp"></span>
+  <button class="btn" id="pr" type="button">Print / PDF</button>
+</div>
+
+<div class="shell">
+<nav class="toc">
+  <div class="lbl">Contents</div>
+  <a href="#context"><span class="n">00</span>Context &amp; decisions</a>
+  <a href="#arch"><span class="n">01</span>Architecture</a>
+  <a href="#schema"><span class="n">02</span>Schema</a>
+  <a href="#provision"><span class="n">03</span>RADIUS provisioning</a>
+  <a href="#services"><span class="n">04</span>Services &amp; lifecycle</a>
+  <a href="#radius"><span class="n">05</span>FreeRADIUS policy</a>
+  <a href="#api"><span class="n">06</span>API &amp; permissions</a>
+  <a href="#plans"><span class="n">07</span>Plans &amp; accounting</a>
+  <a href="#frontend"><span class="n">08</span>Frontend</a>
+  <a href="#legacy"><span class="n">09</span>Not carried over</a>
+  <a href="#sequence"><span class="n">10</span>Sequencing &amp; risks</a>
+  <a href="#verify"><span class="n">11</span>Verification</a>
+</nav>
+
+<main><div class="wrap">
+
+<section id="context">
+<div class="eyebrow">Plan &middot; 00</div>
+<h1>Implementing PPPoE in Airlink 3.0</h1>
+<p class="lede">Airlink 3.0 is a voucher-based <em>hotspot</em> billing system. PPPoE currently exists only as a label. This plan adds the real product — subscribers, provisioning, lifecycle enforcement and prepaid recharge billing — using this codebase's own patterns rather than porting the legacy design.</p>
+
+<h2>Where things actually stand</h2>
+<p>Three artifacts suggest PPPoE exists: a <code>pppoe</code> value in the <code>internet_plans.type</code> enum, a stale <code>PppoePlans.tsx</code> CRUD stub, and chart-of-accounts <code>4250 "PPPoE Sales Revenue"</code> — fed by a query that can never match a row. Nothing else.</p>
+<p>The structural gap is that <strong>there is no subscriber entity</strong>. In this codebase a "customer" <em>is</em> a voucher: anonymous, single-shot, lazily activated on first login. PPPoE needs the opposite — a named, long-lived account on a prepaid recharge cycle.</p>
+
+<h4>What already exists and gets reused</h4>
+<ul>
+<li>The <strong>rad* tables</strong> are already created by <code>2026_07_11_000008_create_freeradius_tables.php</code>, in the same <code>airlink</code> database FreeRADIUS reads.</li>
+<li>Host <strong>FreeRADIUS 3.2.5</strong> (systemd, <code>/etc/freeradius/3.0</code>, ports 1812/1813), one <code>sql</code> instance pointed at <code>127.0.0.1:3308</code> db <code>airlink</code>.</li>
+<li>A clean, well-commented <strong>unlang enforcement pattern</strong>: an inline <code>%{sql: SELECT CASE … END FROM vouchers}</code> state machine writing <code>control:Tmp-String-0</code>, then a <code>switch</code> giving each failure a distinct <code>Reply-Message</code>.</li>
+<li>Working <strong>CoA / Disconnect</strong> (<code>CoaService</code> + <code>CoaClient</code>) that resolves the NAS secret from <code>nas_devices.nasname</code> — works for PPPoE unchanged.</li>
+<li><code>WalletService</code>, the commission columns, the <code>SystemPermission</code> matrix, and the <code>Combobox</code>/<code>CustomSelect</code>/<code>Modal</code>/<code>Pagination</code> UI kit.</li>
+</ul>
+
+<h2>Decisions, settled</h2>
+<div class="decisions">
+  <div class="row"><dt>Billing</dt><dd><b>Prepaid recharge.</b> <code>expires_at</code> extended by the plan's <code>validity_days</code>, payment taken up front. No postpaid invoicing.</dd></div>
+  <div class="row"><dt>IP address</dt><dd><b>None via RADIUS.</b> MikroTik assigns from its own local <code>/ppp</code> pool. No <code>Framed-IP-Address</code>, no <code>Framed-Pool</code>, no <code>sqlippool</code>. The address still lands in <code>radacct.framedipaddress</code> for reporting.</dd></div>
+  <div class="row"><dt>Access</dt><dd><b>Admin + reseller only.</b> Sellers stay voucher-only.</dd></div>
+  <div class="row"><dt>Wallet</dt><dd><b>Full price debited</b> from the actor's wallet plus commission split, mirroring <code>VoucherService</code> / <code>VoucherController::sell</code> exactly.</dd></div>
+  <div class="row"><dt>Data caps</dt><dd><b>Unlimited only.</b> PPPoE plans are speed + validity.</dd></div>
+  <div class="row"><dt>Legacy data</dt><dd><b>Greenfield.</b> <code>legacy_id</code> columns are reserved so a <code>LegacyImport</code> extension is a straight field map later.</dd></div>
+</div>
+</section>
+
+<section id="arch">
+<div class="eyebrow">Plan &middot; 01</div>
+<h2>Architecture</h2>
+<p>The contract with FreeRADIUS stays exactly what it is today: <strong>rows in shared MySQL tables</strong>. A PPPoE subscriber gets per-user <code>radcheck</code>/<code>radreply</code> rows; lifecycle is gated in <code>authorize</code> by a state machine reading <code>pppoe_customers</code> directly — the same shape as the voucher one, so both products read identically.</p>
+
+<figure class="dia">
+<pre class="mermaid">
+graph TD
+    REQ["Access-Request<br/>User-Name + CHAP/MS-CHAP"]
+    V["%{sql:} voucher CASE<br/>→ control:Tmp-String-0"]
+    D{"Tmp-String-0<br/>empty?"}
+    VS["voucher switch<br/>expired / used / quota /<br/>daily_quota / nas / mac"]
+    P["%{sql:} pppoe_customers CASE<br/>→ control:Tmp-String-3"]
+    PS["pppoe switch<br/>expired / suspended / terminated /<br/>pending / nas / mac"]
+    SQL["-sql → radcheck / radreply"]
+    ACC["Access-Accept<br/>Mikrotik-Rate-Limit<br/>Acct-Interim-Interval"]
+
+    REQ --&gt; V
+    V --&gt; D
+    D --"no · is a voucher"--&gt; VS
+    D --"yes · not a voucher"--&gt; P
+    P --&gt; PS
+    VS --&gt; SQL
+    PS --&gt; SQL
+    SQL --&gt; ACC
+</pre>
+<figcaption>The discriminator, and why the hotspot path is untouched</figcaption>
+</figure>
+
+<h3>Two decisions worth stating up front</h3>
+
+<p><strong>Per-user rows, not <code>radgroupcheck</code> / <code>radgroupreply</code> / <code>radusergroup</code>.</strong> Those three tables exist but are referenced by zero PHP code. The legacy system used them; we will not. Populating <code>radusergroup</code> changes the query plan for <em>every</em> authentication on a live production server — the group queries in <code>queries.conf:199-217</code> are enabled and only free today because the table is empty. That is an unacceptable blast radius for a cosmetic normalisation. It also makes de-provisioning a three-table problem when the entire codebase's teardown idiom is a single <code>DB::table('radcheck')-&gt;where('username', …)-&gt;delete()</code>. Note the legacy dump itself has <code>radusergroup</code> rows but <strong>zero</strong> <code>radgroupreply</code>/<code>radgroupcheck</code> inserts — the mechanism was wired up and abandoned.</p>
+
+<p><strong>The discriminator is "the voucher query returned empty".</strong> The existing voucher <code>CASE</code> can never yield an empty string when a row exists — every branch returns a non-empty literal. So <em>empty <code>Tmp-String-0</code> ⟺ this User-Name is not a voucher</em>, and that is exactly when it is worth spending a query on <code>pppoe_customers</code>.</p>
+
+<div class="note ok">
+<span class="tag">Consequence</span>
+<p>The hotspot path is <strong>byte-for-byte unchanged</strong> — same two queries, same switch, same fall-through. The new block is never entered for a voucher.</p>
+</div>
+</section>
+
+<section id="schema">
+<div class="eyebrow">Backend &middot; 02</div>
+<h2>Schema</h2>
+
+<h3><code>2026_08_07_000000_create_pppoe_customers_table.php</code></h3>
+<div class="code"><pre><code>$table-&gt;id();
+$table-&gt;string('username', 64)-&gt;unique();          // matches radcheck.username width
+$table-&gt;string('password');
+$table-&gt;foreignId('plan_id')-&gt;constrained('internet_plans')-&gt;restrictOnDelete();
+$table-&gt;foreignId('owner_id')-&gt;constrained('users')-&gt;restrictOnDelete();
+$table-&gt;foreignId('reseller_id')-&gt;nullable()-&gt;constrained('users')-&gt;nullOnDelete();
+$table-&gt;string('customer_code', 40)-&gt;nullable()-&gt;unique();
+$table-&gt;string('full_name');
+$table-&gt;string('phone', 30)-&gt;nullable()-&gt;index();
+$table-&gt;string('address')-&gt;nullable();
+$table-&gt;text('notes')-&gt;nullable();
+$table-&gt;enum('status', ['pending','active','expired','suspended','terminated'])
+      -&gt;default('pending')-&gt;index();
+$table-&gt;timestamp('activated_at')-&gt;nullable();
+$table-&gt;timestamp('expires_at')-&gt;nullable()-&gt;index();
+$table-&gt;timestamp('last_recharged_at')-&gt;nullable();
+$table-&gt;string('bandwidth')-&gt;nullable();            // per-subscriber override, "20M/20M"
+$table-&gt;unsignedTinyInteger('simultaneous_use')-&gt;nullable();
+$table-&gt;decimal('contract_price', 12, 2)-&gt;nullable();
+$table-&gt;boolean('mac_bind')-&gt;default(false);
+$table-&gt;string('mac_address', 50)-&gt;nullable();
+$table-&gt;foreignId('nas_device_id')-&gt;nullable()-&gt;constrained('nas_devices')-&gt;nullOnDelete();
+$table-&gt;string('nas_ip')-&gt;nullable();               // denormalised nas_devices.nasname
+$table-&gt;unsignedBigInteger('legacy_id')-&gt;nullable()-&gt;unique();
+$table-&gt;timestamps();
+$table-&gt;index(['owner_id','status']);
+$table-&gt;index(['reseller_id','status']);
+$table-&gt;index(['status','expires_at']);</code></pre></div>
+
+<p>Anything the unlang state machine reads is <strong>denormalised onto the customer</strong> (<code>status</code>, <code>expires_at</code>, <code>nas_ip</code>, <code>mac_bind</code>, <code>mac_address</code>) so the auth-path query is a single-row unique-index lookup with no JOIN — same as the voucher one. <code>bandwidth</code>, <code>simultaneous_use</code> and <code>contract_price</code> are nullable per-subscriber overrides because field ops routinely grant one line a different speed without minting a plan. <code>status='pending'</code> means "row exists, no recharge taken, no radcheck rows, cannot dial".</p>
+
+<h3><code>2026_08_07_000001_create_pppoe_recharges_table.php</code></h3>
+<p>The revenue document — the role <code>vouchers</code> plays for hotspot. Money columns are deliberately identical to <code>vouchers</code> so <code>AccountController</code> can treat both uniformly.</p>
+<div class="code"><pre><code>$table-&gt;string('reference', 40)-&gt;unique();          // RCH260807ABCD
+$table-&gt;foreignId('customer_id')-&gt;constrained('pppoe_customers')-&gt;cascadeOnDelete();
+$table-&gt;foreignId('plan_id')-&gt;constrained('internet_plans')-&gt;restrictOnDelete();
+$table-&gt;foreignId('owner_id')-&gt;constrained('users')-&gt;restrictOnDelete();
+$table-&gt;foreignId('reseller_id')-&gt;nullable()-&gt;constrained('users')-&gt;nullOnDelete();
+$table-&gt;foreignId('collected_by')-&gt;constrained('users')-&gt;restrictOnDelete();
+$table-&gt;decimal('price', 12, 2)-&gt;default(0);
+$table-&gt;decimal('base_price', 12, 2)-&gt;default(0);
+$table-&gt;decimal('commission_percent', 5, 2)-&gt;nullable();
+$table-&gt;decimal('admin_share', 12, 2)-&gt;nullable();
+$table-&gt;decimal('reseller_share', 12, 2)-&gt;nullable();
+$table-&gt;string('payment_method', 40)-&gt;nullable();
+$table-&gt;unsignedInteger('validity_days')-&gt;default(0);   // snapshot: a plan edit never rewrites history
+$table-&gt;timestamp('period_start');
+$table-&gt;timestamp('period_end');
+$table-&gt;string('note')-&gt;nullable();
+$table-&gt;unsignedBigInteger('legacy_id')-&gt;nullable()-&gt;unique();
+$table-&gt;timestamps();</code></pre></div>
+
+<div class="note ok">
+<span class="tag">No enum migration needed</span>
+<p><code>wallet_transactions.type</code> already includes <code>deduct</code> and <code>commission</code> (<code>2026_07_30_000002_…</code>).</p>
+</div>
+
+<p><strong>Models:</strong> <code>PppoeCustomer.php</code>, <code>PppoeRecharge.php</code> (<code>$guarded = []</code>, casts, relations). Add <code>pppoeCustomers(): HasMany</code> to <code>InternetPlan.php</code>.</p>
+</section>
+
+<section id="provision">
+<div class="eyebrow">Backend &middot; 03</div>
+<h2>RADIUS provisioning</h2>
+<p><code>app/Services/PppoeRadiusService.php</code> — a <strong>sibling</strong> to <code>RadiusService.php</code>, not a second method on it. The two share only three of eight attribute decisions and take different model types. <em>Rejected:</em> <code>RadiusService::pppoeRows()</code>, which would make one 49-line class own two products with two attribute policies.</p>
+
+<div class="code"><pre><code>public const ACCT_INTERIM_INTERVAL = 300;
+
+public function rows(PppoeCustomer $customer): array
+{
+    $plan = $customer-&gt;plan;
+    $check = [
+        [... 'attribute' =&gt; 'Cleartext-Password', 'op' =&gt; ':=', 'value' =&gt; $customer-&gt;password],
+        [... 'attribute' =&gt; 'Simultaneous-Use',   'op' =&gt; ':=',
+             'value' =&gt; (string) ($customer-&gt;simultaneous_use ?: $plan-&gt;simultaneous_use ?: 1)],
+    ];
+    $reply = [
+        [... 'attribute' =&gt; 'Acct-Interim-Interval', 'op' =&gt; ':=',
+             'value' =&gt; (string) self::ACCT_INTERIM_INTERVAL],
+    ];
+    if ($bandwidth = ($customer-&gt;bandwidth ?: $plan-&gt;bandwidth)) {
+        $reply[] = [... 'attribute' =&gt; 'Mikrotik-Rate-Limit', 'op' =&gt; ':=', 'value' =&gt; $bandwidth];
+    }
+    return ['check' =&gt; $check, 'reply' =&gt; $reply];
+}</code></pre></div>
+
+<h4>Attribute rationale — write this into the class docblock</h4>
+<div class="tw"><table>
+<thead><tr><th>Attribute</th><th>List</th><th>Verdict</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td><code>Cleartext-Password</code></td><td>check</td><td>yes</td><td>MikroTik <code>/ppp</code> profiles default to <code>pap,chap,mschap1,mschap2</code>; only cleartext satisfies MS-CHAPv2.</td></tr>
+<tr><td><code>Simultaneous-Use</code></td><td>check</td><td>yes</td><td>Already enforced by the live <code>session { sql }</code> block at <code>default:837-845</code>. Works for PPPoE unchanged.</td></tr>
+<tr><td><code>Mikrotik-Rate-Limit</code></td><td>reply</td><td>yes</td><td>This is what actually shapes the line; overrides the router's <code>/ppp</code> profile.</td></tr>
+<tr><td><code>Acct-Interim-Interval := 300</code></td><td>reply</td><td><strong>yes</strong></td><td>New vs. the voucher pattern. A PPPoE session runs for weeks; without interim updates <code>radacct</code> octets stay 0 until disconnect, so the sessions and usage views would show nothing. The reference doc flags exactly this as a legacy defect (§08 B5).</td></tr>
+<tr><td><code>Framed-Protocol == PPP</code><br><code>Service-Type == Framed-User</code></td><td>check</td><td>no</td><td>Zero added security — the password already gates — and a hard failure against any NAS that omits them.</td></tr>
+<tr><td><code>Framed-Protocol</code> / <code>Service-Type</code></td><td>reply</td><td>no</td><td>MikroTik derives both for a PPPoE interface and ignores them in the reply. Two dead rows per subscriber.</td></tr>
+<tr><td><code>Framed-IP-Address</code> / <code>Framed-Pool</code></td><td>reply</td><td>no</td><td>Product decision. <code>sqlippool</code> stays commented out at <code>:794</code> and <code>:934</code>.</td></tr>
+<tr><td><code>Session-Timeout</code></td><td>reply</td><td>no</td><td>Would drop a permanent line on a timer. Expiry is enforced at re-auth plus CoA.</td></tr>
+<tr><td><code>Mikrotik-Total-Limit</code></td><td>reply</td><td>no</td><td>Not applicable — unlimited only. It is also a <em>per-session</em> counter on RouterOS, so it could never express a period cap.</td></tr>
+</tbody></table></div>
+
+<div class="note">
+<span class="tag">Invariant</span>
+<p><code>radcheck</code>/<code>radreply</code> rows exist for a <code>pppoe_customers.username</code> <strong>iff</strong> <code>status NOT IN ('pending','terminated')</code>.</p>
+</div>
+</section>
+
+<section id="services">
+<div class="eyebrow">Backend &middot; 04</div>
+<h2>Services &amp; lifecycle</h2>
+<p><code>PppoeCustomerService.php</code> and <code>PppoeRechargeService.php</code>. Each mutation in one <code>DB::transaction</code>; CoA fired <strong>after</strong> commit.</p>
+
+<div class="tw"><table>
+<thead><tr><th>Event</th><th>pppoe_customers</th><th>radcheck / radreply</th><th>CoA</th></tr></thead>
+<tbody>
+<tr><td>create</td><td>insert, <code>status='pending'</code></td><td>none</td><td>—</td></tr>
+<tr><td>first recharge</td><td><code>active</code>, <code>activated_at</code>, <code>expires_at</code>, <code>last_recharged_at</code></td><td>insert</td><td>—</td></tr>
+<tr><td>renewal</td><td><code>expires_at = GREATEST(expires_at, now()) + validity</code></td><td>delete + reinsert</td><td>only if previously expired/suspended</td></tr>
+<tr><td>suspend</td><td><code>suspended</code></td><td><strong>keep</strong></td><td>disconnect</td></tr>
+<tr><td>resume</td><td><code>expires_at &gt; now() ? 'active' : 'expired'</code></td><td>ensure present</td><td>—</td></tr>
+<tr><td>plan change</td><td><code>plan_id</code>, re-snapshot bandwidth</td><td>delete + reinsert</td><td>disconnect</td></tr>
+<tr><td>password change</td><td><code>password</code></td><td>delete + reinsert</td><td>disconnect</td></tr>
+<tr><td>terminate</td><td><code>terminated</code></td><td><strong>delete</strong></td><td>disconnect</td></tr>
+<tr><td>destroy</td><td>delete (cascades recharges)</td><td>delete</td><td>disconnect</td></tr>
+<tr><td>sweep: expiry</td><td><code>expired</code></td><td><strong>keep</strong></td><td>disconnect</td></tr>
+</tbody></table></div>
+
+<div class="note">
+<span class="tag">Judgement call</span>
+<p><strong>Keep radcheck rows on suspend and expiry</strong>, diverging from <code>VoucherController::disable()</code>. The <code>authorize</code> state machine gates before <code>radcheck</code> is ever consulted, so keeping them costs nothing, makes renewal a pure <code>UPDATE expires_at</code>, and lets the subscriber receive the <em>specific</em> <code>Reply-Message</code> (which MikroTik surfaces in its PPP log) instead of a bare unknown-user reject.</p>
+<p><em>Rejected:</em> mirroring the voucher delete-on-disable, which would churn 3–4 rows per subscriber per billing cycle for no gain.</p>
+</div>
+
+<h3>Renewal date rule</h3>
+<p>Renewing <strong>early stacks</strong> onto the remaining term; renewing <strong>after lapse restarts from today</strong>. The frontend preview must compute the same arithmetic.</p>
+
+<h3><code>PppoeRechargeService::recharge()</code></h3>
+<div class="code"><pre><code>recharge(User $actor, PppoeCustomer $customer, ?InternetPlan $plan,
+         ?float $customPrice, ?int $validityDays,
+         ?string $paymentMethod, ?string $note): PppoeRecharge</code></pre></div>
+<ol>
+<li><code>PppoeCustomer::whereKey($id)-&gt;lockForUpdate()-&gt;first()</code> — the <code>WalletService</code>/<code>GbService</code> idiom.</li>
+<li>Reject if <code>status === 'terminated'</code>, if <code>$plan-&gt;status !== 'active'</code>, or if <code>$plan-&gt;type !== 'pppoe'</code>.</li>
+<li><code>$price = $customPrice ?? $c-&gt;contract_price ?? $plan-&gt;selling_price</code>.</li>
+<li><code>WalletService::deduct($owner, $price, $reference, …)</code> — wallet only, never GB.</li>
+<li>Commission split copied character-for-character from <code>VoucherController::sell()</code> (<code>:398-427</code>): <code>admin_share</code>, <code>reseller_share</code>, credit admin <code>type='commission'</code>, <code>$reseller-&gt;increment('commission_due', $adminShare)</code>.</li>
+<li>Insert <code>pppoe_recharges</code>; update the customer; rebuild radius rows from <code>PppoeRadiusService::rows($c-&gt;fresh())</code>.</li>
+<li>After commit, CoA only if the prior status was <code>expired</code> or <code>suspended</code>.</li>
+</ol>
+
+<h3><code>SyncPppoeStatus</code> — <code>pppoe:sync-status</code></h3>
+<p>A new command, <strong>not</strong> an extension of <code>SyncVoucherStatus</code> — disjoint terminal states and different SQL; merging means one product's query failure takes the other's lifecycle down.</p>
+<p>Flip <code>active</code> subscribers past <code>expires_at</code> to <code>expired</code>, then <code>CoaService::disconnectUsername()</code> each. <code>CoaService</code>/<code>CoaClient</code> need no changes. Register in <code>routes/console.php</code>:</p>
+<div class="code"><pre><code>Schedule::command('pppoe:sync-status')-&gt;everyFiveMinutes()-&gt;withoutOverlapping();</code></pre></div>
+</section>
+
+<section id="radius">
+<div class="eyebrow">Backend &middot; 05</div>
+<h2>FreeRADIUS policy</h2>
+
+<div class="note crit">
+<span class="tag">Two files, kept in sync</span>
+<p><strong>1.</strong> <code>/etc/freeradius/3.0/sites-available/default</code> — <code>sites-enabled/default</code> is a symlink to it, so <em>editing this file is editing production</em>.</p>
+<p><strong>2.</strong> <code>/home/airlink_3.0/docker/freeradius/sites-enabled/default</code> — a hand-written 141-line minimal server, <strong>not a copy</strong>. Port the blocks by hand; do not attempt a patch.</p>
+</div>
+
+<h3><code>authorize</code></h3>
+<p>Insert immediately after the closing brace of the existing voucher <code>switch</code> (currently <code>:387</code>), before the <code># If you intend to use CUI …</code> comment. Match the surrounding comment density and style.</p>
+
+<div class="code"><pre><code>	#  Airlink v3.0 PPPoE subscriber lifecycle check.
+	#
+	#  Only reached when the voucher lookup above found nothing: a %{sql:}
+	#  SELECT over zero rows expands to the empty string, and the voucher CASE
+	#  can never itself return "" when a row exists. So an empty Tmp-String-0
+	#  means "this User-Name is not a voucher" — exactly when it is worth
+	#  spending a query on pppoe_customers. The hotspot path therefore runs the
+	#  same two queries it ran before this block existed; nothing about voucher
+	#  authentication changes.
+	#
+	#  Unlike vouchers, PPPoE is prepaid-recharge: expires_at is written by the
+	#  app when a recharge is taken, never lazily by this server. This section
+	#  performs NO writes — every Access-Request stays a pure read. The one
+	#  exception is the optional first-login MAC capture, signalled by
+	#  'ok_bind_mac' and executed once, in post-auth.
+	if (!&amp;control:Tmp-String-0 || &amp;control:Tmp-String-0 == "") {
+		update control {
+			Tmp-String-3 := "%{sql: SELECT \
+				CASE \
+					WHEN status = 'terminated' THEN 'terminated' \
+					WHEN status = 'suspended' THEN 'suspended' \
+					WHEN status = 'pending' THEN 'pending' \
+					WHEN status = 'expired' THEN 'expired' \
+					WHEN expires_at IS NULL OR expires_at &lt; NOW() THEN 'expired' \
+					WHEN nas_ip IS NOT NULL AND nas_ip &lt;&gt; '' \
+						AND nas_ip &lt;&gt; '%{NAS-IP-Address}' THEN 'nas_mismatch' \
+					WHEN mac_bind = 1 AND mac_address IS NOT NULL AND mac_address &lt;&gt; '' \
+						AND mac_address &lt;&gt; '%{Calling-Station-Id}' THEN 'mac_mismatch' \
+					WHEN mac_bind = 1 AND (mac_address IS NULL OR mac_address = '') \
+						THEN 'ok_bind_mac' \
+					ELSE 'ok' \
+				END \
+				FROM pppoe_customers WHERE username = '%{User-Name}' LIMIT 1}"
+		}
+
+		switch &amp;control:Tmp-String-3 {
+			case "expired" {
+				update reply {
+					Reply-Message := "Your subscription has expired. Please recharge to continue."
+				}
+				reject
+			}
+			case "suspended" {
+				update reply {
+					Reply-Message := "Your connection is suspended. Please contact your service provider."
+				}
+				reject
+			}
+			case "terminated" {
+				update reply {
+					Reply-Message := "This account has been closed."
+				}
+				reject
+			}
+			case "pending" {
+				update reply {
+					Reply-Message := "This account is not activated yet. Please complete your first recharge."
+				}
+				reject
+			}
+			case "nas_mismatch" {
+				update reply {
+					Reply-Message := "This account is not permitted on this router."
+				}
+				reject
+			}
+			case "mac_mismatch" {
+				update reply {
+					Reply-Message := "This account is locked to a different device."
+				}
+				reject
+			}
+		}
+	}</code></pre></div>
+
+<p>Two details that matter. The double test <code>if (!&amp;control:Tmp-String-0 || &amp;control:Tmp-String-0 == "")</code> is there because FreeRADIUS 3 is inconsistent about whether assigning <code>""</code> materialises a zero-length attribute or skips the assignment — both forms are covered. And the <code>switch</code> has <strong>no <code>default</code></strong>: an unknown User-Name yields <code>""</code> from both queries, matches no case, and falls through to <code>-sql</code> → no radcheck rows → normal reject, same as today.</p>
+
+<h3><code>post-auth</code></h3>
+<p>Insert after the existing voucher <code>update control { Tmp-String-1 := … }</code> block (ends <code>:966</code>), before <code>-sql</code>.</p>
+<div class="code"><pre><code>	#  Airlink v3.0 PPPoE: the only write this server ever makes against
+	#  pppoe_customers. Runs at most once per subscriber — authorize only
+	#  returns 'ok_bind_mac' while mac_bind = 1 and mac_address is still empty.
+	#  The Tmp-String-3 existence test keeps this inert for hotspot requests.
+	if (&amp;control:Tmp-String-3 &amp;&amp; &amp;control:Tmp-String-3 == "ok_bind_mac") {
+		update control {
+			Tmp-String-4 := "%{sql: UPDATE pppoe_customers SET \
+				mac_address = NULLIF('%{Calling-Station-Id}', '') \
+				WHERE username = '%{User-Name}' AND mac_bind = 1 \
+					AND (mac_address IS NULL OR mac_address = '')}"
+		}
+	}</code></pre></div>
+
+<div class="note">
+<span class="tag">Deliberate divergence</span>
+<p>Not repeating the voucher pattern of doing <code>UPDATE</code>s from <code>authorize</code>. That turns every Access-Request into a write, takes a row lock on the auth hot path, and serialises reconnect storms after a NAS reboot. PPPoE has no need for it — <code>expires_at</code> is authoritative from the app at recharge time, not derived at first login.</p>
+</div>
+
+<p><code>Tmp-String-0/1/2</code> are taken; <code>3</code> and <code>4</code> are free. Nothing else in the RADIUS tree changes — <code>mods-enabled/sql</code>, <code>queries.conf</code>, <code>clients.conf</code>, <code>radiusd.conf</code> and <code>dictionary</code> are all untouched.</p>
+</section>
+
+<section id="api">
+<div class="eyebrow">Backend &middot; 06</div>
+<h2>API &amp; permissions</h2>
+
+<p><code>PppoeCustomerController</code> — shaped like <code>BandwidthController</code> (private <code>validateData()</code>), scoped like <code>VoucherController</code> (private <code>scopedQuery()</code> / <code>canAccess()</code>): <code>index, show, store, update, destroy, suspend, resume, changePlan, disconnect, sessions, exportCsv</code>. Plus <code>PppoeRechargeController</code> — <code>index</code>, <code>store</code>.</p>
+
+<div class="code"><pre><code>// PPPoE subscribers — admin + reseller only. The role: gate is deliberate
+// belt-and-braces on top of permission:, so a well-meaning flip of a
+// system_permissions row can never hand PPPoE to the seller tier.
+Route::middleware('role:admin,reseller')-&gt;group(function () {
+    Route::get   ('/pppoe/customers',                       [PppoeCustomerController::class,'index'])     -&gt;middleware('permission:view_pppoe');
+    Route::get   ('/pppoe/customers/summary',               [PppoeCustomerController::class,'summary'])   -&gt;middleware('permission:view_pppoe');
+    Route::get   ('/pppoe/customers/export',                [PppoeCustomerController::class,'exportCsv']) -&gt;middleware('permission:view_pppoe');
+    Route::get   ('/pppoe/sessions',                        [PppoeCustomerController::class,'liveSessions'])-&gt;middleware('permission:view_pppoe');
+    Route::get   ('/pppoe/recharges',                       [PppoeRechargeController::class,'index'])     -&gt;middleware('permission:view_pppoe');
+    Route::post  ('/pppoe/customers',                       [PppoeCustomerController::class,'store'])     -&gt;middleware('permission:create_pppoe_customer');
+    Route::get   ('/pppoe/customers/{customer}',            [PppoeCustomerController::class,'show'])      -&gt;middleware('permission:view_pppoe');
+    Route::get   ('/pppoe/customers/{customer}/sessions',   [PppoeCustomerController::class,'sessions'])  -&gt;middleware('permission:view_pppoe');
+    Route::put   ('/pppoe/customers/{customer}',            [PppoeCustomerController::class,'update'])    -&gt;middleware('permission:create_pppoe_customer');
+    Route::patch ('/pppoe/customers/{customer}/plan',       [PppoeCustomerController::class,'changePlan'])-&gt;middleware('permission:create_pppoe_customer');
+    Route::patch ('/pppoe/customers/{customer}/suspend',    [PppoeCustomerController::class,'suspend'])   -&gt;middleware('permission:suspend_pppoe_customer');
+    Route::patch ('/pppoe/customers/{customer}/resume',     [PppoeCustomerController::class,'resume'])    -&gt;middleware('permission:suspend_pppoe_customer');
+    Route::post  ('/pppoe/customers/{customer}/disconnect', [PppoeCustomerController::class,'disconnect'])-&gt;middleware('permission:suspend_pppoe_customer');
+    Route::post  ('/pppoe/customers/{customer}/recharge',   [PppoeRechargeController::class,'store'])     -&gt;middleware('permission:recharge_pppoe_customer');
+    Route::delete('/pppoe/customers/{customer}',            [PppoeCustomerController::class,'destroy'])   -&gt;middleware('permission:delete_pppoe_customer');
+});</code></pre></div>
+
+<div class="note warn">
+<span class="tag">Route order</span>
+<p>Declare <code>/pppoe/customers/summary</code>, <code>/export</code> and <code>/pppoe/recharges</code> <strong>before</strong> <code>/pppoe/customers/{customer}</code> — the flat routes file matches in declaration order, the same trap the existing <code>/vouchers/export</code> ordering avoids.</p>
+</div>
+
+<h3>Permission keys</h3>
+<p>Append to <code>$perms</code> in <code>DatabaseSeeder.php:49-71</code>. The existing <code>foreach</code> inserts missing rows without clobbering toggles, so <code>php artisan db:seed</code> is safe on a live database.</p>
+<div class="tw"><table>
+<thead><tr><th>feature</th><th>category</th><th class="num">admin</th><th class="num">reseller</th><th class="num">seller</th></tr></thead>
+<tbody>
+<tr><td><code>view_pppoe</code></td><td>Navigation</td><td class="num">1</td><td class="num">1</td><td class="num">0</td></tr>
+<tr><td><code>create_pppoe_customer</code></td><td>PPPoE</td><td class="num">1</td><td class="num">1</td><td class="num">0</td></tr>
+<tr><td><code>recharge_pppoe_customer</code></td><td>PPPoE</td><td class="num">1</td><td class="num">1</td><td class="num">0</td></tr>
+<tr><td><code>suspend_pppoe_customer</code></td><td>PPPoE</td><td class="num">1</td><td class="num">1</td><td class="num">0</td></tr>
+<tr><td><code>delete_pppoe_customer</code></td><td>PPPoE</td><td class="num">1</td><td class="num">0</td><td class="num">0</td></tr>
+</tbody></table></div>
+
+<div class="note warn">
+<span class="tag">Easy to miss</span>
+<p>Also add the reseller-allowed keys to the hardcoded fallback lists in <code>SystemPermission.php:46-52</code>, or a not-yet-reseeded database silently denies resellers.</p>
+</div>
+
+<p><code>IntegrationTokenAbilities.php</code> — add <strong>read only</strong>: <code>'pppoe.read' =&gt; 'View PPPoE subscribers'</code>. Write methods check <code>tokenCan('pppoe.write')</code>/<code>('pppoe.recharge')</code>, deliberately absent from <code>ALL</code> — same policy as <code>vouchers.generate</code>: a scoped third-party token must never spend wallet balance.</p>
+</section>
+
+<section id="plans">
+<div class="eyebrow">Backend &middot; 07</div>
+<h2>Plans &amp; accounting</h2>
+
+<h3><code>PlanController</code> — make PPPoE plans first-class</h3>
+<ul>
+<li><strong><code>:91</code> and <code>:160</code></strong> — drop the <code>if ($request-&gt;input('type') === 'hotspot')</code> gate around the price defaults; apply them to every type.</li>
+<li><strong><code>validateData()</code> at <code>:236</code></strong> — change the signature to <code>(Request $request, ?InternetPlan $plan = null)</code>, then derive the type from payload-or-stored: <code>$type = $request-&gt;input('type') ?? $plan?-&gt;type ?? 'hotspot'</code>. Rules become <code>plan_type =&gt; $isPppoe ? 'in:unlimited' : …</code> and <code>validity_days =&gt; $isPppoe ? 'min:1' : 'min:0'</code>. After validation, for PPPoE <code>unset($data['time_limit'], $data['daily_data_gb'], $data['data_gb'])</code>.</li>
+<li><strong><code>store()</code>/<code>update()</code></strong> — force <code>$data['package_type'] = 'wallet'</code> for PPPoE: billed by prepaid recharge, never metered out of a GB allocation.</li>
+<li><strong><code>update()</code> <code>:154</code> / <code>destroy()</code> <code>:220</code></strong> — the wallet guard would then lock a reseller out of a PPPoE plan they just created. Exempt <code>$plan-&gt;type === 'pppoe' &amp;&amp; $plan-&gt;created_by === $request-&gt;user()-&gt;id</code>.</li>
+<li><strong><code>index()</code> <code>:27-59</code></strong> — the seller branch must add <code>-&gt;where('type', '!=', 'pppoe')</code>, or PPPoE plans surface in a seller's voucher-generation picker where they cannot be used.</li>
+<li><strong><code>destroy()</code> <code>:216</code></strong> — add a referential guard on <code>$plan-&gt;pppoeCustomers()-&gt;exists()</code>.</li>
+</ul>
+
+<div class="note ok">
+<span class="tag">Bug fixed in passing</span>
+<p><code>$isHotspot</code> is currently computed from the <em>request</em>, so a PUT to an existing hotspot plan that omits <code>type</code> flips <code>selling_price</code> from <code>nullable</code> to <code>required</code>. The payload-or-stored fallback above fixes it; add a regression test.</p>
+</div>
+
+<h3><code>AccountController</code> — remap account 4250</h3>
+<p><code>4250 "PPPoE Sales Revenue"</code> is fed at <code>:791-794</code> by <code>Voucher::whereHas('plan', type=pppoe)-&gt;sum('price')</code> — a mapping that can only ever match hotspot stock generated against a mis-typed plan, since a PPPoE subscriber is never a <code>vouchers</code> row.</p>
+<p>Replace the source with <code>PppoeRecharge</code>: admin sums <code>whereNull('reseller_id')-&gt;sum('price')</code>; reseller sums <code>where('reseller_id', $actor-&gt;id)-&gt;sum(COALESCE(reseller_share, price))</code>; seller gets zero. Add <code>'pppoe_revenue_applicable' =&gt; ! $actor-&gt;isSeller()</code> next to the existing <code>commission_revenue_applicable</code> flag at <code>:1019</code>. <code>$totalOperatingRevenue</code> and <code>$directVoucherSalesCash</code> at <code>:854</code>/<code>:888</code> already add <code>$pppoeRevenue</code> and need no edit.</p>
+<p><code>commissionReport()</code> <code>:445-458</code> reads <code>$earnedByPeriod</code> only from <code>vouchers.admin_share</code>; union in <code>PppoeRecharge</code> so an admin's commission report doesn't under-report. <code>$collectedByPeriod</code> needs no change — <code>Payment type='commission'</code> settles both products. Document that <code>1150 "Customer Accounts Receivable"</code> stays at zero: prepaid means a subscriber can never owe money.</p>
+</section>
+
+<section id="frontend">
+<div class="eyebrow">Frontend &middot; 08</div>
+<h2>Frontend</h2>
+
+<div class="tw"><table>
+<thead><tr><th>Action</th><th>Files</th></tr></thead>
+<tbody>
+<tr><td>Create</td><td><code>pages/PppoeCustomers.tsx</code>, <code>pages/PppoeSessionsTab.tsx</code>, <code>components/PppoeRechargeModal.tsx</code></td></tr>
+<tr><td>Modify</td><td><code>pages/PppoePlans.tsx</code> (full rewrite), <code>App.tsx</code>, <code>layouts/AppShell.tsx</code>, <code>lib/format.ts</code></td></tr>
+<tr><td>Untouched</td><td><code>ui.tsx</code>, <code>cache.ts</code>, <code>api.ts</code>, <code>auth.tsx</code>, <code>index.css</code>, <code>HotspotPlans.tsx</code></td></tr>
+</tbody></table></div>
+
+<div class="note crit">
+<span class="tag">Branch off the working tree, not HEAD</span>
+<p><code>HotspotPlans.tsx</code> has uncommitted changes fixing two real ownership bugs — reseller self-delegation defaulting to the wrong owner, and <code>openEdit</code> silently reassigning a plan on save. Carry both forward into anything cloned from it.</p>
+</div>
+
+<h3><code>PppoeCustomers.tsx</code></h3>
+<p>Tabbed (<code>subscribers | sessions</code>) with a <code>defaultTab</code> prop, following <code>&lt;FundAllocation defaultTab="wallet" /&gt;</code>. Structure mirrors <code>HotspotPlans.tsx</code>: <code>PageTitle</code> with action → tab strip → four <code>StatCard</code>s (Total / Active / Expiring in 7d / Expired+Suspended) → filter bar → <code>GlassCard</code> table of <code>motion.tr</code> → <code>Pagination</code>.</p>
+
+<p><strong>Nine columns</strong>, chosen so an operator can triage without opening a row: Subscriber (username + name/phone sub-line) · Plan (name + bandwidth) · Status (pill + online dot) · Expiry (AD date, BS sub-line, days-remaining pill) · Connection (framed IP + MAC) · Last Session · Data Used · Owner (<em>admin only</em> — a reseller's list is already owner-scoped) · Actions.</p>
+
+<p><strong>Row actions</strong> as icon buttons: Recharge · Edit · Suspend/Resume · Disconnect (disabled when offline) · Delete · Detail. All destructive ones through <code>ConfirmModal</code> — and let <code>onConfirm</code> <em>throw</em> rather than catching, since <code>ConfirmModal</code> owns and renders its own error state.</p>
+
+<p><strong>Create/edit modal</strong>, one for both, three internal tabs: <code>identity</code> (username, password with reveal, name, phone, address) · <code>service</code> (plan <code>Combobox</code>, status, owner delegation) · <code>access</code> (NAS restriction narrowed by owner, MAC binding mode, concurrent sessions override).</p>
+
+<p><strong>Subscriber detail is a modal, not a route</strong> — <code>App.tsx</code> has zero param routes today, and one would break both the "cache key = URL" convention and <code>AppShell</code>'s <code>pathname === c.to</code> nav matching.</p>
+
+<h3><code>PppoeRechargeModal.tsx</code></h3>
+<p>Extracted to <code>components/</code> because it renders from two surfaces and is the only money-moving control in the feature — <code>FundModal.tsx</code> is the exact precedent. Read-only summary → plan <code>Combobox</code> → periods → computed preview (amount due, new expiry, and for a reseller wallet before → after, rendered rose with submit disabled when negative) → payment method → note.</p>
+<div class="code"><pre><code>const base = c.expires_at &amp;&amp; new Date(c.expires_at) &gt; new Date()
+  ? new Date(c.expires_at) : new Date()
+const next = new Date(base)
+next.setDate(next.getDate() + plan.validity_days * periods)</code></pre></div>
+
+<h3><code>PppoePlans.tsx</code> — rewrite to parity</h3>
+<p><strong>Carries over:</strong> <code>CustomSelect</code> everywhere (kills the native <code>&lt;select&gt;</code>s), icon actions (kills the text links), the filter bar, admin owner filter, the 3-tab modal, <code>simultaneous_use</code>, NAS restriction, imperative validation, and the two working-tree ownership fixes.</p>
+<p><strong>Does not apply to PPPoE:</strong></p>
+<ol>
+<li><code>package_type</code> (Wallet/GB) — GB packages decrement a seller's GB stock when minting vouchers; PPPoE has no stock. Drop the control; still send <code>package_type: 'wallet'</code> so the schema needs no change.</li>
+<li>Plan-level <code>mac_bind</code> — hotspot binds a <em>voucher</em> to the first device; PPPoE identity is the CPE credential, so MAC binding moves to the <em>subscriber</em> form.</li>
+<li><code>daily_data_gb</code> / <code>data_gb</code> and the <code>data</code>/<code>daily_data</code> quota types — unlimited-only decision.</li>
+<li>The "Seller Plan" tab and Seller GB Balance column — no seller touches PPPoE.</li>
+<li><code>plan_type: 'time'</code> / <code>time_limit</code> — PPPoE validity is days, not session minutes.</li>
+</ol>
+<p><strong>Tightened:</strong> bandwidth becomes effectively mandatory (it <em>is</em> the rate-limit attribute); <code>validity_days</code> gets a "30 = one month" hint.</p>
+
+<h3>Nav &amp; routes</h3>
+<div class="code"><pre><code>// AppShell.tsx — delete the /plans/pppoe child at :43, add this group
+{ label: 'PPPoE', icon: Router, roles: ['admin','reseller'], color: 'text-indigo-500',
+  perm: ['view_pppoe','view_plans'], children: [
+    { to: '/pppoe/customers', label: 'Subscribers',     roles: ['admin','reseller'], icon: Users2,   perm: 'view_pppoe' },
+    { to: '/pppoe/sessions',  label: 'Active Sessions', roles: ['admin','reseller'], icon: Activity, perm: 'view_pppoe' },
+    { to: '/plans/pppoe',     label: 'PPPoE Plans',     roles: ['admin','reseller'], icon: Package,  perm: 'view_plans' },
+  ]},
+
+// App.tsx
+&lt;Route path="/pppoe"           element={&lt;Navigate to="/pppoe/customers" replace /&gt;} /&gt;
+&lt;Route path="/pppoe/customers" element={&lt;Guard perm="view_pppoe" roles={['admin','reseller']}&gt;&lt;PppoeCustomers /&gt;&lt;/Guard&gt;} /&gt;
+&lt;Route path="/pppoe/sessions"  element={&lt;Guard perm="view_pppoe" roles={['admin','reseller']}&gt;&lt;PppoeCustomers defaultTab="sessions" /&gt;&lt;/Guard&gt;} /&gt;
+&lt;Route path="/plans/pppoe"     element={&lt;Guard perm="view_plans" roles={['admin','reseller']}&gt;&lt;PppoePlans /&gt;&lt;/Guard&gt;} /&gt;</code></pre></div>
+
+<div class="note crit">
+<span class="tag">Existing drift to fix</span>
+<p><code>App.tsx:80</code> guards <code>/plans/pppoe</code> with <code>perm="view_plans"</code> and <strong>no <code>roles</code></strong>, while the nav gates it to admin. Since <code>view_plans</code> is seeded <code>1</code> for sellers, a seller typing the URL gets the page today.</p>
+<p><code>can()</code> in <code>lib/auth.tsx</code> <strong>fails open</strong> when <code>user.permissions</code> is absent, so the <code>roles</code> array is the only hard guard against sellers. Every PPPoE route must carry it — never <code>perm</code> alone.</p>
+</div>
+
+<h3>Data fetching</h3>
+<p>The cache key <strong>is</strong> the URL. Copy the render-time page-reset ref pattern from <code>Vouchers.tsx</code> (not a <code>useEffect</code>), or the first request after every filter change fires against a stale page. Search debounced 400 ms; selects apply immediately.</p>
+<div class="tw"><table>
+<thead><tr><th>Key</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td><code>pppoe/customers?page=${page}&amp;${custKey}</code></td><td>server-paginated</td></tr>
+<tr><td><code>pppoe/customers/summary?${custKey}</code></td><td>stat tiles</td></tr>
+<tr><td><code>pppoe/sessions?page=${p}&amp;${sessKey}</code></td><td><code>staleTime: 5000</code> + manual Refresh — nothing in this codebase polls</td></tr>
+<tr><td><code>pppoe/customers/${id}/sessions?page=${p}</code></td><td>detail modal history</td></tr>
+<tr><td><code>plans?type=pppoe&amp;active_only=1</code></td><td>shared by the customer form and the recharge modal</td></tr>
+<tr><td><code>bandwidths</code>, <code>nas</code></td><td><strong>same keys as <code>HotspotPlans.tsx:24-25</code></strong> — free cache hits</td></tr>
+</tbody></table></div>
+<p>After a <strong>recharge</strong>: <code>refetch(); invalidateCache('pppoe'); invalidateCache('dashboard'); invalidateCache('wallet'); invalidateCache('transactions'); invalidateCache('accounts'); refresh()</code> — <code>refresh()</code> from <code>useAuth</code> re-reads <code>/me</code> so the sidebar wallet badge reflects the debit. <code>PppoePlans</code> save/delete should additionally <code>invalidateCache('pppoe')</code>, since plan name and price are denormalised into customer rows.</p>
+
+<h3>Status &amp; expiry language</h3>
+<p>Suspension always beats the countdown: <code>suspended</code> → secondary · no <code>expires_at</code> → info "Not activated" · past expiry → danger · ≤7 days → warning "{d}d left" · else success. <strong>Online is orthogonal to status</strong> (an active subscriber can be offline), so it is an inline pulsing dot beside the pill, not a pill.</p>
+<p>Two small additions to <code>lib/format.ts</code> (not <code>ui.tsx</code>): <code>bsDate()</code> wrapping the existing <code>adToBs</code>/<code>formatBsString</code> — no page converts AD→BS today, but expiry dates must read in BS for Nepali operators — and <code>statusPill.suspended</code>. <code>daysLeft()</code>/<code>expiryTone()</code> stay local to the page; single consumer.</p>
+<p>Empty states branch on the same <code>isFiltered</code> boolean, so a filtered-to-zero list never reads as "you have no customers". <strong>Render <code>error</code> from <code>useQuery</code></strong> as a danger pill above the card — <code>HotspotPlans.tsx</code> silently swallows it; don't replicate that.</p>
+</section>
+
+<section id="legacy">
+<div class="eyebrow">Reference &middot; 09</div>
+<h2>Legacy behaviours not carried over</h2>
+<p>The reference document's §08 catalogue, and what this plan does instead. Each was a deliberate decision, not an oversight.</p>
+<div class="tw"><table class="rejected">
+<thead><tr><th>Legacy behaviour</th><th>Decision</th></tr></thead>
+<tbody>
+<tr><td><code>Expire-After</code> = <code>validity × 86400</code> ignoring <code>validity_unit</code> — a 24-hour plan lasts 24 <em>days</em></td><td>Not reproduced. <code>validity_days</code> is unambiguous; expiry is a real <code>expires_at</code> timestamp.</td></tr>
+<tr><td><code>expire_on_login</code> sqlcounter measuring from <code>MAX(acctstarttime)</code> — session age, not account age</td><td>Not reproduced. Expiry is a date the app owns. The dead counters and the colliding <code>ATTRIBUTE Expire-After 16</code> dictionary line stay untouched but unused.</td></tr>
+<tr><td><code>Mikrotik-Rate-Limit</code> hardcoding the <code>M</code> suffix</td><td>Not reproduced — <code>bandwidths.rate_*_unit</code> already drives a unit-aware builder.</td></tr>
+<tr><td>RADIUS rows never deleted; duplicates accumulate; last row wins</td><td>Not reproduced. Provisioning is delete-then-insert with a stated invariant.</td></tr>
+<tr><td><code>radusergroup</code> / <code>radgroupreply</code> name-string joins</td><td>Not reproduced — per-user rows only.</td></tr>
+<tr><td>Deactivation flag with no auth effect</td><td>Fixed by design: <code>status</code> is read by the state machine on every auth.</td></tr>
+<tr><td>Hardcoded plan-name blocklists in unlang</td><td>Not reproduced. Per-subscriber <code>nas_ip</code> restriction covers the real need.</td></tr>
+<tr><td>Plaintext passwords</td><td><strong>Unchanged</strong> — <code>Cleartext-Password</code> is a hard requirement for CHAP/MS-CHAPv2. Same as today's vouchers.</td></tr>
+</tbody></table></div>
+</section>
+
+<section id="sequence">
+<div class="eyebrow">Delivery &middot; 10</div>
+<h2>Sequencing &amp; risks</h2>
+
+<ol class="phases">
+<li><span class="n">0</span><span><span class="t">Baseline</span><span class="d"><code>sudo freeradius -CX</code> capture; <code>cp sites-available/default sites-available/default.bak-YYYYMMDD</code>. No production impact.</span></span></li>
+<li><span class="n">1</span><span><span class="t">Data &amp; services</span><span class="d">Migrations, models, <code>PppoeRadiusService</code>, <code>PppoeCustomerService</code>, <code>PppoeRechargeService</code>, feature tests. <strong>Inert</strong> — new tables, no route reaches them.</span></span></li>
+<li class="paired"><span class="n">2</span><span><span class="t">API surface</span><span class="d">Controllers, routes, permission seeds and <code>SystemPermission</code> fallbacks, <code>IntegrationTokenAbilities</code>.</span></span></li>
+<li class="paired"><span class="n">3</span><span><span class="t">RADIUS policy</span><span class="d"><code>sites-available/default</code> + <code>docker/freeradius/sites-enabled/default</code>. The live-auth risk.</span></span></li>
+<li><span class="n">4</span><span><span class="t">Lifecycle sweep</span><span class="d"><code>SyncPppoeStatus</code> + <code>routes/console.php</code>. No production impact.</span></span></li>
+<li><span class="n">5</span><span><span class="t">Plans &amp; accounting</span><span class="d"><code>PlanController</code> changes, 4250 remap, commission union. Reporting only.</span></span></li>
+<li><span class="n">6</span><span><span class="t">Frontend</span><span class="d"><code>format.ts</code> → nav/routes → <code>PppoePlans</code> rewrite → <code>PppoeCustomers</code> → recharge modal → sessions tab.</span></span></li>
+</ol>
+
+<div class="note crit">
+<span class="tag">Phases 2 and 3 must ship together</span>
+<p>In the gap, <code>radcheck</code> rows exist for PPPoE subscribers and FreeRADIUS's plain <code>-sql</code> module will happily authenticate them <strong>with zero lifecycle enforcement</strong> — an expired subscriber gets online free. If they cannot ship together, hold the <code>radcheck</code> write behind a config flag until Phase 3 lands.</p>
+</div>
+
+<h3>Phase 3 deployment procedure</h3>
+<ol>
+<li>Edit <code>/etc/freeradius/3.0/sites-available/default</code> — <code>sites-enabled/default</code> symlinks to it, so this <em>is</em> production.</li>
+<li>Hand-port both blocks into <code>/home/airlink_3.0/docker/freeradius/sites-enabled/default</code>.</li>
+<li><code>sudo freeradius -CX</code> → must end <code>Configuration appears to be OK</code>. <strong>Do not proceed otherwise.</strong></li>
+<li><code>sudo systemctl restart freeradius</code> — a reload does not re-read virtual-server policy.</li>
+<li>Run the <code>radtest</code> checklist below, <strong>hotspot cases first</strong>.</li>
+<li>Rollback: restore the <code>.bak</code> and restart.</li>
+</ol>
+
+<div class="note crit">
+<span class="tag">Do not use the restart trigger for this</span>
+<p><code>freeradius-restart-watch.service</code> runs a bare <code>systemctl restart</code> with <strong>no <code>-C</code> preflight</strong>. A syntax error there means the daemon fails to start and every hotspot customer loses auth, with no automatic recovery. That path is for <code>clients.conf</code>, which <code>ClientsConfService</code> generates mechanically.</p>
+</div>
+
+<h3>Risks</h3>
+<div class="tw"><table>
+<thead><tr><th>#</th><th>Risk</th><th>Mitigation</th></tr></thead>
+<tbody>
+<tr><td><strong>R0</strong></td><td>The Phase-2/3 gap — unenforced PPPoE auth</td><td>Ship together, or flag-gate the radcheck write.</td></tr>
+<tr><td><strong>R1</strong></td><td>A mis-typed <code>\</code> line continuation takes the whole file down. The new SQL literal is 15+ continued lines.</td><td><code>freeradius -CX</code> catches it; nothing else does. Highest-consequence failure in the plan.</td></tr>
+<tr><td><strong>R2</strong></td><td><code>Tmp-String-0</code> may be absent rather than empty</td><td>Test both forms in the <code>if</code>.</td></tr>
+<tr><td><strong>R3</strong></td><td>Tmp-String collision — <code>0/1/2</code> are in use</td><td>New blocks use <code>3</code> and <code>4</code>. Reusing <code>2</code> would silently corrupt the daily-quota rollup.</td></tr>
+<tr><td><strong>R4</strong></td><td>A username collision between a voucher code and a PPPoE username silently routes the subscriber into the voucher state machine. <code>radcheck</code> has no unique key on <code>username</code>.</td><td>All three: the unique index on <code>pppoe_customers.username</code>; a <code>Voucher::where('username',$u)-&gt;exists()</code> check in <code>PppoeCustomerService</code>; and the reverse check in <code>VoucherService::uniqueCodes()</code>.</td></tr>
+<tr><td><strong>R5</strong></td><td><code>Simultaneous-Use</code> lockout after a NAS reboot from stale open <code>radacct</code> rows</td><td>Already mitigated by the <code>nasreload</code> join and <code>delete_stale_sessions = yes</code>, but requires the MikroTik to actually send Accounting-On. Verify per-NAS during rollout.</td></tr>
+<tr><td><strong>R6</strong></td><td>One extra query per unknown username — typos and credential-stuffing probes now cost 3 queries instead of 2</td><td>It is a unique-index lookup, so cheap; a probe flood costs 50% more DB. Consider NAS-side rate limiting.</td></tr>
+<tr><td><strong>R7</strong></td><td>The two RADIUS config files drifting — the docker one is a <em>different file</em>, not a copy</td><td>A <code>grep -c "pppoe_customers"</code> assertion in CI over both paths.</td></tr>
+</tbody></table></div>
+</section>
+
+<section id="verify">
+<div class="eyebrow">Delivery &middot; 11</div>
+<h2>Verification</h2>
+
+<h3>Automated — <code>cd backend &amp;&amp; php artisan test</code></h3>
+<div class="tw"><table>
+<thead><tr><th>Test</th><th>Covers</th></tr></thead>
+<tbody>
+<tr><td><code>PppoeCustomerTest</code></td><td>Create → <code>status='pending'</code> and <code>assertDatabaseCount('radcheck', 0)</code> (the provisioning invariant); username uniqueness enforced <strong>across <code>vouchers</code></strong>; reseller sees only own, admin sees all, scoped token narrows a reseller to <code>owner_id</code>; suspend → radcheck rows <strong>still present</strong> + CoA mock called once; resume before/after expiry; destroy removes both app and radius rows.</td></tr>
+<tr><td><code>PppoeRechargeTest</code></td><td>First recharge debits wallet, writes <code>type='deduct'</code>, stamps <code>activated_at</code>/<code>expires_at</code>; <strong>asserts exactly</strong> one each of <code>Cleartext-Password</code>, <code>Simultaneous-Use</code>, <code>Mikrotik-Rate-Limit</code>, <code>Acct-Interim-Interval</code> and <strong>zero</strong> rows for <code>Framed-IP-Address</code>/<code>Framed-Pool</code>/<code>Session-Timeout</code>/<code>Mikrotik-Total-Limit</code> — the IP decision as an executable contract; renewal before expiry stacks, after expiry restarts; reseller recharge populates the shares and increments <code>commission_due</code>; insufficient wallet → 422 with full rollback; seller → 403 everywhere.</td></tr>
+<tr><td><code>PppoeSyncStatusTest</code></td><td>Past-expiry active → <code>expired</code> + one CoA; radcheck rows survive the sweep.</td></tr>
+<tr><td><code>BandwidthAndPlanTest</code> <em>(extend)</em></td><td>A <code>type=pppoe</code> plan forces <code>package_type='wallet'</code> even for a reseller; a reseller can then PUT their own PPPoE plan; seller <code>GET /api/plans</code> returns no <code>type=pppoe</code> rows; and the latent-bug regression — <code>PUT /api/plans/{hotspot}</code> omitting both <code>type</code> and <code>selling_price</code> still returns 200.</td></tr>
+<tr><td><code>FinancialDashboardTest</code> <em>(extend)</em></td><td><code>income_statement.pppoe_revenue</code> comes from <code>pppoe_recharges</code>, not <code>vouchers</code>; a hotspot voucher on a mis-typed plan no longer inflates 4250.</td></tr>
+</tbody></table></div>
+
+<h3>Manual — unlang is not testable from PHPUnit</h3>
+<p>Record the results in the PR description. After Phase 3, with <code>sudo freeradius -X</code> capturing:</p>
+<div class="code"><pre><code>radtest &lt;voucher-code&gt;  &lt;voucher-code&gt;  127.0.0.1 0 &lt;secret&gt;   # Accept  (regression: hotspot unchanged)
+radtest &lt;expired-code&gt;  &lt;expired-code&gt;  127.0.0.1 0 &lt;secret&gt;   # Reject + existing voucher message
+radtest &lt;pppoe-user&gt;    &lt;pppoe-pass&gt;    127.0.0.1 0 &lt;secret&gt;   # Accept + Mikrotik-Rate-Limit + Acct-Interim-Interval
+radtest &lt;expired-sub&gt;   &lt;pass&gt;          127.0.0.1 0 &lt;secret&gt;   # Reject + "Your subscription has expired…"
+radtest &lt;suspended-sub&gt; &lt;pass&gt;          127.0.0.1 0 &lt;secret&gt;   # Reject + "Your connection is suspended…"
+radtest &lt;pending-sub&gt;   &lt;pass&gt;          127.0.0.1 0 &lt;secret&gt;   # Reject + "…not activated yet…"
+radtest nosuchuser      x               127.0.0.1 0 &lt;secret&gt;   # Reject, no Reply-Message (fall-through unchanged)</code></pre></div>
+
+<p>Then one real MikroTik PPPoE dial-up captured under <code>radiusd -X</code>, confirming: the Access-Accept carries <code>Mikrotik-Rate-Limit</code>; the router assigns an IP from its own pool; <code>radacct</code> gets a Start with <code>framedprotocol='PPP'</code> and <code>servicetype='Framed-User'</code>; an Interim-Update lands within ~5 minutes with non-zero octets; and Stop closes the row. Then suspend the subscriber in the UI and confirm the session drops within seconds via CoA.</p>
+
+<h3>End to end in the app</h3>
+<p><strong>As admin</strong> — create a PPPoE plan → create a subscriber (verify it lands <code>pending</code> with no radcheck rows) → recharge (verify wallet debit, <code>expires_at</code>, radius rows, ledger entry) → dial up → see the session on the Active Sessions tab → suspend → verify disconnect → resume → recharge early and confirm days stack.</p>
+<p><strong>As reseller</strong> — confirm they see only their own subscribers, their wallet is debited, and admin's commission accrues.</p>
+<p><strong>As seller</strong> — confirm no PPPoE nav item, and that typing <code>/pppoe/customers</code> and <code>/plans/pppoe</code> both give Access Denied.</p>
+
+<div class="note warn">
+<span class="tag">Last step</span>
+<p><code>cd frontend &amp;&amp; npm run build</code> and commit the <code>dist/</code> diff — <code>frontend/dist/</code> is committed to this repo and rebuilt in feature commits.</p>
+</div>
+</section>
+
+</div></main>
+</div>
+
+<script>
+document.getElementById('pr').addEventListener('click', function () { window.print() })
+</script>
+
+</body>
+</html>

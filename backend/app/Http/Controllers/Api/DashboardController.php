@@ -254,7 +254,7 @@ class DashboardController extends Controller
         $resellerName = $reseller ? ($reseller->name ?? $reseller->username) : null;
 
         $vouchers = Voucher::where('seller_id', $seller->id)
-            ->whereIn('status', ['sold', 'active', 'expired'])
+            ->whereIn('status', ['sold', 'active', 'used', 'expired'])
             ->get();
 
         // Reseller's gb_rate is the seller's cost per GB (what the reseller charges)

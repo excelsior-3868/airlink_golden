@@ -41,8 +41,20 @@ export default function HotspotPlans() {
 
   const canDelegate = user?.role === 'admin' || user?.role === 'reseller'
 
+  // A reseller may keep a GB package for itself instead of handing it to a downline
+  // seller — without this the picker only lists sellers and the plan silently lands
+  // on the first seller, so it never shows up under the reseller's "My Plans" tab.
+  const selfDelegationValue = user?.role === 'reseller' ? `reseller-${user.id}` : ''
+
   const delegationOptions = useMemo(() => {
     const opts: SelectOption[] = []
+    if (user?.role === 'reseller') {
+      opts.push({
+        value: `reseller-${user.id}`,
+        label: `${user.name} (Myself)`,
+        badge: <span className="text-[10px] bg-sky-50 text-sky-600 font-bold px-2 py-0.5 rounded-full border border-sky-100/50">You</span>
+      })
+    }
     if (user?.role === 'admin' || user?.role === 'reseller') {
       allResellers.filter((r) => r.id !== user?.id).forEach((r) => {
         opts.push({
@@ -61,6 +73,10 @@ export default function HotspotPlans() {
     })
     return opts
   }, [allResellers, allSellers, user])
+
+  // Default the "On Behalf Of" picker to the reseller itself, not to whichever
+  // seller happens to sort first.
+  const defaultDelegationValue = selfDelegationValue || delegationOptions[0]?.value || ''
 
   // NAS restriction options: GB packages with a delegate chosen narrow to that
   // delegate's own devices; Wallet packages (or GB with no delegate yet) list all.
@@ -106,6 +122,28 @@ export default function HotspotPlans() {
   const [bandwidthFilter, setBandwidthFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
   const [validityFilter, setValidityFilter] = useState('all')
+
+  // A reseller's tabs already answer "whose plans am I looking at", so the owner
+  // picker is admin-only. Type/NAS/MAC Bind likewise only earn their place on the
+  // reseller's admin tab — its plans are the mixed set worth narrowing; My Plans and
+  // Seller Plan are not.
+  const isReseller = user?.role === 'reseller'
+  const showOwnerFilter = canDelegate && !isReseller
+  const showPlanAttributeFilters = !isReseller || activeTab === 'admin'
+  // The NAS and MAC Bind table columns follow their filters off the My Plans and
+  // Seller Plan tabs.
+  const showNasMacColumns = showPlanAttributeFilters
+
+  // Hidden filters must not keep filtering silently — reset them on tab change so
+  // the row count always matches the controls the reseller can actually see.
+  useEffect(() => {
+    if (!showOwnerFilter) setOwnerFilter('all')
+    if (!showPlanAttributeFilters) {
+      setTypeFilter('all')
+      setNasFilter('all')
+      setMacFilter('all')
+    }
+  }, [showOwnerFilter, showPlanAttributeFilters])
 
   const isFiltered = ownerFilter !== 'all' || typeFilter !== 'all' || nasFilter !== 'all' || macFilter !== 'all' || bandwidthFilter !== 'all' || statusFilter !== 'all' || validityFilter !== 'all'
 
@@ -161,7 +199,7 @@ export default function HotspotPlans() {
       plan_type: defaultPackageType === 'wallet' ? 'unlimited' : 'data',
       base_price: 0,
       selling_price: 0,
-      delegation_id: defaultPackageType === 'gb' ? (delegationOptions[0]?.value || '') : ''
+      delegation_id: defaultPackageType === 'gb' ? defaultDelegationValue : ''
     })
     setEditId(null)
     setErr('')
@@ -172,8 +210,10 @@ export default function HotspotPlans() {
   const openEdit = (p: any) => {
     const pkgType = p.package_type || (isAdmin ? 'wallet' : 'gb')
     let delId = ''
-    if (p.creator && p.creator.id !== user?.id && p.creator.role) {
-      delId = `${p.creator.role}-${p.creator.id}`
+    if (p.creator && p.creator.role) {
+      // Keep a reseller's own plan pinned to itself on save instead of letting the
+      // empty value fall through to the first seller in the list.
+      delId = p.creator.id === user?.id ? selfDelegationValue : `${p.creator.role}-${p.creator.id}`
     }
     setForm({
       ...p,
@@ -231,7 +271,7 @@ export default function HotspotPlans() {
       delete payload.delegation_id
 
       if (pkgType === 'gb') {
-        const delId = form.delegation_id || (delegationOptions[0]?.value || '')
+        const delId = form.delegation_id || defaultDelegationValue
         if (delId.startsWith('seller-')) {
           payload.owner_id = +delId.replace('seller-', '')
         } else if (delId.startsWith('reseller-')) {
@@ -335,7 +375,7 @@ export default function HotspotPlans() {
         </div>
       )}
 
-      {canDelegate && (
+      {showOwnerFilter && (
         <div className="mb-6 flex flex-col sm:flex-row sm:items-center gap-4 bg-slate-50/70 p-3.5 rounded-xl border border-slate-200/60">
           <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full sm:w-auto">
             <span className="text-sm font-bold text-slate-700 whitespace-nowrap">Show Packages For:</span>
@@ -355,9 +395,13 @@ export default function HotspotPlans() {
           runs out of room. A fixed column count forced every select to the same
           track width, which its 180px minimum then overflowed into its neighbour. */}
       <div className="mb-6 flex flex-wrap items-center gap-3 bg-slate-50/70 p-3.5 rounded-xl border border-slate-200/60">
-        <CustomSelect className="!min-w-0" value={typeFilter} onChange={setTypeFilter} options={typeFilterOptions} />
-        <CustomSelect className="!min-w-0" value={nasFilter} onChange={setNasFilter} options={yesNoOptions('NAS')} />
-        <CustomSelect className="!min-w-0" value={macFilter} onChange={setMacFilter} options={yesNoOptions('MAC Bind')} />
+        {showPlanAttributeFilters && (
+          <>
+            <CustomSelect className="!min-w-0" value={typeFilter} onChange={setTypeFilter} options={typeFilterOptions} />
+            <CustomSelect className="!min-w-0" value={nasFilter} onChange={setNasFilter} options={yesNoOptions('NAS')} />
+            <CustomSelect className="!min-w-0" value={macFilter} onChange={setMacFilter} options={yesNoOptions('MAC Bind')} />
+          </>
+        )}
         <CustomSelect className="!min-w-0" value={bandwidthFilter} onChange={setBandwidthFilter} options={bandwidthFilterOptions} />
         <CustomSelect className="!min-w-0" value={statusFilter} onChange={setStatusFilter} options={statusFilterOptions} />
         <CustomSelect className="!min-w-0" value={validityFilter} onChange={setValidityFilter} options={validityFilterOptions} />
@@ -392,8 +436,12 @@ export default function HotspotPlans() {
                   <th>Data</th>
                   <th>Validity</th>
                   <th>Price</th>
-                  <th>NAS</th>
-                  <th>MAC Bind</th>
+                  {showNasMacColumns && (
+                    <>
+                      <th>NAS</th>
+                      <th>MAC Bind</th>
+                    </>
+                  )}
                   {user?.role === 'reseller' && activeTab === 'seller' && (
                     <th>Seller GB Balance</th>
                   )}
@@ -442,10 +490,14 @@ export default function HotspotPlans() {
                     </td>
                     <td>{p.validity_days}d</td>
                     <td>{rs(p.selling_price)}</td>
-                    <td>{p.nas_device?.name || '—'}</td>
-                    <td>
-                      <Pill tone={p.mac_bind ? 'success' : 'secondary'}>{p.mac_bind ? 'Enabled' : 'Disabled'}</Pill>
-                    </td>
+                    {showNasMacColumns && (
+                      <>
+                        <td>{p.nas_device?.name || '—'}</td>
+                        <td>
+                          <Pill tone={p.mac_bind ? 'success' : 'secondary'}>{p.mac_bind ? 'Enabled' : 'Disabled'}</Pill>
+                        </td>
+                      </>
+                    )}
                     {user?.role === 'reseller' && activeTab === 'seller' && (
                       <td className="font-medium text-cyan-600">
                         {p.creator ? gb(p.creator.gb_balance) : '—'}
@@ -560,7 +612,7 @@ export default function HotspotPlans() {
                   value={form.package_type || (isAdmin ? 'wallet' : 'gb')}
                   onChange={(val) => {
                     const newQuota = val === 'wallet' ? 'unlimited' : 'data'
-                    const defaultDelegation = val === 'gb' ? (form.delegation_id || delegationOptions[0]?.value || '') : ''
+                    const defaultDelegation = val === 'gb' ? (form.delegation_id || defaultDelegationValue) : ''
                     setForm({ ...form, package_type: val, plan_type: newQuota, delegation_id: defaultDelegation })
                   }}
                   disabled={!isAdmin || (editId !== null && !isAdmin)}
@@ -640,7 +692,7 @@ export default function HotspotPlans() {
                 <div className="col-span-2">
                   <label className="text-xs font-bold text-slate-600 block mb-1">On Behalf Of (Reseller/Seller)</label>
                   <CustomSelect
-                    value={form.delegation_id || delegationOptions[0]?.value || ''}
+                    value={form.delegation_id || defaultDelegationValue}
                     onChange={(val) => setForm({ ...form, delegation_id: val, nas_device_id: '' })}
                     options={delegationOptions}
                     className="w-full"

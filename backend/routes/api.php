@@ -170,6 +170,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
         Route::get('/login-logs', [LoginLogController::class, 'index']);
         Route::get('/radius/status', [RadiusController::class, 'status']);
+        Route::get('/radius/online-users', [RadiusController::class, 'onlineUsers']);
+        Route::post('/radius/disconnect-user', [RadiusController::class, 'disconnectUser']);
         Route::get('/radius/auth-logs', [RadiusController::class, 'authLogs']);
         Route::get('/radius/clients-config', [RadiusController::class, 'clientsConfig']);
         Route::post('/radius/test-auth', [RadiusController::class, 'testAuth']);
