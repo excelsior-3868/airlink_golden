@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Wifi, RefreshCw, Power, Search, Database, Clock, Laptop, Users, ShieldAlert, CheckCircle2 } from 'lucide-react'
+import { Wifi, RefreshCw, Power, Search, Database, Clock, Laptop, Users, ShieldAlert, CheckCircle2, AlertTriangle } from 'lucide-react'
 import { api } from '../lib/api'
-import { gb, num, date } from '../lib/format'
+import { formatBytes, gb, num, date, datet } from '../lib/format'
 import { GlassCard, Modal, Spinner, EmptyState } from './ui'
 
 interface OnlineSession {
@@ -78,7 +78,7 @@ export function OnlineUsersModal({ open, onClose }: { open: boolean; onClose: ()
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
   const [disconnecting, setDisconnecting] = useState<string | null>(null)
-  const [msg, setMsg] = useState('')
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
   const fetchOnlineUsers = async () => {
     setLoading(true)
@@ -105,24 +105,28 @@ export function OnlineUsersModal({ open, onClose }: { open: boolean; onClose: ()
       return
     }
     setDisconnecting(username)
-    setMsg('')
+    setMsg(null)
     try {
-      await api.post('/radius/disconnect-user', { username })
-      setMsg(`Disconnect request sent for ${username}.`)
+      // The API reports what the router actually answered — a 422 means no CoA
+      // packet landed, so don't claim success on its behalf.
+      const res = await api.post('/radius/disconnect-user', { username })
+      setMsg({ ok: true, text: res.data?.message || `Disconnected ${username}.` })
       await fetchOnlineUsers()
     } catch (e: any) {
-      setMsg(e.response?.data?.message || `Failed to disconnect ${username}.`)
+      setMsg({ ok: false, text: e.response?.data?.message || `Failed to disconnect ${username}.` })
     } finally {
       setDisconnecting(null)
     }
   }
 
-  const formatDuration = (seconds?: number) => {
-    if (!seconds) return 'Just now'
+  const formatDuration = (val?: number | string) => {
+    const rawSec = Number(val) || 0
+    if (rawSec <= 0) return 'Just now'
+    const seconds = rawSec > 1e8 ? Math.floor(rawSec / 1000) : rawSec
     const h = Math.floor(seconds / 3600)
     const m = Math.floor((seconds % 3600) / 60)
     const s = seconds % 60
-    if (h > 0) return `${h}h ${m}m`
+    if (h > 0) return `${h}h ${m}m ${s}s`
     if (m > 0) return `${m}m ${s}s`
     return `${s}s`
   }
@@ -143,7 +147,7 @@ export function OnlineUsersModal({ open, onClose }: { open: boolean; onClose: ()
               <span>{sessions.length} Live Sessions Connected</span>
             </div>
             <span className="text-slate-300">|</span>
-            <span className="text-xs text-slate-500 font-semibold">Total Volume: <b className="text-slate-800">{gb(totalVolumeBytes / 1073741824)}</b></span>
+            <span className="text-xs text-slate-500 font-semibold">Total Volume: <b className="text-slate-800">{formatBytes(totalVolumeBytes)}</b></span>
           </div>
 
           <div className="flex items-center gap-2">
@@ -169,9 +173,15 @@ export function OnlineUsersModal({ open, onClose }: { open: boolean; onClose: ()
         </div>
 
         {msg && (
-          <div className="p-3 text-xs font-medium rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 flex items-center gap-2">
-            <CheckCircle2 size={14} />
-            <span>{msg}</span>
+          <div
+            className={`p-3 text-xs font-medium rounded-xl border flex items-start gap-2 ${
+              msg.ok
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                : 'bg-rose-50 border-rose-200 text-rose-700'
+            }`}
+          >
+            {msg.ok ? <CheckCircle2 size={14} className="shrink-0 mt-px" /> : <AlertTriangle size={14} className="shrink-0 mt-px" />}
+            <span>{msg.text}</span>
           </div>
         )}
 
@@ -209,10 +219,17 @@ export function OnlineUsersModal({ open, onClose }: { open: boolean; onClose: ()
                     </td>
                     <td className="text-slate-600">
                       <div>{formatDuration(s.session_time)}</div>
-                      <div className="text-[10px] text-slate-400">{s.start_time ? date(s.start_time) : ''}</div>
+                      <div className="text-[10px] text-slate-400">{s.start_time ? datet(s.start_time) : ''}</div>
                     </td>
                     <td className="font-bold text-slate-700">
-                      {gb((s.total_bytes || 0) / 1073741824)}
+                      <div>{formatBytes(s.total_bytes || 0)}</div>
+                      {(s.input_bytes || s.output_bytes) ? (
+                        <div className="text-[10px] text-slate-400 font-normal flex items-center gap-1.5 mt-0.5">
+                          <span title="Download (Rx)">↓ {formatBytes(s.output_bytes || 0)}</span>
+                          <span>•</span>
+                          <span title="Upload (Tx)">↑ {formatBytes(s.input_bytes || 0)}</span>
+                        </div>
+                      ) : null}
                     </td>
                     <td className="text-slate-500">
                       <div>{s.reseller_name || s.reseller_username || 'Admin Direct'}</div>

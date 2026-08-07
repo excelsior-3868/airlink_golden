@@ -274,13 +274,13 @@ function SalesLedgerView() {
             </div>
           </GlassCard>
 
-          {/* 2. Wallet Voucher Sales (Reseller) / Commission Dues (Admin) */}
+          {/* 2. Card Voucher Sales (Reseller) / Commission Dues (Admin) */}
           <GlassCard
             onClick={() => toggleTypeFilter(isReseller ? 'wallet_voucher_sale' : 'commission_due')}
             className={`p-4 flex items-center justify-between cursor-pointer transition-shadow ${typeFilter === (isReseller ? 'wallet_voucher_sale' : 'commission_due') ? 'ring-2 ring-purple-400' : ''}`}
           >
             <div>
-              <p className="text-xs font-semibold text-slate-400">{isReseller ? 'Wallet Voucher Sales' : 'Commission Dues'}</p>
+              <p className="text-xs font-semibold text-slate-400">{isReseller ? 'Card Voucher Sales' : 'Commission Dues'}</p>
               <p className="text-xl font-extrabold text-purple-600 mt-1">
                 {rs(isReseller ? (summary.total_wallet_voucher_commission ?? 0) : (summary.total_commission_due ?? 0))}
               </p>

@@ -783,7 +783,7 @@ class AccountController extends Controller
         // GB Voucher Sales Revenue (4200) covers GB-package hotspot cards only —
         // those carry no commission split, so the full price is the owner's
         // revenue. Wallet-package cards are commission-based and are reported
-        // separately under Wallet Voucher Commission Revenue (4000) below.
+        // separately under Card Voucher Commission Revenue (4000) below.
         $gbVoucherRevenue = (float) Voucher::query()
             ->tap($applyVoucherScope)
             ->whereHas('plan', fn ($q) => $q->where('type', 'hotspot')->where('package_type', 'gb'))
@@ -801,7 +801,7 @@ class AccountController extends Controller
             ->whereHas('plan', fn ($q) => $q->where('type', 'hotspot')->where('package_type', 'wallet'));
         $walletVoucherGross = (float) $walletVoucherQuery()->sum('price');
 
-        // B. Wallet Voucher Commission Revenue (4000) — whose money this is
+        // B. Card Voucher Commission Revenue (4000) — whose money this is
         // depends on where the actor sits in the chain:
         //  - Admin: their cut of downline wallet sales (admin_share), recognized
         //    only once actually remitted (Payment type='commission'); until then

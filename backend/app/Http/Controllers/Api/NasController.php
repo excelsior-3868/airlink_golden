@@ -63,6 +63,8 @@ class NasController extends Controller
             'shortname' => ['nullable', 'string', 'max:255'],
             'type' => ['nullable', 'string', 'max:50'],
             'secret' => ['required', 'string', 'max:255'],
+            'coa_host' => ['nullable', 'string', 'max:255'],
+            'coa_port' => ['nullable', 'integer', 'min:1', 'max:65535'],
             'api_ip' => ['nullable', 'string', 'max:255'],
             'api_username' => ['nullable', 'string', 'max:255'],
             'api_password' => ['nullable', 'string', 'max:255'],

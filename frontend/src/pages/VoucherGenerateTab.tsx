@@ -82,7 +82,16 @@ function VoucherPackageCard({
 
   // Delegation Options mapping for this card
   const delegationOptions = useMemo(() => {
-    const opts: SelectOption[] = [{ value: '', label: 'Myself' }]
+    const opts: SelectOption[] = []
+    if (user?.role === 'admin') {
+      opts.push({
+        value: '',
+        label: 'Admin Direct (Myself)',
+        badge: <span className="text-[10px] bg-blue-50 text-blue-600 font-bold px-2 py-0.5 rounded-full border border-blue-100/50">Admin</span>
+      })
+    } else {
+      opts.push({ value: '', label: 'Myself' })
+    }
     if (user?.role === 'admin' || user?.role === 'reseller') {
       allResellers.filter((r) => r.id !== user?.id).forEach((r) => {
         opts.push({
@@ -341,9 +350,13 @@ export default function VoucherGenerateTab({ plans, refetchPlans, onSuccess }: V
   // Options for the main page Generate Packages for filter
   const ownerFilterOptions = useMemo(() => {
     const opts: SelectOption[] = []
-    // An admin never generates cards for itself — packages always belong to a
-    // reseller or a seller, so there is no "Myself" target to offer.
-    if (user?.role !== 'admin') {
+    if (user?.role === 'admin') {
+      opts.push({
+        value: '',
+        label: 'Admin Direct (Myself)',
+        badge: <span className="text-[10px] bg-blue-50 text-blue-600 font-bold px-2 py-0.5 rounded-full border border-blue-100/50">Admin</span>
+      })
+    } else {
       opts.push({ value: '', label: 'Myself' })
     }
     if (user?.role === 'admin' || user?.role === 'reseller') {
@@ -383,10 +396,7 @@ export default function VoucherGenerateTab({ plans, refetchPlans, onSuccess }: V
 
       if (selectedOwnerId === 'all') return true
       if (!selectedOwnerId) {
-        // Admin has no "Myself" target: nothing is selected yet, so show nothing
-        // rather than a list the admin can't generate against.
-        if (user?.role === 'admin') return false
-        return p.created_by === user?.id
+        return p.created_by === user?.id || !p.created_by
       } else {
         const [, idStr] = selectedOwnerId.split('-')
         return p.created_by === +idStr
@@ -624,7 +634,7 @@ export default function VoucherGenerateTab({ plans, refetchPlans, onSuccess }: V
               value={selectedOwnerId}
               onChange={(val) => setSelectedOwnerId(val)}
               options={ownerFilterOptions}
-              placeholder={user?.role === 'admin' ? 'Select Reseller / Seller' : 'Choose...'}
+              placeholder="Select Account / Reseller / Seller"
               searchable={true}
               className="min-w-[340px]"
             />

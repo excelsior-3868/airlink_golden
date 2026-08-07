@@ -7,7 +7,7 @@ import { useAuth } from '../lib/auth'
 import { GlassCard, PageTitle, Modal, Pill, EmptyState, CustomSelect, SelectOption, Pagination, ConfirmModal, Spinner } from '../components/ui'
 import { num, datet } from '../lib/format'
 
-const blank = { name: '', nasname: '', shortname: '', type: 'mikrotik', secret: '', description: '', status: 'active', require_message_authenticator: 'auto', owner_id: '' }
+const blank = { name: '', nasname: '', shortname: '', type: 'mikrotik', secret: '', coa_host: '', coa_port: 3799, description: '', status: 'active', require_message_authenticator: 'auto', owner_id: '' }
 
 export default function Nas() {
   const { user } = useAuth()
@@ -138,7 +138,7 @@ export default function Nas() {
   }, [activeTab, logUserSearch, logReplyFilter])
 
   const openNew = () => { setForm(blank); setEditId(null); setErr(''); setOpen(true) }
-  const openEdit = (n: any) => { setForm({ ...blank, ...n, owner_id: n.owner_id ? String(n.owner_id) : '' }); setEditId(n.id); setErr(''); setOpen(true) }
+  const openEdit = (n: any) => { setForm({ ...blank, ...n, coa_host: n.coa_host || '', coa_port: n.coa_port || 3799, owner_id: n.owner_id ? String(n.owner_id) : '' }); setEditId(n.id); setErr(''); setOpen(true) }
 
   const save = async () => {
     setBusy(true); setErr('')
@@ -221,7 +221,10 @@ export default function Nas() {
                 {rows.map((n, idx) => (
                   <motion.tr key={n.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: idx * 0.03 }} className="hover:bg-secondary/30">
                     <td className="font-semibold flex items-center gap-2"><Router size={15} className="text-primary" /> {n.name}</td>
-                    <td className="font-mono text-xs">{n.nasname}</td>
+                    <td className="font-mono text-xs">
+                      {n.nasname}
+                      {n.coa_host && <div className="text-[10px] text-slate-400">CoA → {n.coa_host}:{n.coa_port || 3799}</div>}
+                    </td>
                     <td className="capitalize">{n.type}</td>
                     <td className="text-xs font-semibold text-slate-600">{n.owner?.name || 'Admin (Unowned)'}</td>
                     <td><Pill tone={n.status === 'active' ? 'success' : 'secondary'}>{n.status}</Pill></td>
@@ -503,6 +506,16 @@ export default function Nas() {
             <input className="input" placeholder="Short name" value={form.shortname} onChange={(e) => setForm({ ...form, shortname: e.target.value })} />
             <input className="input" placeholder="Type (mikrotik)" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} />
             <input className="input" placeholder="Shared secret" value={form.secret} onChange={(e) => setForm({ ...form, secret: e.target.value })} />
+            <div className="flex flex-col col-span-2">
+              <label className="text-xs font-bold text-slate-600 block mb-1">CoA target — used for live disconnects</label>
+              <div className="grid grid-cols-[1fr_130px] gap-3">
+                <input className="input" placeholder="Router address reachable from this server" value={form.coa_host} onChange={(e) => setForm({ ...form, coa_host: e.target.value })} />
+                <input className="input" type="number" placeholder="3799" value={form.coa_port} onChange={(e) => setForm({ ...form, coa_port: e.target.value })} />
+              </div>
+              <span className="text-[10px] text-slate-400 mt-1">
+                Leave blank to reuse the NAS IP above. Required when the NAS is registered as a subnet, or when the router reports a private NAS-IP-Address.
+              </span>
+            </div>
             <div className="flex flex-col min-w-[180px]">
               <CustomSelect
                 value={form.status}

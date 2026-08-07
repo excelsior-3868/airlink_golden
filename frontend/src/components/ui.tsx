@@ -184,7 +184,7 @@ export function VoucherStatCard({
   )
 }
 
-export function PageTitle({ title, subtitle, action, icon, showBalances = false }: { title: string; subtitle?: string; action?: ReactNode; icon?: ReactNode; showBalances?: boolean }) {
+export function PageTitle({ title, subtitle, action, icon, showBalances = false, showOnlineUsers = false }: { title: string; subtitle?: string; action?: ReactNode; icon?: ReactNode; showBalances?: boolean; showOnlineUsers?: boolean }) {
   const { user } = useAuth()
 
   return (
@@ -204,10 +204,12 @@ export function PageTitle({ title, subtitle, action, icon, showBalances = false 
       </div>
       
       <div className="flex items-center gap-3 flex-wrap">
-        {/* Colorful Separate Wallet & GB Balance badges (Dashboard Only) */}
-        {showBalances && user && (
+        {/* Wallet / GB balance pills and the online-users badge are independent:
+            the Dashboard already shows both balances as StatCards, so it opts
+            out of the pills while keeping the badge. */}
+        {(showBalances || showOnlineUsers) && user && (
           <div className="hidden sm:flex items-center gap-2.5 select-none">
-            {user.role !== 'seller' && (
+            {showBalances && user.role !== 'seller' && (
               <div className="flex items-center gap-2 bg-gradient-to-r from-emerald-50 to-teal-50/70 border border-emerald-200/80 rounded-2xl py-1.5 px-3.5 shadow-xs text-xs group hover:border-emerald-300 transition-all">
                 <div className="w-6 h-6 rounded-lg bg-emerald-500/15 text-emerald-600 flex items-center justify-center shrink-0">
                   <Wallet size={13} />
@@ -218,17 +220,19 @@ export function PageTitle({ title, subtitle, action, icon, showBalances = false 
                 </div>
               </div>
             )}
-            <div className="flex items-center gap-2 bg-gradient-to-r from-purple-50 to-indigo-50/70 border border-purple-200/80 rounded-2xl py-1.5 px-3.5 shadow-xs text-xs group hover:border-purple-300 transition-all">
-              <div className="w-6 h-6 rounded-lg bg-purple-500/15 text-purple-600 flex items-center justify-center shrink-0">
-                <Database size={13} />
+            {showBalances && (
+              <div className="flex items-center gap-2 bg-gradient-to-r from-purple-50 to-indigo-50/70 border border-purple-200/80 rounded-2xl py-1.5 px-3.5 shadow-xs text-xs group hover:border-purple-300 transition-all">
+                <div className="w-6 h-6 rounded-lg bg-purple-500/15 text-purple-600 flex items-center justify-center shrink-0">
+                  <Database size={13} />
+                </div>
+                <div className="flex flex-col leading-tight">
+                  <span className="text-[10px] text-purple-600 font-extrabold tracking-wide">GB Balance</span>
+                  <span className="font-extrabold text-purple-950 text-xs">{gb(user.gb_balance)}</span>
+                </div>
               </div>
-              <div className="flex flex-col leading-tight">
-                <span className="text-[10px] text-purple-600 font-extrabold tracking-wide">GB Balance</span>
-                <span className="font-extrabold text-purple-950 text-xs">{gb(user.gb_balance)}</span>
-              </div>
-            </div>
+            )}
 
-            {user.role === 'admin' && (
+            {showOnlineUsers && user.role === 'admin' && (
               <OnlineUsersBadge />
             )}
           </div>

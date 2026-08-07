@@ -135,7 +135,7 @@ return new class extends Migration
             // INCOME -> OPERATING_REVENUE
             [
                 'code' => '4000',
-                'name' => 'Wallet Voucher Commission Revenue',
+                'name' => 'Card Voucher Commission Revenue',
                 'type' => 'INCOME',
                 'category' => 'OPERATING_REVENUE',
                 'description' => 'Commission earned on voucher card sales and wallet top-ups',

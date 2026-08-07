@@ -344,6 +344,7 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
       <PageTitle title={`Add/View ${label}s`} subtitle={`Manage your ${label.toLowerCase()} network`}
         icon={role === 'reseller' ? <Users2 size={22} className="text-purple-500" /> : <Store size={22} className="text-amber-500" />}
         showBalances={true}
+        showOnlineUsers={true}
         action={(role !== 'seller' || user?.role !== 'admin') && (
           <motion.button whileTap={{ scale: 0.95 }} className="btn-primary flex items-center gap-2" onClick={() => { setErr(''); setCreateOpen(true) }}><Plus size={16} /> New {label}</motion.button>
         )} />

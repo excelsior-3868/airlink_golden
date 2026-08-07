@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Package, Users2, Store, Wallet as WalletIcon,
   Database, Ticket, LogOut, Wifi, Router, ShieldCheck, Shield,
   ChevronDown, ChevronRight, ChevronsLeft, Key, Gauge, ArrowLeftRight, Menu, X, Terminal, Calendar,
-  BookOpen, Receipt, Scale, CreditCard
+  BookOpen, Receipt, Scale, CreditCard, UsersRound
 } from 'lucide-react'
 import { Role, useAuth } from '../lib/auth'
 import { rs, gb } from '../lib/format'
@@ -32,7 +32,7 @@ interface NavItem {
 const NAV: NavItem[] = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'reseller', 'seller'], color: 'text-blue-500', perm: 'dashboard' },
   { to: '/financial-dashboard', label: 'Financial Dashboard', icon: Scale, roles: ['admin', 'reseller', 'seller'], color: 'text-blue-600' },
-  { to: '/online-users', label: 'Online Users', icon: Wifi, roles: ['admin', 'reseller', 'seller'], color: 'text-cyan-500' },
+  { to: '/online-users', label: 'Online Users', icon: UsersRound, roles: ['admin', 'reseller', 'seller'], color: 'text-cyan-500' },
   {
     label: 'Plan',
     icon: Package,

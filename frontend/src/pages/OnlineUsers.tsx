@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Wifi, RefreshCw, Power, Search, Database, Clock, Laptop, ShieldAlert, CheckCircle2, Activity, Router, Users } from 'lucide-react'
+import { Wifi, RefreshCw, Power, Search, Database, Clock, Laptop, ShieldAlert, CheckCircle2, AlertTriangle, Activity, Router, Users } from 'lucide-react'
 import { api } from '../lib/api'
-import { gb, num, date } from '../lib/format'
+import { formatBytes, gb, num, date, datet } from '../lib/format'
 import { GlassCard, PageTitle, Spinner, EmptyState, StatCard } from '../components/ui'
 
 interface OnlineSession {
@@ -34,7 +34,7 @@ export default function OnlineUsers() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [disconnecting, setDisconnecting] = useState<string | null>(null)
-  const [msg, setMsg] = useState('')
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
   const fetchOnlineUsers = async () => {
     setLoading(true)
@@ -52,33 +52,49 @@ export default function OnlineUsers() {
 
   useEffect(() => {
     fetchOnlineUsers()
-    const interval = setInterval(fetchOnlineUsers, 15000)
+    const interval = setInterval(fetchOnlineUsers, 10000)
     return () => clearInterval(interval)
   }, [search])
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setSessions((prev) =>
+        prev.map((s) => ({
+          ...s,
+          session_time: (Number(s.session_time) || 0) + 1,
+        }))
+      )
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [])
 
   const handleDisconnect = async (username: string) => {
     if (!window.confirm(`Are you sure you want to disconnect live session for '${username}'?`)) {
       return
     }
     setDisconnecting(username)
-    setMsg('')
+    setMsg(null)
     try {
-      await api.post('/radius/disconnect-user', { username })
-      setMsg(`Disconnect command sent for ${username}.`)
+      // The API reports what the router actually answered — a 422 means no CoA
+      // packet landed, so don't claim success on its behalf.
+      const res = await api.post('/radius/disconnect-user', { username })
+      setMsg({ ok: true, text: res.data?.message || `Disconnected ${username}.` })
       await fetchOnlineUsers()
     } catch (e: any) {
-      setMsg(e.response?.data?.message || `Failed to disconnect ${username}.`)
+      setMsg({ ok: false, text: e.response?.data?.message || `Failed to disconnect ${username}.` })
     } finally {
       setDisconnecting(null)
     }
   }
 
-  const formatDuration = (seconds?: number) => {
-    if (!seconds) return 'Just now'
+  const formatDuration = (val?: number | string) => {
+    const rawSec = Number(val) || 0
+    if (rawSec <= 0) return 'Just now'
+    const seconds = rawSec > 1e8 ? Math.floor(rawSec / 1000) : rawSec
     const h = Math.floor(seconds / 3600)
     const m = Math.floor((seconds % 3600) / 60)
     const s = seconds % 60
-    if (h > 0) return `${h}h ${m}m`
+    if (h > 0) return `${h}h ${m}m ${s}s`
     if (m > 0) return `${m}m ${s}s`
     return `${s}s`
   }
@@ -122,7 +138,7 @@ export default function OnlineUsers() {
         />
         <StatCard
           label="Total Bandwidth Consumed"
-          value={<span className="text-purple-600">{gb(totalVolumeBytes / 1073741824)}</span>}
+          value={<span className="text-purple-600">{formatBytes(totalVolumeBytes)}</span>}
           icon={<Database size={22} />}
           iconColorClass="text-purple-600 bg-purple-50 border border-purple-100/50"
         />
@@ -135,9 +151,15 @@ export default function OnlineUsers() {
       </div>
 
       {msg && (
-        <div className="p-3 text-xs font-medium rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-700 flex items-center gap-2">
-          <CheckCircle2 size={15} />
-          <span>{msg}</span>
+        <div
+          className={`p-3 text-xs font-medium rounded-2xl border flex items-start gap-2 ${
+            msg.ok
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+              : 'bg-rose-50 border-rose-200 text-rose-700'
+          }`}
+        >
+          {msg.ok ? <CheckCircle2 size={15} className="shrink-0 mt-px" /> : <AlertTriangle size={15} className="shrink-0 mt-px" />}
+          <span>{msg.text}</span>
         </div>
       )}
 
@@ -149,15 +171,26 @@ export default function OnlineUsers() {
             <p className="text-xs text-slate-400">Users currently accessing the Internet through Voucher Cards & RADIUS authentication</p>
           </div>
 
-          <div className="relative w-64 sm:w-80">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search username, IP, MAC..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full text-xs pl-8 pr-3 py-2 rounded-xl border border-slate-200 bg-white focus:outline-none focus:border-cyan-500 shadow-xs"
-            />
+          <div className="flex items-center gap-2">
+            <div className="relative w-64 sm:w-80">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search username, IP, MAC..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full text-xs pl-8 pr-3 py-2 rounded-xl border border-slate-200 bg-white focus:outline-none focus:border-cyan-500 shadow-xs"
+              />
+            </div>
+            <button
+              onClick={fetchOnlineUsers}
+              disabled={loading}
+              className="px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-extrabold text-xs shadow-xs transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
+              title="Refresh Connected Since & Data Volume"
+            >
+              <RefreshCw size={14} className={loading ? 'animate-spin text-cyan-600' : 'text-slate-500'} />
+              <span>Refresh</span>
+            </button>
           </div>
         </div>
 
@@ -205,10 +238,17 @@ export default function OnlineUsers() {
                     </td>
                     <td className="text-xs text-slate-600">
                       <div>{formatDuration(s.session_time)}</div>
-                      <div className="text-[10px] text-slate-400">{s.start_time ? date(s.start_time) : ''}</div>
+                      <div className="text-[10px] text-slate-400">{s.start_time ? datet(s.start_time) : ''}</div>
                     </td>
                     <td className="font-bold text-slate-800 text-xs">
-                      {gb((s.total_bytes || 0) / 1073741824)}
+                      <div>{formatBytes(s.total_bytes || 0)}</div>
+                      {(s.input_bytes || s.output_bytes) ? (
+                        <div className="text-[10px] text-slate-400 font-normal flex items-center gap-1.5 mt-0.5">
+                          <span title="Download (Rx)">↓ {formatBytes(s.output_bytes || 0)}</span>
+                          <span>•</span>
+                          <span title="Upload (Tx)">↑ {formatBytes(s.input_bytes || 0)}</span>
+                        </div>
+                      ) : null}
                     </td>
                     <td className="text-xs text-slate-500">
                       <div>{s.reseller_name || s.reseller_username || 'Admin Direct'}</div>

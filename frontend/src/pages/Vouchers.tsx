@@ -6,7 +6,7 @@ import { createPortal } from 'react-dom'
 import { api, apiError } from '../lib/api'
 import { useQuery } from '../lib/cache'
 import { useAuth } from '../lib/auth'
-import { rs, gb, date, num } from '../lib/format'
+import { rs, gb, date, datet, num } from '../lib/format'
 import { statusPill } from '../lib/format'
 import { GlassCard, PageTitle, Pagination, Pill, Modal, EmptyState, CustomSelect, Spinner, StatCard } from '../components/ui'
 import { DualDatePicker } from '../components/DualDatePicker'
@@ -280,6 +280,7 @@ export default function Vouchers() {
         subtitle="Generate & manage voucher cards"
         icon={<Ticket size={22} className="text-rose-500" />}
         showBalances={true}
+        showOnlineUsers={true}
       />
 
       {/* Tabs */}
@@ -479,7 +480,7 @@ export default function Vouchers() {
                     <th>Used</th>
                     <th>Price</th>
                     <th>Status</th>
-                    {canSeeReports && <th>Login Date</th>}
+                    {canSeeReports && <th>Login Date & Time</th>}
                     {canSeeReports && <th>Customer</th>}
                     {canSeeReports && user?.role !== 'seller' && <th>Reseller</th>}
                     {canSeeReports && user?.role !== 'seller' && <th>Seller</th>}
@@ -494,7 +495,7 @@ export default function Vouchers() {
                         <span>{v.plan?.name || '—'}</span>
                         {v.plan?.package_type && (
                           <Pill tone={v.plan.package_type === 'gb' ? 'success' : 'info'} className="ml-2">
-                            {v.plan.package_type === 'gb' ? 'GB' : 'Wallet'}
+                            {v.plan.package_type === 'gb' ? 'GB' : 'Card'}
                           </Pill>
                         )}
                       </td>
@@ -510,7 +511,7 @@ export default function Vouchers() {
                       <td>{v.data_gb ? `${gb(v.used_gb || 0)} / ${gb(v.data_gb)}` : (v.used_gb ? gb(v.used_gb) : '—')}</td>
                       <td>{rs(v.price)}</td>
                       <td><Pill tone={statusPill[v.status] || 'secondary'}>{v.status}</Pill></td>
-                      {canSeeReports && <td className="text-xs">{v.activated_at ? date(v.activated_at) : '—'}</td>}
+                      {canSeeReports && <td className="text-xs font-medium text-slate-700">{v.activated_at ? datet(v.activated_at) : '—'}</td>}
                       {canSeeReports && <td className="font-semibold text-slate-700">{v.customer_username || '—'}</td>}
                       {canSeeReports && user?.role !== 'seller' && (
                         // A card is attributed to either a seller or the reseller
@@ -594,7 +595,7 @@ export default function Vouchers() {
                         <span>{b.plan?.name || '—'}</span>
                         {b.plan?.package_type && (
                           <Pill tone={b.plan.package_type === 'gb' ? 'success' : 'info'} className="ml-2">
-                            {b.plan.package_type === 'gb' ? 'GB' : 'Wallet'}
+                            {b.plan.package_type === 'gb' ? 'GB' : 'Card'}
                           </Pill>
                         )}
                       </td>

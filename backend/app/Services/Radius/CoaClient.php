@@ -30,16 +30,17 @@ class CoaClient
 
     /**
      * @param array{username: string, acctSessionId?: ?string, framedIp?: ?string} $session
+     * @param ?int $port  the NAS's CoA listener port; falls back to the default 3799
      *
      * @throws RuntimeException if the NAS is unreachable, the reply fails
      *                          authentication, or it responds with a NAK
      */
-    public function disconnect(string $nasHost, string $secret, array $session): void
+    public function disconnect(string $nasHost, string $secret, array $session, ?int $port = null): void
     {
         $identifier = random_int(0, 255);
         $packet = $this->buildSignedPacket(self::CODE_DISCONNECT_REQUEST, $identifier, $this->buildAttributes($session), $secret);
 
-        $response = $this->sendWithRetries($nasHost, $packet);
+        $response = $this->sendWithRetries($nasHost, $packet, $port ?? $this->port);
         $this->verifyResponseAuthenticator($response, $packet, $secret);
 
         $code = ord($response[0]);
@@ -102,12 +103,12 @@ class CoaClient
         return chr($code).chr($identifier).pack('n', $length).$requestAuthenticator.$signedAttributes;
     }
 
-    private function sendWithRetries(string $host, string $packet): string
+    private function sendWithRetries(string $host, string $packet, int $port): string
     {
-        $socket = @stream_socket_client("udp://{$host}:{$this->port}", $errno, $errstr, $this->timeoutSeconds);
+        $socket = @stream_socket_client("udp://{$host}:{$port}", $errno, $errstr, $this->timeoutSeconds);
 
         if ($socket === false) {
-            throw new RuntimeException("Unable to open UDP socket to {$host}:{$this->port}: {$errstr}");
+            throw new RuntimeException("Unable to open UDP socket to {$host}:{$port}: {$errstr}");
         }
 
         stream_set_timeout($socket, (int) ceil($this->timeoutSeconds));
@@ -126,7 +127,11 @@ class CoaClient
             fclose($socket);
         }
 
-        throw new RuntimeException("No CoA response from {$host}:{$this->port} after {$this->retries} retries");
+        throw new RuntimeException(
+            "No CoA response from {$host}:{$port} after {$this->retries} retries — "
+            . 'check that the router accepts incoming RADIUS (MikroTik: /radius incoming set accept=yes) '
+            . 'and that the port is reachable from this server.'
+        );
     }
 
     private function verifyResponseAuthenticator(string $response, string $requestPacket, string $secret): void

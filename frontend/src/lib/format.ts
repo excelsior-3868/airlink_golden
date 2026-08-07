@@ -4,6 +4,17 @@ export const rs = (n: number | string) =>
 export const gb = (n: number | string) =>
   Number(n).toLocaleString('en-US', { maximumFractionDigits: 3 }) + ' GB'
 
+export const formatBytes = (bytes: number | string): string => {
+  const b = Number(bytes) || 0
+  if (b === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.floor(Math.log(b) / Math.log(k))
+  const index = Math.min(i, sizes.length - 1)
+  const val = b / Math.pow(k, index)
+  return `${val.toLocaleString('en-US', { maximumFractionDigits: val >= 100 ? 1 : 2 })} ${sizes[index]}`
+}
+
 export const num = (n: number | string) => Number(n).toLocaleString('en-US')
 
 const TZ = 'Asia/Kathmandu'

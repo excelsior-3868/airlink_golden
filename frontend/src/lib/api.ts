@@ -1,16 +1,22 @@
 import axios from 'axios'
 
-let API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api'
+let API_URL = import.meta.env.VITE_API_URL || '/api'
 
-if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-  try {
-    const url = new URL(API_URL)
-    if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
-      url.hostname = window.location.hostname
-      API_URL = url.toString()
+if (typeof window !== 'undefined') {
+  if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+    // When loaded on a domain (like https://airlink.netcarenepal.com), always use
+    // relative '/api' so requests match the page's scheme (HTTPS) and route through Nginx.
+    API_URL = '/api'
+  } else if (API_URL.startsWith('http://') || API_URL.startsWith('https://')) {
+    try {
+      const url = new URL(API_URL)
+      if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
+        url.hostname = window.location.hostname
+        API_URL = url.toString()
+      }
+    } catch (e) {
+      /* ignore */
     }
-  } catch (e) {
-    /* ignore */
   }
 }
 

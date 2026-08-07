@@ -180,7 +180,7 @@ export default function FinancialDashboard() {
                     <div className="space-y-2.5">
                       {incomeStmt.commission_revenue_applicable !== false && (
                         <div className="flex justify-between text-xs text-slate-600 font-medium">
-                          <span>Wallet Voucher Commission Revenue</span>
+                          <span>Card Voucher Commission Revenue</span>
                           <span className="font-semibold text-slate-900">{rs(incomeStmt.commission_revenue || 0)}</span>
                         </div>
                       )}

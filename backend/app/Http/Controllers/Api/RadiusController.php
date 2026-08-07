@@ -16,40 +16,40 @@ class RadiusController extends Controller
         private \App\Services\Radius\CoaService $coa,
     ) {}
 
-    /** Fetch list of active RADIUS sessions & activated voucher users currently accessing the Internet. */
+    /** Fetch list of active RADIUS sessions currently connected to Hotspot networks. */
     public function onlineUsers(Request $request): JsonResponse
     {
         $user = $request->user();
 
-        $query = DB::table('vouchers')
-            ->whereNotNull('vouchers.activated_at')
-            ->whereIn('vouchers.status', ['used', 'active'])
-            ->where(function ($q) {
-                $q->whereNull('vouchers.expires_at')->orWhere('vouchers.expires_at', '>', now());
-            })
+        $query = DB::table('radacct')
+            ->whereNull('radacct.acctstoptime')
+            ->leftJoin('vouchers', 'vouchers.username', '=', 'radacct.username')
             ->leftJoin('internet_plans as p', 'p.id', '=', 'vouchers.plan_id')
             ->leftJoin('users as reseller', 'reseller.id', '=', 'vouchers.reseller_id')
             ->leftJoin('users as seller', 'seller.id', '=', 'vouchers.seller_id')
-            ->leftJoin('radacct', function ($j) {
-                $j->on('radacct.username', '=', 'vouchers.username')->whereNull('radacct.acctstoptime');
-            })
             ->select(
-                'vouchers.id as radacctid',
+                'radacct.radacctid',
                 'vouchers.id as voucher_id',
                 'vouchers.code as voucher_code',
-                'vouchers.username',
+                'radacct.username',
                 'vouchers.customer_username',
                 'vouchers.price',
                 'vouchers.status as voucher_status',
-                'vouchers.activated_at as start_time',
+                DB::raw('COALESCE(radacct.acctstarttime, vouchers.activated_at) as start_time'),
                 'vouchers.expires_at',
                 'p.name as plan_name',
                 'p.package_type',
-                DB::raw('COALESCE(radacct.framedipaddress, vouchers.nas_ip) as ip_address'),
-                DB::raw('COALESCE(radacct.callingstationid, vouchers.mac_address) as mac_address'),
+                DB::raw('COALESCE(radacct.framedipaddress, vouchers.nas_ip, "Dynamic") as ip_address'),
+                DB::raw('COALESCE(radacct.callingstationid, vouchers.mac_address, "Active") as mac_address'),
                 DB::raw('COALESCE(radacct.nasipaddress, vouchers.nas_ip) as nas_ip'),
-                DB::raw('COALESCE(radacct.acctsessiontime, TIMESTAMPDIFF(SECOND, vouchers.activated_at, NOW())) as session_time'),
-                DB::raw('COALESCE(radacct.acctinputoctets + radacct.acctoutputoctets, vouchers.daily_used_bytes, 0) as total_bytes'),
+                DB::raw('CAST(GREATEST(0, TIMESTAMPDIFF(SECOND, COALESCE(radacct.acctstarttime, vouchers.activated_at, NOW()), NOW())) AS UNSIGNED) as session_time'),
+                DB::raw('COALESCE(radacct.acctinputoctets, 0) as input_bytes'),
+                DB::raw('COALESCE(radacct.acctoutputoctets, 0) as output_bytes'),
+                DB::raw('GREATEST(
+                    COALESCE((SELECT SUM(COALESCE(r.acctinputoctets, 0) + COALESCE(r.acctoutputoctets, 0)) FROM radacct r WHERE r.username = radacct.username), 0),
+                    COALESCE(radacct.acctinputoctets, 0) + COALESCE(radacct.acctoutputoctets, 0),
+                    COALESCE(vouchers.daily_used_bytes, 0)
+                ) as total_bytes'),
                 'reseller.username as reseller_username',
                 'reseller.name as reseller_name',
                 'seller.username as seller_username',
@@ -70,15 +70,22 @@ class RadiusController extends Controller
         if ($search = $request->query('search')) {
             $query->where(function ($q) use ($search) {
                 $q->where('vouchers.code', 'like', "%{$search}%")
-                  ->orWhere('vouchers.username', 'like', "%{$search}%")
+                  ->orWhere('radacct.username', 'like', "%{$search}%")
                   ->orWhere('vouchers.customer_username', 'like', "%{$search}%")
-                  ->orWhere('vouchers.mac_address', 'like', "%{$search}%")
-                  ->orWhere('vouchers.nas_ip', 'like', "%{$search}%")
+                  ->orWhere('radacct.callingstationid', 'like', "%{$search}%")
+                  ->orWhere('radacct.framedipaddress', 'like', "%{$search}%")
+                  ->orWhere('radacct.nasipaddress', 'like', "%{$search}%")
                   ->orWhere('p.name', 'like', "%{$search}%");
             });
         }
 
-        $sessions = $query->orderBy('vouchers.activated_at', 'desc')->get();
+        $sessions = $query->orderBy('radacct.acctstarttime', 'desc')->get()->map(function ($s) {
+            $s->session_time = (int) ($s->session_time ?? 0);
+            $s->input_bytes = (int) ($s->input_bytes ?? 0);
+            $s->output_bytes = (int) ($s->output_bytes ?? 0);
+            $s->total_bytes = (int) ($s->total_bytes ?? 0);
+            return $s;
+        });
 
         return $this->ok([
             'count' => $sessions->count(),
@@ -93,9 +100,43 @@ class RadiusController extends Controller
             'username' => ['required', 'string'],
         ]);
 
-        $this->coa->disconnectUsername($data['username']);
+        $results = $this->coa->disconnectUsername($data['username']);
 
-        return $this->ok(null, "Disconnect command sent for user {$data['username']}.");
+        $disconnected = array_filter($results, fn ($r) => $r['status'] === 'disconnected');
+        $skipped      = array_filter($results, fn ($r) => $r['status'] === 'skipped');
+        $failed       = array_filter($results, fn ($r) => $r['status'] === 'failed');
+
+        // All sessions were skipped (NAS not registered) or failed (CoA NAK/timeout)
+        if (count($disconnected) === 0) {
+            $firstBadResult = array_values(array_merge($skipped, $failed))[0] ?? [];
+            $reason = $firstBadResult['reason'] ?? 'CoA disconnect did not succeed.';
+            $status = !empty($skipped) ? 'skipped' : 'failed';
+
+            return $this->fail(
+                "Disconnect {$status} for '{$data['username']}': {$reason}",
+                422,
+                ['results' => $results]
+            );
+        }
+
+        // Partial success — some sessions disconnected, others failed
+        if (count($failed) > 0 || count($skipped) > 0) {
+            return $this->ok(
+                ['results' => $results],
+                "Partial disconnect for '{$data['username']}': "
+                    . count($disconnected) . ' disconnected, '
+                    . count($failed) . ' failed, '
+                    . count($skipped) . ' skipped.'
+            );
+        }
+
+        // The row stays in radacct until the NAS sends its Accounting-Stop, so the
+        // session can linger in this list for a few seconds after a confirmed ACK.
+        return $this->ok(
+            ['results' => $results],
+            "Disconnected '{$data['username']}' — the router acknowledged the request. "
+                . 'It clears from this list once the router reports the session stop.'
+        );
     }
 
     /** Get FreeRADIUS server status and stats (admin only). */

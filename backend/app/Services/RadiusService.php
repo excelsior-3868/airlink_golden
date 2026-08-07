@@ -21,7 +21,9 @@ class RadiusService
             'username' => $username, 'attribute' => 'Simultaneous-Use', 'op' => ':=', 'value' => (string) ($plan->simultaneous_use ?: 1),
         ]];
 
-        $reply = [];
+        $reply = [
+            ['username' => $username, 'attribute' => 'Acct-Interim-Interval', 'op' => ':=', 'value' => '60'],
+        ];
 
         if ($plan->bandwidth) {
             // MikroTik rate-limit format is "rx/tx", e.g. "10M/10M".

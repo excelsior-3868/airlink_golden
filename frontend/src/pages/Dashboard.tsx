@@ -110,7 +110,7 @@ export default function Dashboard() {
         title="Dashboard"
         subtitle={`${d.role.charAt(0).toUpperCase() + d.role.slice(1)} account overview & billing metrics`}
         icon={<LayoutDashboard size={22} className="text-blue-500" />}
-        showBalances={true}
+        showOnlineUsers={true}
         action={
           (showCollect || showQuickFund) && (
             <div className="flex items-center gap-2">
@@ -183,7 +183,7 @@ export default function Dashboard() {
               }}
             />
             <VoucherStatCard title="GB Vouchers" vouchers={d.gb_vouchers || d.vouchers} icon={<Ticket size={22} />} iconColorClass="text-rose-600 bg-rose-50 border border-rose-100/50" valueColorClass="text-rose-600" />
-            <VoucherStatCard title="Wallet Vouchers" vouchers={d.wallet_vouchers || d.vouchers} icon={<Wallet size={22} />} iconColorClass="text-purple-600 bg-purple-50 border border-purple-100/50" valueColorClass="text-purple-600" />
+            <VoucherStatCard title="Card Vouchers" vouchers={d.wallet_vouchers || d.vouchers} icon={<Wallet size={22} />} iconColorClass="text-purple-600 bg-purple-50 border border-purple-100/50" valueColorClass="text-purple-600" />
           </div>
 
           {/* Charts Row — system-wide, across all resellers & sellers */}
@@ -242,7 +242,7 @@ export default function Dashboard() {
                       <Tooltip contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', fontSize: 12 }} labelStyle={{ fontSize: 11 }} />
                       <Legend wrapperStyle={{ fontSize: 11 }} />
                       <Bar dataKey="gb_count" name="GB Vouchers" stackId="vouchers" fill="#f43f5e" radius={[0, 0, 0, 0]} isAnimationActive animationDuration={1100} animationEasing="ease-out" />
-                      <Bar dataKey="wallet_count" name="Wallet Vouchers" stackId="vouchers" fill="#a855f7" radius={[4, 4, 0, 0]} isAnimationActive animationDuration={1100} animationEasing="ease-out" />
+                      <Bar dataKey="wallet_count" name="Card Vouchers" stackId="vouchers" fill="#a855f7" radius={[4, 4, 0, 0]} isAnimationActive animationDuration={1100} animationEasing="ease-out" />
                     </BarChart>
                   </ResponsiveContainer>
                   ) : (
@@ -396,7 +396,7 @@ export default function Dashboard() {
             </motion.div>
 
             <VoucherStatCard title="GB Vouchers" vouchers={d.gb_vouchers || d.vouchers} icon={<Ticket size={22} />} iconColorClass="text-rose-600 bg-rose-50 border border-rose-100/50" valueColorClass="text-rose-600" />
-            <VoucherStatCard title="Wallet Vouchers" vouchers={d.wallet_vouchers || d.vouchers} icon={<Wallet size={22} />} iconColorClass="text-purple-600 bg-purple-50 border border-purple-100/50" valueColorClass="text-purple-600" />
+            <VoucherStatCard title="Card Vouchers" vouchers={d.wallet_vouchers || d.vouchers} icon={<Wallet size={22} />} iconColorClass="text-purple-600 bg-purple-50 border border-purple-100/50" valueColorClass="text-purple-600" />
             <motion.div
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
@@ -415,7 +415,7 @@ export default function Dashboard() {
               <div className="h-px bg-slate-200" />
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-muted-foreground text-xs sm:text-sm font-medium">Wallet Voucher Sales</p>
+                  <p className="text-muted-foreground text-xs sm:text-sm font-medium">Card Voucher Sales</p>
                   <p className="text-xl font-bold mt-1 tracking-tight tabular-nums whitespace-nowrap text-purple-600">{rs(d.wallet_voucher_sales)}</p>
                 </div>
                 <div className="rounded-2xl p-2.5 shrink-0 flex items-center justify-center text-purple-600 bg-purple-50 border border-purple-100/50">
@@ -431,7 +431,7 @@ export default function Dashboard() {
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-muted-foreground text-xs sm:text-sm font-medium leading-snug">Commission Due (Wallet Voucher Sales)</p>
+                  <p className="text-muted-foreground text-xs sm:text-sm font-medium leading-snug">Commission Due (Card Voucher Sales)</p>
                   <p className="text-xl font-bold mt-1 tracking-tight tabular-nums whitespace-nowrap text-orange-600">
                     {rs(d.commission_due)} <span className="text-sm font-medium text-orange-400">({d.commission_percent}%)</span>
                   </p>
@@ -443,7 +443,7 @@ export default function Dashboard() {
               <div className="h-px bg-slate-200" />
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-muted-foreground text-xs sm:text-sm font-medium leading-snug">Commission Earned (Wallet Voucher Sales)</p>
+                  <p className="text-muted-foreground text-xs sm:text-sm font-medium leading-snug">Commission Earned (Card Voucher Sales)</p>
                   <p className="text-xl font-bold mt-1 tracking-tight tabular-nums whitespace-nowrap text-lime-600">{rs(d.commission_net_earnings)}</p>
                 </div>
                 <div className="rounded-2xl p-2.5 shrink-0 flex items-center justify-center text-lime-600 bg-lime-50 border border-lime-100/50">
@@ -509,7 +509,7 @@ export default function Dashboard() {
                       <Tooltip contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', fontSize: 12 }} labelStyle={{ fontSize: 11 }} />
                       <Legend wrapperStyle={{ fontSize: 11 }} />
                       <Bar dataKey="gb_count" name="GB Vouchers" stackId="vouchers" fill="#f43f5e" radius={[0, 0, 0, 0]} isAnimationActive animationDuration={1100} animationEasing="ease-out" />
-                      <Bar dataKey="wallet_count" name="Wallet Vouchers" stackId="vouchers" fill="#a855f7" radius={[4, 4, 0, 0]} isAnimationActive animationDuration={1100} animationEasing="ease-out" />
+                      <Bar dataKey="wallet_count" name="Card Vouchers" stackId="vouchers" fill="#a855f7" radius={[4, 4, 0, 0]} isAnimationActive animationDuration={1100} animationEasing="ease-out" />
                     </BarChart>
                   </ResponsiveContainer>
                   ) : (
