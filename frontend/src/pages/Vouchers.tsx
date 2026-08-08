@@ -162,7 +162,7 @@ export default function Vouchers() {
     if (batchesPage !== 1) setBatchesPage(1)
   }
 
-  const { data: plans = [], refetch: refetchPlans } = useQuery<any[]>('plans?active_only=1', () => api.get('/plans', { params: { active_only: 1 } }).then((r) => r.data.data))
+  const { data: plans = [], loading: plansLoading, refetch: refetchPlans } = useQuery<any[]>('plans?active_only=1', () => api.get('/plans', { params: { active_only: 1 } }).then((r) => r.data.data))
   const { data: seasons = [] } = useQuery<any[]>('seasons', () => api.get('/seasons').then((r) => r.data.data), { enabled: canSeeReports })
   const { data: resellers = [] } = useQuery<any[]>('users?role=reseller&per_page=100', () => api.get('/users', { params: { role: 'reseller', per_page: 100 } }).then((r) => r.data.data.data), { enabled: canSeeReports && user?.role === 'admin' })
   const { data: sellers = [] } = useQuery<any[]>('users?role=seller&per_page=500', () => api.get('/users', { params: { role: 'seller', per_page: 500 } }).then((r) => r.data.data.data), { enabled: canSeeReports && (user?.role === 'admin' || user?.role === 'reseller') })
@@ -621,6 +621,7 @@ export default function Vouchers() {
       {activeTab === 'generate' && (
         <VoucherGenerateTab
           plans={plans}
+          plansLoading={plansLoading}
           refetchPlans={refetchPlans}
           onSuccess={() => {
             load()

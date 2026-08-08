@@ -5,7 +5,9 @@ import { api, apiError } from '../lib/api'
 import { useQuery, invalidateCache } from '../lib/cache'
 import { useAuth } from '../lib/auth'
 import { rs, gb } from '../lib/format'
-import { GlassCard, PageTitle, Modal, Pill, EmptyState, ConfirmModal, Spinner, CustomSelect, SelectOption } from '../components/ui'
+import { GlassCard, PageTitle, Modal, Pill, EmptyState, ConfirmModal, Spinner, CustomSelect, Combobox, Pagination, SelectOption } from '../components/ui'
+
+const PER_PAGE = 15
 
 const blank = { name: '', type: 'hotspot', package_type: 'wallet', plan_type: 'unlimited', bandwidth_id: '', data_gb: '', daily_data_gb: '', validity_days: 1, simultaneous_use: 1, base_price: 0, selling_price: 0, status: 'active', delegation_id: '', nas_device_id: '', mac_bind: false }
 
@@ -116,12 +118,14 @@ export default function HotspotPlans() {
   }, [allResellers, allSellers, user, isAdmin])
 
   // List-page filters
+  const [nameFilter, setNameFilter] = useState('all')
   const [typeFilter, setTypeFilter] = useState('all')
   const [nasFilter, setNasFilter] = useState('all')
   const [macFilter, setMacFilter] = useState('all')
   const [bandwidthFilter, setBandwidthFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
   const [validityFilter, setValidityFilter] = useState('all')
+  const [page, setPage] = useState(1)
 
   // A reseller's tabs already answer "whose plans am I looking at", so the owner
   // picker is admin-only. Type/NAS/MAC Bind likewise only earn their place on the
@@ -145,10 +149,11 @@ export default function HotspotPlans() {
     }
   }, [showOwnerFilter, showPlanAttributeFilters])
 
-  const isFiltered = ownerFilter !== 'all' || typeFilter !== 'all' || nasFilter !== 'all' || macFilter !== 'all' || bandwidthFilter !== 'all' || statusFilter !== 'all' || validityFilter !== 'all'
+  const isFiltered = ownerFilter !== 'all' || nameFilter !== 'all' || typeFilter !== 'all' || nasFilter !== 'all' || macFilter !== 'all' || bandwidthFilter !== 'all' || statusFilter !== 'all' || validityFilter !== 'all'
 
   const clearFilters = () => {
     setOwnerFilter('all')
+    setNameFilter('all')
     setTypeFilter('all')
     setNasFilter('all')
     setMacFilter('all')
@@ -299,7 +304,10 @@ export default function HotspotPlans() {
     setConfirmDelete({ open: true, plan: p })
   }
 
-  const filteredPlans = plans.filter((p) => {
+  // Everything except the name filter. The Package Name picker builds its options
+  // from this set, so it only ever offers names the other filters can actually
+  // match — picking one can never yield an empty table.
+  const scopedPlans = useMemo(() => plans.filter((p) => {
     if (user?.role === 'seller' && p.package_type === 'wallet') return false
     if (user?.role === 'reseller') {
       if (activeTab === 'my' && p.created_by !== user.id) return false
@@ -321,7 +329,43 @@ export default function HotspotPlans() {
     if (statusFilter !== 'all' && p.status !== statusFilter) return false
     if (validityFilter !== 'all' && String(p.validity_days) !== validityFilter) return false
     return true
-  })
+  }), [plans, user, activeTab, ownerFilter, typeFilter, nasFilter, macFilter, bandwidthFilter, statusFilter, validityFilter])
+
+  const nameFilterOptions = useMemo<SelectOption[]>(() => {
+    const names = Array.from(new Set(scopedPlans.map((p) => p.name as string)))
+      .sort((a, b) => a.localeCompare(b))
+    return [{ value: 'all', label: 'All Package Names' }, ...names.map((n) => ({ value: n, label: n }))]
+  }, [scopedPlans])
+
+  const filteredPlans = useMemo(
+    () => (nameFilter === 'all' ? scopedPlans : scopedPlans.filter((p) => p.name === nameFilter)),
+    [scopedPlans, nameFilter]
+  )
+
+  // A name that the other filters just excluded would otherwise keep filtering
+  // invisibly, showing an empty table with no matching option in the picker.
+  useEffect(() => {
+    if (nameFilter !== 'all' && !scopedPlans.some((p) => p.name === nameFilter)) setNameFilter('all')
+  }, [scopedPlans, nameFilter])
+
+  const lastPage = Math.max(1, Math.ceil(filteredPlans.length / PER_PAGE))
+  // Clamp rather than store, so deleting the last row of the final page can't
+  // strand the user on a page that no longer exists.
+  const currentPage = Math.min(page, lastPage)
+  const pagedPlans = filteredPlans.slice((currentPage - 1) * PER_PAGE, currentPage * PER_PAGE)
+  const pageMeta = {
+    current_page: currentPage,
+    last_page: lastPage,
+    per_page: PER_PAGE,
+    total: filteredPlans.length,
+    from: filteredPlans.length === 0 ? 0 : (currentPage - 1) * PER_PAGE + 1,
+    to: Math.min(currentPage * PER_PAGE, filteredPlans.length),
+  }
+
+  // Any narrowing should land the user on page 1, not deep in a shorter list.
+  useEffect(() => {
+    setPage(1)
+  }, [ownerFilter, nameFilter, typeFilter, nasFilter, macFilter, bandwidthFilter, statusFilter, validityFilter, activeTab])
 
   return (
     <div>
@@ -395,6 +439,9 @@ export default function HotspotPlans() {
           runs out of room. A fixed column count forced every select to the same
           track width, which its 180px minimum then overflowed into its neighbour. */}
       <div className="mb-6 flex flex-wrap items-center gap-3 bg-slate-50/70 p-3.5 rounded-xl border border-slate-200/60">
+        {/* Searchable so a long package list stays reachable by typing. !min-w-0
+            matches the sibling selects — CustomSelect otherwise reserves 180px. */}
+        <Combobox className="!min-w-0" value={nameFilter} onChange={setNameFilter} options={nameFilterOptions} />
         {showPlanAttributeFilters && (
           <>
             <CustomSelect className="!min-w-0" value={typeFilter} onChange={setTypeFilter} options={typeFilterOptions} />
@@ -424,7 +471,13 @@ export default function HotspotPlans() {
         {plansLoading ? (
           <Spinner />
         ) : (
-          <div className="overflow-x-auto">
+          <div className="flex flex-col">
+            {filteredPlans.length > 0 && (
+              <div className="px-4 pb-4 border-b border-slate-100 bg-slate-50/30">
+                <Pagination meta={pageMeta} onPage={setPage} />
+              </div>
+            )}
+            <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr>
@@ -450,7 +503,7 @@ export default function HotspotPlans() {
                 </tr>
               </thead>
               <tbody>
-                {filteredPlans.map((p, idx) => (
+                {pagedPlans.map((p, idx) => (
                   <motion.tr
                     key={p.id}
                     initial={{ opacity: 0, x: -10 }}
@@ -522,7 +575,15 @@ export default function HotspotPlans() {
                 ))}
               </tbody>
             </table>
-            {filteredPlans.length === 0 && <EmptyState>No Hotspot plans yet.</EmptyState>}
+            {filteredPlans.length === 0 && (
+              <EmptyState>{isFiltered ? 'No plans match these filters.' : 'No Hotspot plans yet.'}</EmptyState>
+            )}
+            </div>
+            {filteredPlans.length > 0 && (
+              <div className="px-4 pb-4 border-t border-slate-100 bg-slate-50/30">
+                <Pagination meta={pageMeta} onPage={setPage} />
+              </div>
+            )}
           </div>
         )}
       </GlassCard>

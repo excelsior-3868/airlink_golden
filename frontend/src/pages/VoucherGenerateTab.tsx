@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Ticket, AlertTriangle, Printer, Plus, Pencil, Loader2, Wallet, Database, Layers, Sparkles } from 'lucide-react'
+import { Ticket, AlertTriangle, Printer, Plus, Pencil, Loader2, Wallet, Database, Layers, Sparkles, Search, X } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { rs, gb } from '../lib/format'
@@ -292,11 +292,12 @@ function VoucherPackageCard({
 
 interface VoucherGenerateTabProps {
   plans: any[]
+  plansLoading?: boolean
   refetchPlans: () => void
   onSuccess?: () => void
 }
 
-export default function VoucherGenerateTab({ plans, refetchPlans, onSuccess }: VoucherGenerateTabProps) {
+export default function VoucherGenerateTab({ plans, plansLoading = false, refetchPlans, onSuccess }: VoucherGenerateTabProps) {
   const { user, refresh } = useAuth()
 
   // Configuration resources
@@ -408,16 +409,24 @@ export default function VoucherGenerateTab({ plans, refetchPlans, onSuccess }: V
   const gbCount = useMemo(() => ownerFilteredPackages.filter((p) => p.package_type === 'gb').length, [ownerFilteredPackages])
   const walletCount = useMemo(() => ownerFilteredPackages.filter((p) => p.package_type === 'wallet').length, [ownerFilteredPackages])
 
-  // Apply category sub-tab filter
+  const [packageSearch, setPackageSearch] = useState('')
+
+  // Apply category sub-tab filter, then the free-text package filter. The tab
+  // counts above stay on the unsearched set so typing narrows the grid without
+  // making the tab labels flicker.
   const displayedPackages = useMemo(() => {
+    let list = ownerFilteredPackages
     if (packageTypeTab === 'gb') {
-      return ownerFilteredPackages.filter((p) => p.package_type === 'gb')
+      list = list.filter((p) => p.package_type === 'gb')
+    } else if (packageTypeTab === 'wallet') {
+      list = list.filter((p) => p.package_type === 'wallet')
     }
-    if (packageTypeTab === 'wallet') {
-      return ownerFilteredPackages.filter((p) => p.package_type === 'wallet')
+    const q = packageSearch.trim().toLowerCase()
+    if (q) {
+      list = list.filter((p) => (p.name || '').toLowerCase().includes(q))
     }
-    return ownerFilteredPackages
-  }, [ownerFilteredPackages, packageTypeTab])
+    return list
+  }, [ownerFilteredPackages, packageTypeTab, packageSearch])
 
   // Create Package State
   const [createModalOpen, setCreateModalOpen] = useState(false)
@@ -650,9 +659,11 @@ export default function VoucherGenerateTab({ plans, refetchPlans, onSuccess }: V
 
 
 
-      {/* Category Sub-Tabs (Differentiate GB vs Wallet packages) */}
-      {walletCount > 0 && (
-        <div className="flex flex-wrap gap-2 border-b border-slate-200/80 pb-3 -mt-2">
+      {/* Category Sub-Tabs (Differentiate GB vs Wallet packages) + package filter */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/80 pb-3 -mt-2">
+        <div className="flex flex-wrap gap-2">
+          {walletCount > 0 && (
+          <>
           <button
             onClick={() => setPackageTypeTab('all')}
             className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer select-none ${
@@ -685,10 +696,38 @@ export default function VoucherGenerateTab({ plans, refetchPlans, onSuccess }: V
           >
             <Wallet size={13} /> Wallet Packages ({walletCount})
           </button>
+          </>
+          )}
         </div>
-      )}
+
+        <div className="relative w-full sm:w-64">
+          <span className="absolute inset-y-0 left-3 flex items-center text-slate-400 pointer-events-none">
+            <Search size={15} />
+          </span>
+          <input
+            className="input pl-9 pr-8"
+            placeholder="Filter packages..."
+            value={packageSearch}
+            onChange={(e) => setPackageSearch(e.target.value)}
+          />
+          {packageSearch && (
+            <button
+              type="button"
+              onClick={() => setPackageSearch('')}
+              className="absolute inset-y-0 right-2 flex items-center text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+              title="Clear filter"
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+      </div>
 
       {/* Card Grid Layout */}
+      {plansLoading ? (
+        <Spinner />
+      ) : (
+      <>
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
         {displayedPackages.map((p) => (
           <VoucherPackageCard
@@ -709,19 +748,30 @@ export default function VoucherGenerateTab({ plans, refetchPlans, onSuccess }: V
       {displayedPackages.length === 0 && (
         <div className="bg-white border border-slate-200/80 rounded-[24px] p-12 shadow-sm flex flex-col items-center justify-center text-center">
           <div className="p-4 bg-slate-50 text-[#003164]/60 rounded-full mb-4 border border-slate-100">
-            <Ticket size={32} />
+            {packageSearch ? <Search size={32} /> : <Ticket size={32} />}
           </div>
           <h3 className="text-base font-bold text-slate-800 tracking-tight">
-            {user?.role === 'admin' && !selectedOwnerId ? 'Select a Reseller / Seller' : 'No Custom Packages Found'}
+            {packageSearch
+              ? 'No Matching Packages'
+              : user?.role === 'admin' && !selectedOwnerId ? 'Select a Reseller / Seller' : 'No Custom Packages Found'}
           </h3>
           <p className="text-xs text-slate-400 font-medium max-w-sm mt-1 mb-2">
-            {user?.role === 'admin' && !selectedOwnerId
-              ? 'Packages are generated for a reseller or seller. Pick one above to see their packages.'
-              : user?.role === 'seller'
-                ? 'You do not have any custom packages configured yet.'
-                : 'There are no custom packages created for this user yet. Click "Create a Package" to get started.'}
+            {packageSearch
+              ? `Nothing matches “${packageSearch}”. Try a different name or clear the filter.`
+              : user?.role === 'admin' && !selectedOwnerId
+                ? 'Packages are generated for a reseller or seller. Pick one above to see their packages.'
+                : user?.role === 'seller'
+                  ? 'You do not have any custom packages configured yet.'
+                  : 'There are no custom packages created for this user yet. Click "Create a Package" to get started.'}
           </p>
+          {packageSearch && (
+            <button onClick={() => setPackageSearch('')} className="text-xs font-bold text-primary hover:underline cursor-pointer">
+              Clear filter
+            </button>
+          )}
         </div>
+      )}
+      </>
       )}
 
       {/* Create Package Modal */}
