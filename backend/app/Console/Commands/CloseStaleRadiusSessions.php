@@ -26,14 +26,16 @@ use Illuminate\Support\Facades\DB;
 class CloseStaleRadiusSessions extends Command
 {
     protected $signature = 'radius:close-stale-sessions
-        {--minutes= : Idle minutes before a session counts as abandoned (default: OnlineSession::STALE_AFTER_MINUTES)}
+        {--minutes= : Idle minutes before a session counts as abandoned (default: OnlineSession::CLOSE_AFTER_MINUTES)}
         {--dry-run : Report what would be closed without writing}';
 
     protected $description = 'Close radacct sessions abandoned without an Accounting-Stop';
 
     public function handle(): int
     {
-        $minutes = (int) ($this->option('minutes') ?: OnlineSession::STALE_AFTER_MINUTES);
+        // CLOSE_AFTER_MINUTES, not the display window: this writes, and these
+        // NASes can go hours between interim updates on a live session.
+        $minutes = (int) ($this->option('minutes') ?: OnlineSession::CLOSE_AFTER_MINUTES);
         $dry = (bool) $this->option('dry-run');
 
         // Mirrors OnlineSession::scopeLive(), negated: open, and no accounting
