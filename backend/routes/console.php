@@ -13,3 +13,8 @@ Schedule::command('vouchers:sync-status')->everyFiveMinutes()->withoutOverlappin
 
 // Settle GB Package vouchers activated (first login) outside an explicit sale.
 Schedule::command('vouchers:settle-gb')->everyFiveMinutes()->withoutOverlapping();
+
+// Close radacct sessions the NAS abandoned without an Accounting-Stop. Left to
+// accumulate they inflate the online-user count and, because FreeRADIUS counts
+// them in simul_count_query, one stale row blocks that voucher's next login.
+Schedule::command('radius:close-stale-sessions')->everyFiveMinutes()->withoutOverlapping();

@@ -29,6 +29,12 @@ class CoaService
      */
     public function disconnectUsername(string $username): array
     {
+        // Deliberately NOT narrowed by OnlineSession::scopeLive(). Counting a
+        // departed user as online is cosmetic; failing to disconnect one who is
+        // actually still connected (because their NAS delayed its accounting
+        // update past the staleness window) would leave them online past their
+        // quota or expiry. A Disconnect-Request aimed at an already-dead session
+        // just gets a NAK, so the redundant packet is the cheaper mistake.
         $sessions = DB::table('radacct')
             ->select('acctsessionid', 'framedipaddress', 'nasipaddress')
             ->where('username', $username)

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Services\ClientsConfService;
+use App\Services\Radius\OnlineSession;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -21,8 +22,7 @@ class RadiusController extends Controller
     {
         $user = $request->user();
 
-        $query = DB::table('radacct')
-            ->whereNull('radacct.acctstoptime')
+        $query = OnlineSession::scopeLive(DB::table('radacct'))
             ->leftJoin('vouchers', 'vouchers.username', '=', 'radacct.username')
             ->leftJoin('internet_plans as p', 'p.id', '=', 'vouchers.plan_id')
             ->leftJoin('users as reseller', 'reseller.id', '=', 'vouchers.reseller_id')
@@ -149,7 +149,9 @@ class RadiusController extends Controller
         } catch (Exception $e) {}
 
         $credentialsCount = DB::table('radcheck')->count();
-        $activeSessionsCount = DB::table('radacct')->whereNull('acctstoptime')->distinct()->count('username');
+        // Same liveness rule as the online-users list, so the status badge and
+        // the list it links to can never disagree.
+        $activeSessionsCount = OnlineSession::scopeLive(DB::table('radacct'))->distinct()->count('username');
 
         // FreeRADIUS runs on the Docker host (systemd), not as a compose
         // service, since 2026-07-25 — reach it via the host-gateway alias.
