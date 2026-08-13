@@ -53,6 +53,12 @@ class PppoeCustomerController extends Controller
             }
         }
 
+        // Filter: stat-tile view. Clicking a tile narrows the list to exactly
+        // the rows that tile counted — see applyView().
+        if (($view = $request->input('view')) && $view !== 'all') {
+            $this->applyView($query, $view);
+        }
+
         // Filter: Plan
         if ($planId = $request->input('plan_id')) {
             $query->where('plan_id', $planId);
@@ -131,29 +137,40 @@ class PppoeCustomerController extends Controller
         $actor = $request->user();
         $base = $this->scopedQuery($actor);
 
-        $total = (clone $base)->count();
-        $active = (clone $base)->where('status', 'active')->count();
-        $expiring7d = (clone $base)
-            ->where('status', 'active')
-            ->whereNotNull('expires_at')
-            ->whereBetween('expires_at', [now(), now()->addDays(7)])
-            ->count();
-        $expiredOrSuspended = (clone $base)->whereIn('status', ['expired', 'suspended'])->count();
-
-        // Online count across scoped customers
-        $scopedUsernamesQuery = $this->scopedQuery($actor)->select('username');
-        $online = OnlineSession::scopeLive(DB::table('radacct'))
-            ->whereIn('username', $scopedUsernamesQuery)
-            ->distinct()
-            ->count('username');
-
+        // Every tile is counted through applyView(), the same definition index()
+        // filters by, so a tile can never report a number its own list refuses
+        // to reproduce.
         return $this->ok([
-            'total' => $total,
-            'active' => $active,
-            'expiring_7d' => $expiring7d,
-            'expired_suspended' => $expiredOrSuspended,
-            'online' => $online,
+            'total' => (clone $base)->count(),
+            'active' => $this->applyView(clone $base, 'active')->count(),
+            'expiring_7d' => $this->applyView(clone $base, 'expiring_7d')->count(),
+            'expired_suspended' => $this->applyView(clone $base, 'expired_suspended')->count(),
+            'online' => $this->applyView(clone $base, 'online')->count(),
         ]);
+    }
+
+    /**
+     * The five dashboard tiles double as list filters. Both the count shown on
+     * a tile and the rows returned when it is clicked come from here, so the
+     * two cannot drift apart.
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder  $query
+     * @return \Illuminate\Database\Eloquent\Builder
+     */
+    private function applyView($query, string $view)
+    {
+        return match ($view) {
+            'active' => $query->where('status', 'active'),
+            'expiring_7d' => $query->where('status', 'active')
+                ->whereNotNull('expires_at')
+                ->whereBetween('expires_at', [now(), now()->addDays(7)]),
+            'expired_suspended' => $query->whereIn('status', ['expired', 'suspended']),
+            'online' => $query->whereIn(
+                'username',
+                OnlineSession::scopeLive(DB::table('radacct'))->select('username')
+            ),
+            default => $query,
+        };
     }
 
     /**

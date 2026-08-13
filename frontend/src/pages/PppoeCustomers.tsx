@@ -44,6 +44,8 @@ export default function PppoeCustomers() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [planFilter, setPlanFilter] = useState('all')
   const [resellerFilter, setResellerFilter] = useState('all')
+  // Which stat tile is selected. Mirrors the server's `view` param 1:1.
+  const [view, setView] = useState<'all' | 'active' | 'expiring_7d' | 'expired_suspended' | 'online'>('all')
   const [page, setPage] = useState(1)
 
   // Modals state
@@ -80,10 +82,20 @@ export default function PppoeCustomers() {
     if (statusFilter !== 'all') p.status = statusFilter
     if (planFilter !== 'all') p.plan_id = planFilter
     if (isAdmin && resellerFilter !== 'all') p.owner_id = resellerFilter
+    if (view !== 'all') p.view = view
     return p
   }
   const custKey = new URLSearchParams(custFilters()).toString()
   const isFiltered = custKey !== ''
+
+  // Selecting a tile and picking a status are two ways to say the same thing,
+  // so they clear each other rather than combining into a contradiction like
+  // "Active subscribers that are expired".
+  const selectView = (v: typeof view) => {
+    setView((prev) => (prev === v ? 'all' : v))
+    setStatusFilter('all')
+    setPage(1)
+  }
 
   // Reset to page 1 at render time (not in an effect) when the filters change,
   // or the first request after a filter change fires against a stale page.
@@ -100,8 +112,10 @@ export default function PppoeCustomers() {
   const customers: any[] = Array.isArray(custPage?.data) ? custPage.data : []
 
   const { data: summary = null, refetch: refetchSummary } = useQuery<any>(
-    `pppoe/customers/summary?${custKey}`,
-    () => api.get('/pppoe/customers/summary', { params: custFilters() }).then((r) => r.data.data)
+    // Deliberately unfiltered: the tiles are whole-estate totals, so they stay
+    // put while you click between them instead of collapsing to the selection.
+    'pppoe/customers/summary',
+    () => api.get('/pppoe/customers/summary').then((r) => r.data.data)
   )
 
   const { data: plans = [] } = useQuery<any[]>('plans?type=pppoe&active_only=1', () =>
@@ -374,59 +388,50 @@ export default function PppoeCustomers() {
       />
 
       <div className="space-y-6">
-          {/* Stat Cards */}
+          {/* Stat Cards — each one is a filter for the list below. */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
-            <GlassCard className="p-3.5 flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
-                <Users2 size={18} />
-              </div>
-              <div>
-                <div className="text-[11px] text-slate-500 font-medium">Total Subscribers</div>
-                <div className="text-lg font-bold text-slate-900 dark:text-white mt-0.5">{summary?.total ?? customers.length}</div>
-              </div>
-            </GlassCard>
-
-            <GlassCard className="p-3.5 flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
-                <CheckCircle size={18} />
-              </div>
-              <div>
-                <div className="text-[11px] text-slate-500 font-medium">Active</div>
-                <div className="text-lg font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">{summary?.active ?? 0}</div>
-              </div>
-            </GlassCard>
-
-            <GlassCard className="p-3.5 flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
-                <Clock size={18} />
-              </div>
-              <div>
-                <div className="text-[11px] text-slate-500 font-medium">Expiring Soon</div>
-                <div className="text-lg font-bold text-amber-600 dark:text-amber-400 mt-0.5">{summary?.expiring_7d ?? 0}</div>
-              </div>
-            </GlassCard>
-
-            <GlassCard className="p-3.5 flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
-                <AlertTriangle size={18} />
-              </div>
-              <div>
-                <div className="text-[11px] text-slate-500 font-medium">Expired / Suspended</div>
-                <div className="text-lg font-bold text-rose-600 dark:text-rose-400 mt-0.5">
-                  {summary?.expired_suspended ?? 0}
-                </div>
-              </div>
-            </GlassCard>
-
-            <GlassCard className="p-3.5 flex items-center gap-3 col-span-2 sm:col-span-1">
-              <div className="w-10 h-10 rounded-xl bg-sky-50 dark:bg-sky-950/50 text-sky-600 dark:text-sky-400 flex items-center justify-center shrink-0">
-                <Activity size={18} />
-              </div>
-              <div>
-                <div className="text-[11px] text-slate-500 font-medium">Online Live</div>
-                <div className="text-lg font-bold text-sky-600 dark:text-sky-400 mt-0.5">{summary?.online ?? 0}</div>
-              </div>
-            </GlassCard>
+            {([
+              { key: 'all',               label: 'Total Subscribers',   value: summary?.total ?? customers.length, icon: <Users2 size={18} />,        tone: 'indigo',  valueClass: 'text-slate-900 dark:text-white' },
+              { key: 'active',            label: 'Active',              value: summary?.active ?? 0,               icon: <CheckCircle size={18} />,   tone: 'emerald', valueClass: 'text-emerald-600 dark:text-emerald-400' },
+              { key: 'expiring_7d',       label: 'Expiring Soon',       value: summary?.expiring_7d ?? 0,          icon: <Clock size={18} />,         tone: 'amber',   valueClass: 'text-amber-600 dark:text-amber-400' },
+              { key: 'expired_suspended', label: 'Expired / Suspended', value: summary?.expired_suspended ?? 0,    icon: <AlertTriangle size={18} />, tone: 'rose',    valueClass: 'text-rose-600 dark:text-rose-400' },
+              { key: 'online',            label: 'Online Live',         value: summary?.online ?? 0,               icon: <Activity size={18} />,      tone: 'sky',     valueClass: 'text-sky-600 dark:text-sky-400' },
+            ] as const).map((c, i) => {
+              const selected = view === c.key
+              const iconTone: Record<string, string> = {
+                indigo: 'bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400',
+                emerald: 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400',
+                amber: 'bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400',
+                rose: 'bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400',
+                sky: 'bg-sky-50 dark:bg-sky-950/50 text-sky-600 dark:text-sky-400',
+              }
+              const ring: Record<string, string> = {
+                indigo: 'ring-indigo-500/70', emerald: 'ring-emerald-500/70', amber: 'ring-amber-500/70',
+                rose: 'ring-rose-500/70', sky: 'ring-sky-500/70',
+              }
+              return (
+                <button
+                  key={c.key}
+                  type="button"
+                  onClick={() => selectView(c.key)}
+                  aria-pressed={selected}
+                  title={selected ? 'Clear this filter' : `Show only ${c.label}`}
+                  className={`text-left rounded-2xl transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
+                    selected ? `ring-2 ${ring[c.tone]}` : 'hover:-translate-y-0.5'
+                  } ${i === 4 ? 'col-span-2 sm:col-span-1' : ''}`}
+                >
+                  <GlassCard className="p-3.5 flex items-center gap-3 h-full">
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${iconTone[c.tone]}`}>
+                      {c.icon}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-[11px] text-slate-500 font-medium truncate">{c.label}</div>
+                      <div className={`text-lg font-bold mt-0.5 ${c.valueClass}`}>{c.value}</div>
+                    </div>
+                  </GlassCard>
+                </button>
+              )
+            })}
           </div>
 
           {/* Filter Bar */}
@@ -443,16 +448,18 @@ export default function PppoeCustomers() {
                 />
               </div>
 
-              <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
-                <div className="w-40">
+              <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3 w-full md:w-auto">
+                {/* Each select gets its own track and a floor width, so the three
+                    read as separate controls instead of one run-on strip. */}
+                <div className="w-full sm:w-48 shrink-0">
                   <CustomSelect
                     value={statusFilter}
-                    onChange={(v) => { setStatusFilter(v); setPage(1) }}
+                    onChange={(v) => { setStatusFilter(v); setView('all'); setPage(1) }}
                     options={statusOptions}
                   />
                 </div>
 
-                <div className="w-44">
+                <div className="w-full sm:w-52 shrink-0">
                   <CustomSelect
                     value={planFilter}
                     onChange={(v) => { setPlanFilter(v); setPage(1) }}
@@ -461,7 +468,7 @@ export default function PppoeCustomers() {
                 </div>
 
                 {isAdmin && (
-                  <div className="w-48">
+                  <div className="w-full sm:w-56 shrink-0">
                     <CustomSelect
                       value={resellerFilter}
                       onChange={(v) => { setResellerFilter(v); setPage(1) }}
@@ -470,7 +477,7 @@ export default function PppoeCustomers() {
                   </div>
                 )}
 
-                {(search || statusFilter !== 'all' || planFilter !== 'all' || resellerFilter !== 'all') && (
+                {(search || statusFilter !== 'all' || planFilter !== 'all' || resellerFilter !== 'all' || view !== 'all') && (
                   <button
                     type="button"
                     onClick={() => {
@@ -478,6 +485,7 @@ export default function PppoeCustomers() {
                       setStatusFilter('all')
                       setPlanFilter('all')
                       setResellerFilter('all')
+                      setView('all')
                       setPage(1)
                     }}
                     className="p-2 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition"
