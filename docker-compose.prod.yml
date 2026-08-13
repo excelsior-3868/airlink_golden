@@ -63,6 +63,9 @@ services:
     volumes:
       - /etc/freeradius/3.0/clients.conf:/etc/freeradius-host/clients.conf
       - /etc/freeradius/3.0/.restart-trigger:/etc/freeradius-host/.restart-trigger
+      # Server log, read-only — backs the RADIUS Log tab. Without this the
+      # /radius/server-log endpoint can only ever report "file not found".
+      - /var/log/freeradius:/var/log/freeradius:ro
     depends_on:
       mariadb:
         condition: service_healthy

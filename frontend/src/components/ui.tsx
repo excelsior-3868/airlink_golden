@@ -89,6 +89,9 @@ export function VoucherStatCard({
     total: number;
     by_status: Record<string, number>;
     sold_today?: number;
+    // Revoked stock. Sent apart from by_status so it can be shown alongside the
+    // other statuses without ever being added into `total`.
+    disabled?: number;
   };
   icon?: ReactNode;
   iconColorClass?: string;
@@ -98,13 +101,13 @@ export function VoucherStatCard({
   const total = vouchers?.total || 0;
   const byStatus = vouchers?.by_status || {};
   const soldToday = vouchers?.sold_today;
+  const disabled = vouchers?.disabled || 0;
 
   const statusLine = [
+    { status: 'Ready', value: byStatus.ready || 0, color: '#3b82f6' },
     { status: 'Active', value: byStatus.active || 0, color: '#10b981' },
-    { status: 'Sold', value: byStatus.sold || 0, color: '#d97706' },
     { status: 'Used', value: byStatus.used || 0, color: '#0ea5e9' },
-    { status: 'Expired', value: byStatus.expired || 0, color: '#f43f5e' },
-    { status: 'Disabled', value: byStatus.disabled || 0, color: '#94a3b8' },
+    { status: 'Disabled', value: disabled, color: '#f43f5e' },
   ];
   const renderStatusDot = (props: any) => {
     const { cx, cy, payload } = props;
@@ -164,20 +167,17 @@ export function VoucherStatCard({
       </div>
 
       <div className="flex flex-wrap gap-1.5 mt-1">
+        <span className="px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 text-[10px] font-bold border border-blue-100/50 shrink-0">
+          {byStatus.ready || 0} Ready
+        </span>
         <span className="px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 text-[10px] font-bold border border-emerald-100/50 shrink-0">
           {byStatus.active || 0} Active
         </span>
-        <span className="px-1.5 py-0.5 rounded-full bg-rose-50 text-rose-600 text-[10px] font-bold border border-rose-100/50 shrink-0">
-          {byStatus.expired || 0} Expired
-        </span>
-        <span className="px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold border border-slate-200 shrink-0">
-          {byStatus.disabled || 0} Disabled
-        </span>
-        <span className="px-1.5 py-0.5 rounded-full bg-sky-50 text-sky-600 text-[10px] font-bold border border-sky-100/50 shrink-0">
+        <span className="px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600 text-[10px] font-bold border border-amber-100/50 shrink-0">
           {byStatus.used || 0} Used
         </span>
-        <span className="px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600 text-[10px] font-bold border border-amber-100/50 shrink-0">
-          {byStatus.sold || 0} Sold
+        <span className="px-1.5 py-0.5 rounded-full bg-rose-50 text-rose-600 text-[10px] font-bold border border-rose-100/50 shrink-0">
+          {disabled} Disabled
         </span>
       </div>
     </motion.div>

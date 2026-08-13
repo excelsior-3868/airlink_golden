@@ -529,7 +529,11 @@ class LegacyImport extends Command
                     'simultaneous_use' => (int) ($plan->simultaneous_use ?: 1),
                     'price' => $plan->selling_price,
                     'base_price' => $plan->base_price,
-                    'status' => strtolower((string) $c->status) === 'deactivate' ? 'disabled' : 'new',
+                    // 'active', not 'new': the FreeRADIUS post-auth hook stamps
+                    // activated_at/expires_at only WHERE status IN
+                    // ('active','sold','used'), so a card left on 'new' never
+                    // starts its clock and can never expire on time.
+                    'status' => strtolower((string) $c->status) === 'deactivate' ? 'disabled' : 'active',
                     'customer_username' => $c->fullname ?: null,
                     'legacy_id' => $c->id,
                     'created_at' => $createdAt,
@@ -579,7 +583,8 @@ class LegacyImport extends Command
                 'simultaneous_use' => (int) ($plan->simultaneous_use ?: 1),
                 'price' => $plan->selling_price,
                 'base_price' => $plan->base_price,
-                'status' => strtolower((string) $v->user_status) === 'deactivate' ? 'disabled' : 'new',
+                // 'active' for the same reason as the customer branch above.
+                'status' => strtolower((string) $v->user_status) === 'deactivate' ? 'disabled' : 'active',
                 'legacy_id' => $voucherIdOffset + $v->id,
                 'created_at' => $now,
                 'updated_at' => $now,
@@ -1058,7 +1063,52 @@ class LegacyImport extends Command
         $out['radpostauth'] = 'skipped by choice — 11.35M-row audit log, not read by any app code';
         $out['nas'] = 'skipped — legacy nas table is empty; v3.0 uses nas_devices';
 
+        // 4. Voucher lifecycle — must run after radacct lands, since that is
+        //    where the activation dates come from.
+        $out['lifecycle'] = $this->stampVoucherLifecycle();
+
         return $out;
+    }
+
+    /**
+     * Give imported vouchers the activation/expiry that FreeRADIUS post-auth
+     * would have stamped, derived from real accounting history.
+     *
+     * Post-auth only stamps on a login, and only for status IN
+     * ('active','sold','used'). Left to it, a card already in use before the
+     * cutover would take a fresh full validity window from its next login
+     * instead of expiring on the schedule it was sold under. Cards with no
+     * history are left alone on 'active' — post-auth starts their clock
+     * correctly on first use.
+     *
+     * Idempotent: rows that already carry an activation date are skipped.
+     *
+     * @return array<string,int>
+     */
+    private function stampVoucherLifecycle(): array
+    {
+        $stamped = DB::update(
+            "UPDATE vouchers v
+             JOIN (
+                 SELECT username, MIN(acctstarttime) AS first_login
+                 FROM radacct
+                 GROUP BY username
+             ) a ON a.username = v.username
+             SET v.activated_at = a.first_login,
+                 v.expires_at   = DATE_ADD(a.first_login, INTERVAL v.validity_days DAY),
+                 v.status       = CASE
+                     WHEN DATE_ADD(a.first_login, INTERVAL v.validity_days DAY) < NOW()
+                         THEN 'used'
+                     ELSE 'active'
+                 END,
+                 v.updated_at   = NOW()
+             WHERE v.legacy_id IS NOT NULL
+               AND v.activated_at IS NULL
+               AND v.status IN ('ready', 'active')
+               AND v.validity_days > 0"
+        );
+
+        return ['vouchers_activation_stamped' => $stamped];
     }
 
     /**

@@ -6,15 +6,20 @@ import { useQuery, invalidateCache } from '../lib/cache'
 import { useAuth } from '../lib/auth'
 import { rs, gb } from '../lib/format'
 import { GlassCard, PageTitle, Modal, Pill, EmptyState, ConfirmModal, Spinner, CustomSelect, Combobox, Pagination, SelectOption } from '../components/ui'
+import GbPackageModal from '../components/GbPackageModal'
 
 const PER_PAGE = 15
 
 const blank = { name: '', type: 'hotspot', package_type: 'wallet', plan_type: 'unlimited', bandwidth_id: '', data_gb: '', daily_data_gb: '', validity_days: 1, simultaneous_use: 1, base_price: 0, selling_price: 0, status: 'active', delegation_id: '', nas_device_id: '', mac_bind: false }
 
 export default function HotspotPlans() {
-  const { user } = useAuth()
+  const { user, can } = useAuth()
   const isAdmin = user?.role === 'admin'
+  // Wallet Packages are admin-only via create_plan; a non-admin can only produce
+  // a GB Package, which carries its own permission.
+  const canCreatePlan = isAdmin ? can('create_plan') : (can('create_gb_package') || can('create_plan'))
   const [open, setOpen] = useState(false)
+  const [gbOpen, setGbOpen] = useState(false)
   const [form, setForm] = useState<any>(blank)
   const [editId, setEditId] = useState<number | null>(null)
   const [err, setErr] = useState('')
@@ -196,6 +201,14 @@ export default function HotspotPlans() {
   const load = () => { refetchPlans(); invalidateCache('plans'); invalidateCache('reports/plans') }
 
   const openNew = () => {
+    // A non-admin can only ever create a GB Package, so the full plan editor —
+    // package category, quota type, cost pricing, access restrictions — is all
+    // either fixed or irrelevant for them. Send them to the GB form instead.
+    if (!isAdmin) {
+      setGbOpen(true)
+      return
+    }
+
     const defaultPackageType = isAdmin ? 'wallet' : 'gb'
     setForm({
       ...blank,
@@ -374,13 +387,18 @@ export default function HotspotPlans() {
         subtitle="Voucher-based hotspot packages"
         icon={<Wifi size={22} className="text-sky-500" />}
         action={
-          <motion.button
-            whileTap={{ scale: 0.95 }}
-            className="btn-primary flex items-center gap-2"
-            onClick={openNew}
-          >
-            <Plus size={16} /> New Plan
-          </motion.button>
+          // Admins define Wallet Packages (create_plan); everyone else can only
+          // ever produce a GB Package, gated separately. Without this the button
+          // showed to roles whose save would come back 403.
+          canCreatePlan && (
+            <motion.button
+              whileTap={{ scale: 0.95 }}
+              className="btn-primary flex items-center gap-2"
+              onClick={openNew}
+            >
+              <Plus size={16} /> New Plan
+            </motion.button>
+          )
         }
       />
 
@@ -587,6 +605,16 @@ export default function HotspotPlans() {
           </div>
         )}
       </GlassCard>
+
+      <GbPackageModal
+        open={gbOpen}
+        onClose={() => setGbOpen(false)}
+        onCreated={load}
+        bandwidths={bandwidths}
+        canDelegate={canDelegate}
+        delegationOptions={delegationOptions}
+        defaultDelegationValue={defaultDelegationValue}
+      />
 
       <Modal open={open} onClose={() => setOpen(false)} title={editId ? 'Edit Hotspot Plan' : 'New Hotspot Plan'} icon={<Wifi size={20} />}>
         <div className="space-y-3">

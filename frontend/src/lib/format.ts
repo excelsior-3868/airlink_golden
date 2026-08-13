@@ -42,11 +42,9 @@ export const bsDate = (s: string | null): string => {
 }
 
 export const statusPill: Record<string, string> = {
-  new: 'info',
-  used: 'info',
-  sold: 'warning',
+  ready: 'info',
   active: 'success',
-  expired: 'secondary',
+  used: 'warning',
   disabled: 'danger',
   activate: 'success',
   suspended: 'warning',

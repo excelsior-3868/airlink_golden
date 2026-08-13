@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\InternetPlan;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
 class VoucherGenerationTest extends TestCase
@@ -24,8 +25,8 @@ class VoucherGenerationTest extends TestCase
         $admin = $this->makeUser('admin', ['wallet_balance' => 1000, 'gb_balance' => 100]);
         $plan = $this->plan();
 
-        $res = $this->actingAs($admin, 'sanctum')
-            ->postJson('/api/vouchers/generate', ['plan_id' => $plan->id, 'quantity' => 4]);
+        Sanctum::actingAs($admin, ['*']);
+        $res = $this->postJson('/api/vouchers/generate', ['plan_id' => $plan->id, 'quantity' => 4]);
 
         $res->assertStatus(201);
 
@@ -45,8 +46,8 @@ class VoucherGenerationTest extends TestCase
         $admin = $this->makeUser('admin', ['wallet_balance' => 1000, 'gb_balance' => 100]);
         $plan = $this->plan();
 
-        $res = $this->actingAs($admin, 'sanctum')
-            ->postJson('/api/vouchers/generate', [
+        Sanctum::actingAs($admin, ['*']);
+        $res = $this->postJson('/api/vouchers/generate', [
                 'plan_id' => $plan->id, 
                 'quantity' => 1,
                 'custom_price' => 180.00,
@@ -57,7 +58,7 @@ class VoucherGenerationTest extends TestCase
 
         $voucher = \App\Models\Voucher::first();
         $this->assertEquals(180.00, (float) $voucher->price);
-        $this->assertEquals(120.00, (float) $voucher->base_price);
+        $this->assertEquals(180.00, (float) $voucher->base_price);
     }
 
     public function test_generation_rejects_when_gb_insufficient_and_rolls_back(): void
@@ -66,8 +67,8 @@ class VoucherGenerationTest extends TestCase
         $plan = $this->plan(); // 5 GB each
 
         // 3 × 5 = 15 GB > 10 available.
-        $this->actingAs($admin, 'sanctum')
-            ->postJson('/api/vouchers/generate', ['plan_id' => $plan->id, 'quantity' => 3])
+        Sanctum::actingAs($admin, ['*']);
+        $this->postJson('/api/vouchers/generate', ['plan_id' => $plan->id, 'quantity' => 3])
             ->assertStatus(422);
 
         // Nothing created, nothing deducted.
@@ -83,8 +84,8 @@ class VoucherGenerationTest extends TestCase
         $seller = $this->makeUser('seller', ['parent_id' => $reseller->id, 'wallet_balance' => 1000, 'gb_balance' => 100]);
         $plan = $this->plan();
 
-        $this->actingAs($seller, 'sanctum')
-            ->postJson('/api/vouchers/generate', ['plan_id' => $plan->id, 'quantity' => 1])->assertStatus(201);
+        Sanctum::actingAs($seller, ['*']);
+        $this->postJson('/api/vouchers/generate', ['plan_id' => $plan->id, 'quantity' => 1])->assertStatus(201);
 
         $v = DB::table('vouchers')->first();
         $this->assertEquals($seller->id, $v->seller_id);
@@ -101,19 +102,19 @@ class VoucherGenerationTest extends TestCase
         $voucher = \App\Models\Voucher::create([
             'code' => 'TESTCODE', 'username' => 'TESTCODE', 'password' => 'TESTCODE',
             'plan_id' => $plan->id, 'owner_id' => $seller->id, 'seller_id' => $seller->id,
-            'price' => 150, 'status' => 'new'
+            'price' => 150, 'status' => 'ready'
         ]);
 
-        $res = $this->actingAs($seller, 'sanctum')
-            ->postJson("/api/vouchers/{$voucher->id}/sell", ['customer_username' => 'john_doe']);
+        Sanctum::actingAs($seller, ['*']);
+        $res = $this->postJson("/api/vouchers/{$voucher->id}/sell", ['customer_username' => 'john_doe']);
 
         $res->assertStatus(200);
-        $this->assertEquals('sold', $voucher->fresh()->status);
+        $this->assertEquals('active', $voucher->fresh()->status);
         $this->assertEquals('john_doe', $voucher->fresh()->customer_username);
         $this->assertNotNull($voucher->fresh()->sold_at);
     }
 
-    public function test_sell_non_new_voucher_fails(): void
+    public function test_sell_non_ready_voucher_fails(): void
     {
         $admin = $this->makeUser('admin');
         $plan = $this->plan();
@@ -121,11 +122,11 @@ class VoucherGenerationTest extends TestCase
         $voucher = \App\Models\Voucher::create([
             'code' => 'TESTCODE', 'username' => 'TESTCODE', 'password' => 'TESTCODE',
             'plan_id' => $plan->id, 'owner_id' => $admin->id,
-            'price' => 150, 'status' => 'active'
+            'price' => 150, 'status' => 'used'
         ]);
 
-        $res = $this->actingAs($admin, 'sanctum')
-            ->postJson("/api/vouchers/{$voucher->id}/sell", ['customer_username' => 'john_doe']);
+        Sanctum::actingAs($admin, ['*']);
+        $res = $this->postJson("/api/vouchers/{$voucher->id}/sell", ['customer_username' => 'john_doe']);
 
         $res->assertStatus(422);
     }
@@ -139,15 +140,15 @@ class VoucherGenerationTest extends TestCase
         $voucher = \App\Models\Voucher::create([
             'code' => 'REDEEM123', 'username' => 'REDEEM123', 'password' => 'REDEEM123',
             'plan_id' => $plan->id, 'owner_id' => $admin->id,
-            'data_gb' => 50.0, 'price' => 150, 'status' => 'new'
+            'data_gb' => 50.0, 'price' => 150, 'status' => 'ready'
         ]);
 
         DB::table('radcheck')->insert([
             'username' => 'REDEEM123', 'attribute' => 'Cleartext-Password', 'op' => ':=', 'value' => 'REDEEM123'
         ]);
 
-        $res = $this->actingAs($reseller, 'sanctum')
-            ->postJson('/api/vouchers/redeem', ['code' => 'REDEEM123']);
+        Sanctum::actingAs($reseller, ['*']);
+        $res = $this->postJson('/api/vouchers/redeem', ['code' => 'REDEEM123']);
 
         $res->assertStatus(200);
         $this->assertEquals(50.0, $reseller->fresh()->gb_balance);
@@ -165,8 +166,8 @@ class VoucherGenerationTest extends TestCase
             'plan_id' => $plan->id, 'owner_id' => $reseller->id, 'data_gb' => 50.0, 'price' => 150, 'status' => 'used'
         ]);
 
-        $res = $this->actingAs($reseller, 'sanctum')
-            ->postJson('/api/vouchers/redeem', ['code' => 'REDEEM123']);
+        Sanctum::actingAs($reseller, ['*']);
+        $res = $this->postJson('/api/vouchers/redeem', ['code' => 'REDEEM123']);
 
         $res->assertStatus(422);
     }
@@ -183,8 +184,8 @@ class VoucherGenerationTest extends TestCase
             'price' => 1200, 'status' => 'used', 'activated_at' => now(),
         ]);
 
-        $res = $this->actingAs($admin, 'sanctum')
-            ->getJson("/api/reports/package-summary?reseller_id={$reseller->id}");
+        Sanctum::actingAs($admin, ['*']);
+        $res = $this->getJson("/api/reports/package-summary?reseller_id={$reseller->id}");
 
         $res->assertStatus(200);
         $packages = $res->json('data.packages');

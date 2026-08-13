@@ -73,5 +73,15 @@ export default defineConfig({
     port: 5173,
     watch: { usePolling: true }, // reliable HMR on Docker/Windows bind mounts
     allowedHosts: ['airlink.netcarenepal.com', '161.97.101.7'],
+    // Mirror the prod nginx layout: the SPA and the API share an origin, so a
+    // relative '/api' works no matter which host the dev server is reached on.
+    // Without this, opening dev by IP/domain (not localhost) made lib/api.ts
+    // fall back to relative '/api' and every call 404'd on Vite itself.
+    proxy: {
+      '/api': {
+        target: process.env.VITE_API_PROXY_TARGET || 'http://backend:8000',
+        changeOrigin: true,
+      },
+    },
   },
 })

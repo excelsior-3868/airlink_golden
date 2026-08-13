@@ -206,7 +206,8 @@ class VoucherController extends Controller
             DB::table('radreply')->where('username', $voucher->username)->delete();
             DB::table('radcheck')->insert($rows['check']);
             DB::table('radreply')->insert($rows['reply']);
-            $voucher->update(['status' => 'active']);
+            $targetStatus = ($voucher->activated_at || $voucher->sold_at) ? 'active' : 'ready';
+            $voucher->update(['status' => $targetStatus]);
         });
 
         return $this->ok($voucher, 'Voucher re-enabled.');
@@ -369,8 +370,8 @@ class VoucherController extends Controller
             return $this->fail('Not found.', 404);
         }
 
-        if ($voucher->status !== 'active') {
-            return $this->fail('Only active vouchers can be marked as sold.', 422);
+        if ($voucher->status !== 'ready') {
+            return $this->fail('Only ready vouchers can be sold.', 422);
         }
 
         $data = $request->validate([
@@ -387,7 +388,7 @@ class VoucherController extends Controller
                 // now (deferred from generation), and the full price becomes a
                 // direct due up the hierarchy (Seller→Reseller, Reseller→Admin).
                 $voucher->update([
-                    'status' => 'sold',
+                    'status' => 'active',
                     'sold_at' => now(),
                     'customer_username' => $data['customer_username'] ?? $voucher->customer_username,
                 ]);
@@ -403,7 +404,7 @@ class VoucherController extends Controller
             $resellerShare = round($price - $adminShare, 2);
 
             $voucher->update([
-                'status' => 'sold',
+                'status' => 'active',
                 'sold_at' => now(),
                 'customer_username' => $data['customer_username'] ?? $voucher->customer_username,
                 'commission_percent' => $percent,
@@ -445,8 +446,8 @@ class VoucherController extends Controller
 
         $voucher = Voucher::where('code', $data['code'])->firstOrFail();
 
-        if (! in_array($voucher->status, ['active', 'sold'], true)) {
-            return $this->fail('Voucher is already used, expired or disabled.', 422);
+        if (! in_array($voucher->status, ['ready', 'active'], true)) {
+            return $this->fail('Voucher is already used or disabled.', 422);
         }
 
         if (! $voucher->data_gb || (float) $voucher->data_gb <= 0) {
@@ -496,7 +497,9 @@ class VoucherController extends Controller
 
     private function scopedQuery(User $actor)
     {
-        $q = Voucher::query();
+        // Voided bad-import rows are kept for audit but are not vouchers, so
+        // they never appear in a listing, export or count built on this scope.
+        $q = Voucher::query()->whereNull('vouchers.void_reason');
         if ($actor->isReseller()) {
             $q->where('reseller_id', $actor->id);
             if (! $this->isFullAccessToken($actor)) {

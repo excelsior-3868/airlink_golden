@@ -133,7 +133,7 @@ class AccountController extends Controller
             ->where(function ($q) {
                 $q->whereNotNull('sold_at')
                   ->orWhereNotNull('activated_at')
-                  ->orWhereIn('status', ['sold', 'used']);
+                  ->orWhereIn('status', ['active', 'used']);
             })
             ->where(function ($q) use ($userIds) {
                 $q->whereIn('seller_id', $userIds)
@@ -786,14 +786,26 @@ class AccountController extends Controller
         // 1. Calculate Revenue Breakdown
         // A. GB Voucher (hotspot) & PPPoE Voucher Direct Sales Revenue
         $applyVoucherScope = function ($query) use ($actor, $startDate, $endDate) {
+            // Only cards this system actually generated count as v3.0 financial
+            // activity. Legacy-imported cards (legacy_id set) and credentials
+            // recovered from legacy radcheck (no batch of ours) were sold — if
+            // at all — under the old system, and their money was collected
+            // there. Booking their retail price here would invent revenue v3.0
+            // never earned, and would swing with every lifecycle change, since
+            // revenue is recognised on status rather than on payment.
+            //
+            // Historic figures are deliberately out of scope for now and will be
+            // brought in separately once legacy settlement is modelled.
+            $query->whereNull('vouchers.legacy_id')->whereNotNull('vouchers.batch_id');
+
             if ($actor->isAdmin()) {
                 // Admin's own direct sales only — vouchers owned by a reseller/seller
                 // are that reseller's revenue, not admin's.
-                $query->whereNull('reseller_id')->whereIn('status', ['used', 'sold']);
+                $query->whereNull('reseller_id')->whereIn('status', ['active', 'used']);
             } elseif ($actor->isReseller()) {
-                $query->where('reseller_id', $actor->id)->whereIn('status', ['used', 'sold']);
+                $query->where('reseller_id', $actor->id)->whereIn('status', ['active', 'used']);
             } else {
-                $query->where('seller_id', $actor->id)->whereIn('status', ['used', 'sold']);
+                $query->where('seller_id', $actor->id)->whereIn('status', ['active', 'used']);
             }
 
             if ($startDate && $endDate) {

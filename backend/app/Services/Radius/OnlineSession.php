@@ -24,14 +24,29 @@ class OnlineSession
 {
     /**
      * Minutes without an accounting update after which a session is HIDDEN from
-     * the online list. Many times the 60-second Acct-Interim-Interval that
-     * RadiusService sends, so a voucher session that is genuinely up keeps
-     * announcing itself well inside the window.
+     * the online list.
+     *
+     * RadiusService sends Acct-Interim-Interval = 60 seconds, but the MikroTiks
+     * here do not honour it — every router is configured to interim-update on
+     * its own 60 MINUTE timer. Measured against live sessions: average idle
+     * 20-44 minutes, maximum 61.
+     *
+     * The old 15-minute window was sized for the 60-second interval that never
+     * happens, so it hid nearly every connected user — 19 of 55 open sessions
+     * showed as online while 54 had reported within the hour.
+     *
+     * 75 clears the 60-minute cadence with 25% headroom for jitter and the odd
+     * lost UDP packet. Widening past ~65 pulls in nothing extra, so this is the
+     * flat part of the curve rather than a guess.
+     *
+     * The cost of the larger window is that a user who disconnects lingers on
+     * the list until it lapses. That is inherent to hourly reporting: fix it by
+     * setting a shorter interim-update on the routers, then lower this to match.
      *
      * Read-side only. Getting this wrong briefly mis-states a count, and the
      * next accounting packet corrects it.
      */
-    public const STALE_AFTER_MINUTES = 15;
+    public const STALE_AFTER_MINUTES = 75;
 
     /**
      * Minutes after which a session may be CLOSED for real. Deliberately far
