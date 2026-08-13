@@ -666,6 +666,46 @@ class LegacyImport extends Command
         // profile is a free-text plan NAME on the customer row, not an FK, so
         // this is the only join available back to a plan.
         $plansByName = InternetPlan::where('type', 'pppoe')->pluck('id', 'name');
+
+        // Only 8 of the 20 distinct legacy PPPoE profile names exist in
+        // tbl_plans; the rest (mostly FOC packages) were only ever a string on
+        // the customer row. plan_id is NOT NULL, so those subscribers cannot be
+        // imported without a plan — synthesize one per missing name, taking the
+        // term from the subscribers' own validity/validity_unit.
+        //
+        // Priced at 0 and left without a bandwidth deliberately: neither figure
+        // exists anywhere in the legacy data, and inventing a speed would push a
+        // wrong Mikrotik-Rate-Limit onto a live line. With bandwidth null the
+        // router falls back to its own /ppp profile, which is what these lines
+        // already run on. Both are listed in the report to be set.
+        $synthesized = [];
+        $missing = DB::connection('legacy')->table('tbl_customers')
+            ->where('type', 'PPPOE')
+            ->whereNotNull('profile')
+            ->where('profile', '<>', '')
+            ->select('profile', DB::raw('MAX(validity) as validity'), DB::raw('MAX(validity_unit) as validity_unit'))
+            ->groupBy('profile')
+            ->get()
+            ->filter(fn ($r) => ! $plansByName->has($r->profile));
+
+        foreach ($missing as $m) {
+            $days = $this->toDays((int) $m->validity, (string) $m->validity_unit);
+            $plan = InternetPlan::updateOrCreate(
+                ['name' => $m->profile, 'type' => 'pppoe'],
+                [
+                    'plan_type' => 'unlimited',
+                    'package_type' => 'wallet',
+                    'validity_days' => max(1, $days),
+                    'simultaneous_use' => 1,
+                    'base_price' => 0,
+                    'selling_price' => 0,
+                    'status' => 'active',
+                ]
+            );
+            $plansByName->put($m->profile, $plan->id);
+            $synthesized[] = ['plan_id' => $plan->id, 'name' => $m->profile, 'validity_days' => max(1, $days)];
+        }
+
         $plansById = InternetPlan::whereIn('id', $plansByName->values())->get()->keyBy('id');
 
         // Latest expiry per subscriber. tbl_customers has no expiry column of
@@ -695,7 +735,7 @@ class LegacyImport extends Command
         $now = now();
         $imported = 0;
         $skippedNoPlan = [];
-        $skippedBadUsername = [];
+        $nonEditableUsernames = [];
         $skippedDuplicate = 0;
         $pendingNoExpiry = [];
         $statusCounts = ['active' => 0, 'expired' => 0, 'pending' => 0];
@@ -717,13 +757,14 @@ class LegacyImport extends Command
                 continue;
             }
 
-            // The app validates usernames as /^[A-Za-z0-9._@-]{3,64}$/. A handful
-            // of legacy accounts use a bare MAC address, which cannot be edited
-            // through the UI afterwards — report rather than smuggle them in.
+            // A handful of legacy accounts use a bare MAC address as the
+            // username. That fails the app's /^[A-Za-z0-9._@-]{3,64}$/ rule, so
+            // the edit form will refuse to save one until it is renamed — but
+            // the credential is what the CPE actually dials with, so it is
+            // imported verbatim and flagged here rather than altered. Renaming
+            // would take the line off the air.
             if (! preg_match('/^[A-Za-z0-9._@-]{3,64}$/', $username)) {
-                $skippedBadUsername[] = ['legacy_id' => $c->id, 'username' => $username, 'full_name' => $c->fullname];
-
-                continue;
+                $nonEditableUsernames[] = ['legacy_id' => $c->id, 'username' => $username, 'full_name' => $c->fullname];
             }
 
             $planId = $c->profile ? ($plansByName[$c->profile] ?? null) : null;
@@ -821,9 +862,12 @@ class LegacyImport extends Command
             'radcheck_generated' => $checkRows,
             'radreply_generated' => $replyRows,
             'skipped_no_matching_plan' => $skippedNoPlan,
-            'skipped_invalid_username' => $skippedBadUsername,
             'skipped_duplicate_username' => $skippedDuplicate,
             'pending_no_recharge_history' => $pendingNoExpiry,
+            'synthesized_plans_review' => $synthesized,
+            'synthesized_plans_note' => 'Created from the subscribers own validity because the legacy profile name had no tbl_plans row. Price 0 and no bandwidth — set both before charging a recharge against them.',
+            'non_editable_usernames_review' => $nonEditableUsernames,
+            'non_editable_usernames_note' => 'Imported verbatim so the line keeps dialling. The username fails the apps /^[A-Za-z0-9._@-]{3,64}$/ rule, so the edit form will refuse to save one until it is renamed.',
             'note' => 'tbl_user_recharges is NOT imported into pppoe_recharges — account 4250 sums that table as revenue, so replaying legacy billing would fabricate income. Only the derived expires_at is carried across.',
         ];
     }
