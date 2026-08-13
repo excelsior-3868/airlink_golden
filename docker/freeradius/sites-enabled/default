@@ -44,7 +44,7 @@ server default {
             Tmp-String-0 := "%{sql: SELECT \
                 CASE \
                     WHEN status = 'disabled' THEN 'disabled' \
-                    WHEN status = 'expired' THEN 'expired' \
+                    WHEN status = 'used' THEN 'expired' \
                     WHEN expires_at IS NOT NULL AND expires_at < NOW() THEN 'expired' \
                     WHEN data_gb IS NOT NULL AND data_gb > 0 AND ( \
                         SELECT IFNULL(SUM(AcctInputOctets + AcctOutputOctets), 0) \
@@ -122,16 +122,16 @@ server default {
     }
 
     post-auth {
-        # First login starts the clock: set status = 'used', stamp activated_at
+        # First login starts the clock: set status = 'active', stamp activated_at
         # and derive expires_at from validity_days (IFNULL preserves initial timestamp).
         # For MAC-bind vouchers, also capture the client's MAC on this same first login.
         update control {
             Tmp-String-1 := "%{sql: UPDATE vouchers SET \
-                status = 'used', \
+                status = 'active', \
                 activated_at = IFNULL(activated_at, NOW()), \
                 expires_at = IFNULL(expires_at, DATE_ADD(NOW(), INTERVAL validity_days DAY)), \
                 mac_address = CASE WHEN mac_bind = 1 THEN IFNULL(mac_address, NULLIF('%{Calling-Station-Id}', '')) ELSE mac_address END \
-                WHERE username = '%{User-Name}' AND status IN ('active','sold','used')}"
+                WHERE username = '%{User-Name}' AND status IN ('ready','active')}"
         }
 
         sql          # write radpostauth

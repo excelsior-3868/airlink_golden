@@ -84,7 +84,7 @@ class VoucherService
         } elseif ($isGbPackage) {
             if ($totalGb > 0) {
                 $reserved = (float) Voucher::where('owner_id', $owner->id)
-                    ->whereIn('status', ['active', 'sold'])
+                    ->whereIn('status', ['ready', 'active'])
                     ->whereNotNull('gb_cost')
                     ->whereNull('gb_due_amount')
                     ->sum('gb_cost');
@@ -147,7 +147,7 @@ class VoucherService
                     // GB Package vouchers carry their own GB-equivalent cost so it
                     // can be deducted later, at sell/first-use time, instead of now.
                     'gb_cost' => $isGbPackage ? $gbPer : null,
-                    'status' => 'active', 'expires_at' => null,
+                    'status' => 'ready', 'expires_at' => null,
                     'created_at' => $now, 'updated_at' => $now,
 
                 ];
@@ -194,6 +194,9 @@ class VoucherService
         return $code;
     }
 
+    /** Code length: 6 uppercase alphanumerics, matching the legacy voucher format. */
+    private const CODE_LENGTH = 6;
+
     /** @return string[] $count unique voucher codes not already in the DB. */
     private function uniqueCodes(int $count): array
     {
@@ -201,7 +204,7 @@ class VoucherService
         while (count($codes) < $count) {
             $candidates = [];
             for ($i = 0, $need = $count - count($codes); $i < $need; $i++) {
-                $candidates[strtoupper(Str::random(8))] = true;
+                $candidates[strtoupper(Str::random(self::CODE_LENGTH))] = true;
             }
             $list = array_keys($candidates);
             $taken = array_fill_keys(Voucher::whereIn('code', $list)->pluck('code')->all(), true);

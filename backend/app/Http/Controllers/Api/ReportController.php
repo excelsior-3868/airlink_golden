@@ -33,7 +33,7 @@ class ReportController extends Controller
         // Cards come in two flavours a reseller prices and settles differently —
         // GB packages (direct-due) and wallet packages (commission-split) — so the
         // status rollup is reported per package type as well as in total.
-        $emptyStatuses = ['new' => 0, 'sold' => 0, 'active' => 0, 'used' => 0, 'expired' => 0, 'disabled' => 0];
+        $emptyStatuses = ['ready' => 0, 'active' => 0, 'used' => 0, 'disabled' => 0];
         $byPackageType = [
             'gb' => ['generated' => 0, 'sold' => 0, 'by_status' => $emptyStatuses],
             'wallet' => ['generated' => 0, 'sold' => 0, 'by_status' => $emptyStatuses],
@@ -41,38 +41,43 @@ class ReportController extends Controller
 
         $summary = [];
         foreach ($rows as $r) {
-            $status = ($r->is_activated && in_array($r->status, ['active', 'sold'], true)) ? 'used' : $r->status;
+            $status = $r->status;
+            // Disabled cards are revoked stock, not inventory. They stay in
+            // by_status so the Disabled tile still reports them, but they never
+            // count toward `generated` — and so never toward the `remaining`
+            // and `in_stock` figures derived from it.
+            $inventory = $status === 'disabled' ? 0 : (int) $r->c;
             if (isset($byPackageType[$r->package_type])) {
-                $byPackageType[$r->package_type]['generated'] += (int) $r->c;
+                $byPackageType[$r->package_type]['generated'] += $inventory;
                 $byPackageType[$r->package_type]['by_status'][$status] += (int) $r->c;
-                if (in_array($status, ['sold', 'used', 'expired'], true)) {
+                if (in_array($status, ['active', 'used'], true) || $r->is_activated) {
                     $byPackageType[$r->package_type]['sold'] += (int) $r->c;
                 }
             }
             $summary[$r->plan_id] ??= [
                 'plan_id' => $r->plan_id, 'plan' => $r->plan,
                 'generated' => 0, 'used' => 0, 'remaining' => 0, 'revenue' => 0, 'gb_sold' => 0,
-                'by_status' => ['new' => 0, 'sold' => 0, 'active' => 0, 'used' => 0, 'expired' => 0, 'disabled' => 0],
+                'by_status' => ['ready' => 0, 'active' => 0, 'used' => 0, 'disabled' => 0],
             ];
-            $summary[$r->plan_id]['generated'] += (int) $r->c;
+            $summary[$r->plan_id]['generated'] += $inventory;
             $summary[$r->plan_id]['by_status'][$status] += (int) $r->c;
             // Only cards actually handed off to a customer count toward sales
-            // — 'active' is printed but still sitting in stock.
-            if (in_array($status, ['sold', 'used', 'expired'], true)) {
+            // — 'ready' is printed but still sitting in stock.
+            if (in_array($status, ['active', 'used'], true) || $r->is_activated) {
                 $summary[$r->plan_id]['revenue'] += (float) $r->revenue;
                 $summary[$r->plan_id]['gb_sold'] += (float) $r->gb;
             }
             // "Used" = vouchers that are fully used/redeemed or expired.
-            if (in_array($status, ['used', 'expired'], true)) {
+            if ($status === 'used') {
                 $summary[$r->plan_id]['used'] += (int) $r->c;
             }
         }
-        $totalsByStatus = ['new' => 0, 'sold' => 0, 'active' => 0, 'used' => 0, 'expired' => 0, 'disabled' => 0];
+        $totalsByStatus = ['ready' => 0, 'active' => 0, 'used' => 0, 'disabled' => 0];
         foreach ($summary as &$s) {
             $s['remaining'] = max(0, $s['generated'] - $s['used']);
-            // "Sold" = actually handed off to a customer — 'active' is printed
+            // "Sold" = actually handed off to a customer — 'ready' is printed
             // but still sitting in stock (mirrors reseller-summary's stock math).
-            $s['sold'] = $s['by_status']['sold'] + $s['by_status']['used'] + $s['by_status']['expired'];
+            $s['sold'] = ($s['by_status']['active'] ?? 0) + ($s['by_status']['used'] ?? 0);
             $s['in_stock'] = max(0, $s['generated'] - $s['sold']);
             foreach ($s['by_status'] as $status => $count) {
                 $totalsByStatus[$status] += $count;
@@ -135,10 +140,11 @@ class ReportController extends Controller
 
         // Voucher sales tracking is purely card-based: a card only counts as
         // "sold" (and its GB/price counted toward sales) once it's actually
-        // been handed off to a customer — 'active' cards are printed but
+        // been handed off to a customer — 'ready' cards are printed but
         // still sitting in stock.
-        $cardsSoldSet = "'sold', 'used', 'expired'";
+        $cardsSoldSet = "'active', 'used'";
         $voucherStats = Voucher::query()
+            ->whereNull('vouchers.void_reason')
             ->whereIn($groupColumn, $userIds)
             ->select(
                 "{$groupColumn} as uid",
@@ -199,7 +205,10 @@ class ReportController extends Controller
     private function scoped(Request $request)
     {
         $actor = $request->user();
-        $q = Voucher::query();
+        // Rows the original legacy import should never have created. They stay
+        // in the table for audit but are not vouchers, so no report, tile or
+        // listing built on this scope may see them.
+        $q = Voucher::query()->whereNull('vouchers.void_reason');
 
         if ($actor->isReseller()) {
             $q->where('vouchers.reseller_id', $actor->id);

@@ -19,10 +19,9 @@ import VoucherSalesSummaryTab from './VoucherSalesSummaryTab'
 // tile and its GB / Wallet split line always agree on what they're counting.
 const STAT_CARDS: { label: string; color: string; pick: (t: any) => number }[] = [
   { label: 'Generated', color: 'text-indigo-600', pick: (t) => t?.generated || 0 },
-  { label: 'Sold', color: 'text-blue-600', pick: (t) => t?.by_status?.sold || 0 },
+  { label: 'Ready', color: 'text-blue-600', pick: (t) => t?.by_status?.ready || 0 },
   { label: 'Active', color: 'text-emerald-600', pick: (t) => t?.by_status?.active || 0 },
   { label: 'Used', color: 'text-cyan-600', pick: (t) => t?.by_status?.used || 0 },
-  { label: 'Expired', color: 'text-amber-600', pick: (t) => t?.by_status?.expired || 0 },
   { label: 'Disabled', color: 'text-rose-600', pick: (t) => t?.by_status?.disabled || 0 },
 ]
 
@@ -362,7 +361,10 @@ export default function Vouchers() {
                   onChange={(val) => setFilters({ ...filters, status: val })}
                   options={[
                     { value: '', label: 'All Statuses' },
-                    ...['active', 'used', 'sold', 'expired', 'disabled'].map((s) => ({ value: s, label: s.toUpperCase() }))
+                    { value: 'ready', label: 'Ready' },
+                    { value: 'active', label: 'Active' },
+                    { value: 'used', label: 'Used' },
+                    { value: 'disabled', label: 'Disabled' },
                   ]}
                 />
               </div>
@@ -523,7 +525,7 @@ export default function Vouchers() {
                       {canSeeReports && user?.role !== 'seller' && <td>{v.seller?.username || '—'}</td>}
                       {can('generate_voucher') && (
                         <td className="text-right whitespace-nowrap">
-                          {v.status === 'active' && (
+                          {v.status === 'ready' && (
                             <button className="text-xs font-bold text-emerald-600 hover:underline mr-3" onClick={() => { setSellVoucher(v); setCustomerUsername(''); setSelling(false) }}>Sell</button>
                           )}
                           <button

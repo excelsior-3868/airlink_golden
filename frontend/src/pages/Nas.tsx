@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Plus, Router, Server, Activity, ShieldCheck, ShieldAlert, Wifi, Eye, EyeOff } from 'lucide-react'
+import { Plus, Router, Server, Activity, ShieldCheck, ShieldAlert, Wifi, Eye, EyeOff, FileText, RefreshCw, Search, X } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useQuery } from '../lib/cache'
 import { useAuth } from '../lib/auth'
@@ -9,10 +9,26 @@ import { num, datet } from '../lib/format'
 
 const blank = { name: '', nasname: '', shortname: '', type: 'mikrotik', secret: '', coa_host: '', coa_port: 3799, description: '', status: 'active', require_message_authenticator: 'auto', owner_id: '' }
 
+/** "3m ago" / "7h ago" / "2d ago" from a minutes-since value. */
+function relativeSince(minutes?: number | null): string {
+  if (minutes == null) return ''
+  if (minutes < 1) return 'just now'
+  if (minutes < 60) return `${Math.round(minutes)}m ago`
+  if (minutes < 1440) return `${Math.round(minutes / 60)}h ago`
+  return `${Math.round(minutes / 1440)}d ago`
+}
+
 export default function Nas() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
-  const [activeTab, setActiveTab] = useState<'nas' | 'radius' | 'authlogs'>('nas')
+  const [activeTab, setActiveTab] = useState<'nas' | 'radius' | 'authlogs' | 'serverlog'>('nas')
+  const [serverLog, setServerLog] = useState<any>(null)
+  const [serverLogLoading, setServerLogLoading] = useState(false)
+  const [serverLogLimit, setServerLogLimit] = useState(500)
+  const [serverLogFilter, setServerLogFilter] = useState('')
+  // The term actually sent to the server; the input above can be edited
+  // freely without re-running the (whole-file) grep until it is submitted.
+  const [serverLogSearch, setServerLogSearch] = useState('')
 
   // NAS state
   const [open, setOpen] = useState(false)
@@ -119,6 +135,15 @@ export default function Nas() {
       .finally(() => setClientsLoading(false))
   }
 
+  /** Tail the log, or — with a search term — grep -i the whole file for it. */
+  const loadServerLog = (limit = serverLogLimit, search = serverLogSearch) => {
+    setServerLogLoading(true)
+    setServerLogSearch(search)
+    api.get('/radius/server-log', { params: { limit, search: search || undefined } })
+      .then((r) => setServerLog(r.data.data))
+      .finally(() => setServerLogLoading(false))
+  }
+
   const togglePasswordReveal = (logId: number) => {
     setRevealedPasswords(prev => ({
       ...prev,
@@ -134,6 +159,8 @@ export default function Nas() {
       loadClientsConfig()
     } else if (activeTab === 'authlogs' && isAdmin) {
       loadAuthLogs(1)
+    } else if (activeTab === 'serverlog' && isAdmin) {
+      loadServerLog()
     }
   }, [activeTab, logUserSearch, logReplyFilter])
 
@@ -208,6 +235,12 @@ export default function Nas() {
           >
             <Activity size={16} /> Authentication Logs
           </button>
+          <button
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-t-xl border-b-2 transition-all ${activeTab === 'serverlog' ? 'border-primary text-primary' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+            onClick={() => setActiveTab('serverlog')}
+          >
+            <FileText size={16} /> RADIUS Log
+          </button>
         </div>
       )}
 
@@ -216,7 +249,7 @@ export default function Nas() {
           {rowsLoading && rows.length === 0 ? <Spinner /> : null}
           <div className={`overflow-x-auto ${rowsLoading && rows.length === 0 ? 'hidden' : ''}`}>
             <table className="w-full">
-              <thead><tr><th>Name</th><th>NAS Address</th><th>Type</th><th>Owner</th><th>Status</th>{isAdmin && <th></th>}</tr></thead>
+              <thead><tr><th>Name</th><th>NAS Address</th><th>RADIUS Communication</th><th>Type</th><th>Owner</th><th>Status</th>{isAdmin && <th></th>}</tr></thead>
               <tbody>
                 {rows.map((n, idx) => (
                   <motion.tr key={n.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: idx * 0.03 }} className="hover:bg-secondary/30">
@@ -224,6 +257,29 @@ export default function Nas() {
                     <td className="font-mono text-xs">
                       {n.nasname}
                       {n.coa_host && <div className="text-[10px] text-slate-400">CoA → {n.coa_host}:{n.coa_port || 3799}</div>}
+                    </td>
+                    {/* Whether the router is actually reaching FreeRADIUS. Read from
+                        the accounting detail files, since radacct only records the
+                        private address a router reports, not the one it connects from. */}
+                    <td className="text-xs">
+                      {!n.activity || n.activity.state === 'never' ? (
+                        <span className="inline-flex items-center gap-1.5 font-bold text-slate-400">
+                          <span className="w-1.5 h-1.5 rounded-full bg-slate-300" /> Never seen
+                        </span>
+                      ) : (
+                        <>
+                          <span className={`inline-flex items-center gap-1.5 font-bold ${n.activity.state === 'active' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${n.activity.state === 'active' ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
+                            {n.activity.state === 'active' ? 'Active' : 'Silent'}
+                            <span className="font-normal text-slate-400">· {relativeSince(n.activity.minutes_since)}</span>
+                          </span>
+                          <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                            {n.activity.sources?.length > 0 && <>from {n.activity.sources.join(', ')}</>}
+                            {n.activity.reported_nas_ips?.length > 0 && <> → reports {n.activity.reported_nas_ips.join(', ')}</>}
+                          </div>
+                          <div className="text-[10px] text-slate-400 mt-0.5">{num(n.activity.packets_today || 0)} packets today</div>
+                        </>
+                      )}
                     </td>
                     <td className="capitalize">{n.type}</td>
                     <td className="text-xs font-semibold text-slate-600">{n.owner?.name || 'Admin (Unowned)'}</td>
@@ -381,12 +437,114 @@ export default function Nas() {
             )}
           </GlassCard>
         </div>
+      ) : activeTab === 'serverlog' ? (
+        <div className="space-y-6">
+          {/* FreeRADIUS server log — the daemon's own file, distinct from the
+              Authentication Logs tab, which reads the radpostauth table. */}
+          <GlassCard className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="min-w-0">
+                <h3 className="font-bold flex items-center gap-2"><FileText size={18} className="text-[#003164]" /> FreeRADIUS Server Log</h3>
+                {serverLog?.exists && (
+                  <p className="text-xs text-slate-500 mt-1 font-mono truncate">
+                    {serverLog.path} · {num(serverLog.total_lines || 0)} lines total
+                    {serverLog.search ? ` · grep -i "${serverLog.search}" → ${num(serverLog.match_count || 0)} matches` : ''}
+                  </p>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="relative">
+                  <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  <input
+                    value={serverLogFilter}
+                    onChange={(e) => setServerLogFilter(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && loadServerLog(serverLogLimit, serverLogFilter.trim())}
+                    placeholder="Search voucher code…"
+                    className="pl-8 pr-7 py-2 text-xs rounded-xl border border-slate-200 bg-white w-52 focus:outline-none focus:border-slate-300"
+                  />
+                  {serverLogFilter && (
+                    <button
+                      onClick={() => { setServerLogFilter(''); loadServerLog(serverLogLimit, '') }}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                      title="Clear search"
+                    >
+                      <X size={13} />
+                    </button>
+                  )}
+                </div>
+                <button
+                  onClick={() => loadServerLog(serverLogLimit, serverLogFilter.trim())}
+                  disabled={serverLogLoading}
+                  className="px-3 py-2 text-xs font-bold rounded-xl bg-[#003164] text-white hover:opacity-90 disabled:opacity-40 transition-all"
+                >
+                  Search
+                </button>
+                <select
+                  value={serverLogLimit}
+                  onChange={(e) => { const v = Number(e.target.value); setServerLogLimit(v); loadServerLog(v) }}
+                  className="px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white font-semibold text-slate-600"
+                >
+                  {[200, 500, 1000, 5000].map(n => <option key={n} value={n}>Last {n}</option>)}
+                </select>
+                <button
+                  onClick={() => loadServerLog()}
+                  disabled={serverLogLoading}
+                  className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40 transition-all"
+                >
+                  <RefreshCw size={13} className={serverLogLoading ? 'animate-spin' : ''} /> Refresh
+                </button>
+              </div>
+            </div>
+
+            {serverLogLoading ? (
+              <div className="py-10 flex justify-center"><Spinner /></div>
+            ) : !serverLog?.exists ? (
+              <EmptyState>
+                {serverLog?.message || 'FreeRADIUS log file not found or not readable.'}
+              </EmptyState>
+            ) : (() => {
+              // Rows come back already grepped by the server when a search is
+              // applied, so there is nothing left to filter client-side.
+              const needle = serverLog.search || ''
+              const rows = serverLog.logs || []
+              if (!rows.length) {
+                return <EmptyState>{needle ? `No log lines match “${needle}”.` : 'The log file is empty.'}</EmptyState>
+              }
+              return (
+                <div className="rounded-2xl border border-slate-200 bg-slate-900 overflow-hidden">
+                  <div className="max-h-[560px] overflow-auto font-mono text-[11px] leading-relaxed">
+                    {rows.map((l: any, i: number) => (
+                      <div
+                        key={i}
+                        className={`px-4 py-1 border-b border-slate-800/60 whitespace-pre-wrap break-all ${
+                          l.type === 'reject' ? 'text-rose-300 bg-rose-500/5'
+                          : l.type === 'success' ? 'text-emerald-300'
+                          : l.type === 'system' ? 'text-slate-400'
+                          : 'text-sky-200'
+                        }`}
+                      >
+                        {l.raw}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="px-4 py-2 bg-slate-800 text-slate-400 text-[10px] font-mono flex justify-between">
+                    <span>
+                      {num(rows.length)} line{rows.length === 1 ? '' : 's'} shown
+                      {needle ? ` · matched “${needle}” across the whole log${serverLog.truncated ? ` (newest ${num(rows.length)} of ${num(serverLog.match_count)})` : ''}` : ''}
+                    </span>
+                    <span>newest first</span>
+                  </div>
+                </div>
+              )
+            })()}
+          </GlassCard>
+        </div>
       ) : (
         <div className="space-y-6">
           {/* Authentication Logs Card (Full Width) */}
           <GlassCard className="space-y-4">
             <h3 className="font-bold flex items-center gap-2"><Activity size={18} className="text-[#003164]" /> RADIUS Authentication Logs</h3>
-            
+
             {/* Brute-force & Failed Attempts Summary Alert Banner */}
             {(failed24h > 0 || bruteForceAlerts.length > 0) && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4 select-none animate-fade-in">

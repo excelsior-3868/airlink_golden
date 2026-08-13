@@ -35,8 +35,7 @@ class SyncVoucherStatus extends Command
     public function handle(): int
     {
         // 1. Usernames whose live voucher has a data cap and whose cumulative
-        //    radacct usage has met or exceeded it. 'used' counts here too —
-        //    it means activated, so a card in use is exactly what runs out.
+        //    radacct usage has met or exceeded it.
         $exhaustedUsernames = collect(DB::select(
             "SELECT v.username
              FROM vouchers v
@@ -45,7 +44,7 @@ class SyncVoucherStatus extends Command
                  FROM radacct
                  GROUP BY username
              ) u ON u.username = v.username
-             WHERE v.status IN ('active', 'sold', 'used')
+             WHERE v.status IN ('ready', 'active')
                AND v.data_gb IS NOT NULL AND v.data_gb > 0
                AND u.bytes_used >= v.data_gb * 1073741824"
         ))->pluck('username');
@@ -53,27 +52,27 @@ class SyncVoucherStatus extends Command
         $exhausted = 0;
         if ($exhaustedUsernames->isNotEmpty()) {
             $exhausted = Voucher::whereIn('username', $exhaustedUsernames)
-                ->whereIn('status', ['active', 'sold', 'used'])
-                ->update(['status' => 'expired']);
+                ->whereIn('status', ['ready', 'active'])
+                ->update(['status' => 'used']);
         }
 
         // 2. Anything past its expiry that has been activated and isn't already terminal.
         $expiredVouchers = Voucher::whereNotNull('expires_at')
             ->whereNotNull('activated_at')
             ->where('expires_at', '<', now())
-            ->whereIn('status', ['active', 'sold', 'used'])
+            ->whereIn('status', ['ready', 'active'])
             ->get(['id', 'username']);
 
         $expired = $expiredVouchers->count();
         if ($expired > 0) {
-            Voucher::whereIn('id', $expiredVouchers->pluck('id'))->update(['status' => 'expired']);
+            Voucher::whereIn('id', $expiredVouchers->pluck('id'))->update(['status' => 'used']);
         }
 
         $exhaustedUsernames->merge($expiredVouchers->pluck('username'))
             ->unique()
             ->each(fn (string $username) => $this->coa->disconnectUsername($username));
 
-        $this->info("Sync complete: {$exhausted} quota-exhausted, {$expired} past expiry — all set to expired.");
+        $this->info("Sync complete: {$exhausted} quota-exhausted, {$expired} past expiry — all set to used.");
 
         return self::SUCCESS;
     }

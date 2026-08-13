@@ -382,20 +382,48 @@ class RadiusController extends Controller
         }
 
         $limit = $request->integer('limit', 500);
+        $search = trim((string) $request->query('search', ''));
         $lines = [];
-        
+        $matchCount = 0;
+
         try {
-            $file = new \SplFileObject($path, 'r');
-            $file->seek(PHP_INT_MAX);
-            $totalLines = $file->key();
-            
-            $start = max(0, $totalLines - $limit);
-            $file->seek($start);
-            
-            while (!$file->eof()) {
-                $line = $file->fgets();
-                if ($line !== false && trim($line) !== '') {
-                    $lines[] = trim($line);
+            if ($search !== '') {
+                // Case-insensitive scan of the whole file, equivalent to
+                // `grep -i "<search>" radius.log`. Streams the file so a
+                // multi-gigabyte log never lands in memory; only the most
+                // recent $limit matches are kept.
+                $handle = fopen($path, 'r');
+                if ($handle === false) {
+                    return $this->fail('Failed opening log file for search.', 500);
+                }
+
+                $totalLines = 0;
+                while (($line = fgets($handle)) !== false) {
+                    $totalLines++;
+                    $line = trim($line);
+                    if ($line === '' || stripos($line, $search) === false) {
+                        continue;
+                    }
+                    $matchCount++;
+                    $lines[] = $line;
+                    if (count($lines) > $limit) {
+                        array_shift($lines);
+                    }
+                }
+                fclose($handle);
+            } else {
+                $file = new \SplFileObject($path, 'r');
+                $file->seek(PHP_INT_MAX);
+                $totalLines = $file->key();
+
+                $start = max(0, $totalLines - $limit);
+                $file->seek($start);
+
+                while (!$file->eof()) {
+                    $line = $file->fgets();
+                    if ($line !== false && trim($line) !== '') {
+                        $lines[] = trim($line);
+                    }
                 }
             }
         } catch (Exception $e) {
@@ -451,6 +479,9 @@ class RadiusController extends Controller
             'exists' => true,
             'path' => $path,
             'total_lines' => $totalLines,
+            'search' => $search !== '' ? $search : null,
+            'match_count' => $search !== '' ? $matchCount : null,
+            'truncated' => $search !== '' && $matchCount > count($lines),
             'content' => implode("\n", $lines),
             'logs' => $parsedLogs
         ]);

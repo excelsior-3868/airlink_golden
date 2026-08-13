@@ -140,13 +140,13 @@ class FinancialDashboardTest extends TestCase
         Voucher::create([
             'code' => 'WAL1', 'username' => 'WAL1', 'password' => 'WAL1',
             'plan_id' => $this->plan('wallet')->id, 'owner_id' => $reseller->id,
-            'reseller_id' => $reseller->id, 'price' => 1000, 'status' => 'sold',
+            'reseller_id' => $reseller->id, 'price' => 1000, 'status' => 'active',
             'sold_at' => now(), 'commission_percent' => 30, 'admin_share' => 300, 'reseller_share' => 700,
         ]);
         Voucher::create([
             'code' => 'GB1', 'username' => 'GB1', 'password' => 'GB1',
             'plan_id' => $this->plan('gb')->id, 'owner_id' => $reseller->id,
-            'reseller_id' => $reseller->id, 'price' => 500, 'status' => 'sold', 'sold_at' => now(),
+            'reseller_id' => $reseller->id, 'price' => 500, 'status' => 'active', 'sold_at' => now(),
         ]);
 
         $data = $this->actingAs($reseller, 'sanctum')
@@ -183,7 +183,7 @@ class FinancialDashboardTest extends TestCase
             'code' => 'WAL2', 'username' => 'WAL2', 'password' => 'WAL2',
             'plan_id' => $this->plan('wallet')->id, 'owner_id' => $seller->id,
             'reseller_id' => $reseller->id, 'seller_id' => $seller->id,
-            'price' => 1000, 'status' => 'sold', 'sold_at' => now(),
+            'price' => 1000, 'status' => 'active', 'sold_at' => now(),
             'commission_percent' => 30, 'admin_share' => 300, 'reseller_share' => 700,
         ]);
 

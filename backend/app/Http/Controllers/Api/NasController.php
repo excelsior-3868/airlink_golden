@@ -22,7 +22,15 @@ class NasController extends Controller
 
     public function index(): JsonResponse
     {
-        return $this->ok(NasDevice::with('owner')->orderBy('name')->get());
+        $activity = app(\App\Services\Radius\NasActivityService::class)->forDevices();
+
+        // Whether a NAS is really talking to FreeRADIUS cannot be read from
+        // radacct — see NasActivityService for why the detail files are the
+        // only source that ties a router's real address to the one it reports.
+        $devices = NasDevice::with('owner')->orderBy('name')->get()
+            ->each(fn (NasDevice $d) => $d->setAttribute('activity', $activity[$d->id] ?? null));
+
+        return $this->ok($devices);
     }
 
     public function store(Request $request): JsonResponse

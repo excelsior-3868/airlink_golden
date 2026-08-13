@@ -81,9 +81,27 @@ class PlanController extends Controller
         }
 
         // Inline custom packages built during voucher generation are gated separately
-        // from plans created on the Plans page.
-        $feature = $request->boolean('via_voucher') ? 'create_voucher_plan' : 'create_plan';
-        if (! \App\Models\SystemPermission::isAllowed($feature, $request->user()->role)) {
+        // from plans created on the Plans page. On the Plans page the gate depends
+        // on what the actor can actually produce: only an admin-owned plan may be a
+        // Wallet Package (package_type is forced to 'gb' for every non-admin owner
+        // below), so a non-admin is creating a GB Package by definition and is gated
+        // on create_gb_package rather than create_plan.
+        $role = $request->user()->role;
+        if ($request->boolean('via_voucher')) {
+            $feature = 'create_voucher_plan';
+            $permitted = \App\Models\SystemPermission::isAllowed($feature, $role);
+        } elseif ($request->user()->isAdmin()) {
+            $feature = 'create_plan';
+            $permitted = \App\Models\SystemPermission::isAllowed($feature, $role);
+        } else {
+            $feature = 'create_gb_package';
+            // create_plan still grants it, so a deployment that already allowed
+            // plan creation for this role keeps working after the split.
+            $permitted = \App\Models\SystemPermission::isAllowed('create_gb_package', $role)
+                || \App\Models\SystemPermission::isAllowed('create_plan', $role);
+        }
+
+        if (! $permitted) {
             return $this->fail("This action is not permitted for your role: access to '{$feature}' is restricted by system policy.", 403);
         }
 

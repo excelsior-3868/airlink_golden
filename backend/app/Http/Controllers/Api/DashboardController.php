@@ -88,8 +88,11 @@ class DashboardController extends Controller
         // marked sold (see GbService::settleVoucherConsumption). Gating on these
         // timestamps instead of `status` also naturally includes 'used'/'expired'
         // vouchers that were genuinely sold/used before moving to that status.
+        // Excludes legacy imported data and voided vouchers.
         $directVoucherSales = fn () => Voucher::where('reseller_id', $reseller->id)
             ->whereNull('seller_id')
+            ->whereNull('legacy_id')
+            ->whereNull('void_reason')
             ->where(fn ($q) => $q->whereNotNull('sold_at')->orWhereNotNull('activated_at'));
 
         // "Voucher Sales" specifically means GB Package vouchers the reseller sold
@@ -235,8 +238,8 @@ class DashboardController extends Controller
             // settlements) — not a raw historical sum of admin_share, which would
             // never decrease even after the reseller pays the admin.
             'commission_due' => (float) $reseller->commission_due,
-            'commission_paid' => (float) Voucher::where('reseller_id', $reseller->id)->whereNotNull('admin_share')->sum('admin_share'),
-            'commission_net_earnings' => (float) Voucher::where('reseller_id', $reseller->id)->whereNotNull('reseller_share')->sum('reseller_share'),
+            'commission_paid' => (float) Voucher::where('reseller_id', $reseller->id)->whereNull('legacy_id')->whereNull('void_reason')->whereNotNull('admin_share')->sum('admin_share'),
+            'commission_net_earnings' => (float) Voucher::where('reseller_id', $reseller->id)->whereNull('legacy_id')->whereNull('void_reason')->whereNotNull('reseller_share')->sum('reseller_share'),
             'top_sellers' => $this->topByVoucherSales('seller_id', $sellerIds),
             'recent_wallet_transfers' => $mergedTransactions,
             'daily_trend' => $dailyTrend,
@@ -245,16 +248,18 @@ class DashboardController extends Controller
 
     private function sellerDashboard(User $seller): array
     {
-        $today = Voucher::where('seller_id', $seller->id)->whereDate('created_at', now()->toDateString());
+        $today = Voucher::where('seller_id', $seller->id)->whereNull('legacy_id')->whereNull('void_reason')->whereDate('created_at', now()->toDateString());
         // Today's sales = vouchers generated today
-        $todaySales = Voucher::where('seller_id', $seller->id)->whereDate('created_at', now()->toDateString());
+        $todaySales = Voucher::where('seller_id', $seller->id)->whereNull('legacy_id')->whereNull('void_reason')->whereDate('created_at', now()->toDateString());
 
         // Fetch reseller (parent) name — needed for profit calculation below
         $reseller = $seller->parent_id ? User::find($seller->parent_id) : null;
         $resellerName = $reseller ? ($reseller->name ?? $reseller->username) : null;
 
         $vouchers = Voucher::where('seller_id', $seller->id)
-            ->whereIn('status', ['sold', 'active', 'used', 'expired'])
+            ->whereNull('legacy_id')
+            ->whereNull('void_reason')
+            ->whereIn('status', ['active', 'used'])
             ->get();
 
         // Reseller's gb_rate is the seller's cost per GB (what the reseller charges)
@@ -285,10 +290,12 @@ class DashboardController extends Controller
             ],
             'voucher_sales' => (float) $voucherSales,
             // Cumulative takings on cards actually handed off to a customer. Uses the
-            // same 'sold' definition as the sales/package reports — 'active' cards are
+            // same 'sold' definition as the sales/package reports — 'ready' cards are
             // printed but still in stock, so they count toward created value, not sales.
             'voucher_sales_to_date' => (float) Voucher::where('seller_id', $seller->id)
-                ->whereIn('status', ['sold', 'used', 'expired'])
+                ->whereNull('legacy_id')
+                ->whereNull('void_reason')
+                ->whereIn('status', ['active', 'used'])
                 ->sum('price'),
             'retail_profit' => (float) $retailProfit,
             'vouchers' => $this->voucherBreakdown(Voucher::where('seller_id', $seller->id)),
@@ -302,6 +309,8 @@ class DashboardController extends Controller
                 // of voucher_sales_to_date. 'sales' above counts cards *generated* today,
                 // which is a different thing and kept for the existing consumers.
                 'sold_sales' => (float) Voucher::where('seller_id', $seller->id)
+                    ->whereNull('legacy_id')
+                    ->whereNull('void_reason')
                     ->whereDate('sold_at', now()->toDateString())
                     ->sum('price'),
             ],
@@ -316,7 +325,7 @@ class DashboardController extends Controller
      * an unscoped, system-wide trend (admin view).
      *
      * A voucher only counts once it's actually been sold or used (whichever
-     * happens first) — never while merely generated/'active' stock that
+     * happens first) — never while merely generated/'ready' stock that
      * hasn't reached a customer. sold_at covers an explicit sale;
      * activated_at covers a GB Package voucher consumed via first login
      * without ever being marked sold (see GbService::settleVoucherConsumption).
@@ -329,6 +338,8 @@ class DashboardController extends Controller
         $days = collect(range(13, 0))->map(fn ($i) => now()->subDays($i)->toDateString());
 
         $query = Voucher::query()
+            ->whereNull('vouchers.legacy_id')
+            ->whereNull('vouchers.void_reason')
             ->where(fn ($q) => $q->whereNotNull('vouchers.sold_at')->orWhereNotNull('vouchers.activated_at'))
             ->whereRaw('COALESCE(vouchers.sold_at, vouchers.activated_at) >= ?', [now()->subDays(13)->startOfDay()])
             ->join('internet_plans', 'internet_plans.id', '=', 'vouchers.plan_id');
@@ -365,15 +376,34 @@ class DashboardController extends Controller
         })->values()->all();
     }
 
+    /**
+     * Disabled cards are excluded throughout: they are revoked stock, not
+     * inventory. Counting them inflated `total` (and therefore `remaining`)
+     * by every card ever retired — 138,692 of them after the legacy cleanup,
+     * against 53,610 genuinely sellable.
+     */
     private function voucherBreakdown($query): array
     {
-        $byStatus = (clone $query)->select('status', DB::raw('count(*) as c'))->groupBy('status')->pluck('c', 'status');
+        // void_reason marks rows the original import should never have created;
+        // they are excluded everywhere, including from the disabled figure.
+        $real = fn () => (clone $query)->whereNull('vouchers.void_reason');
+        $live = fn () => $real()->where('vouchers.status', '<>', 'disabled');
+
+        $byStatus = $live()->select('status', DB::raw('count(*) as c'))->groupBy('status')->pluck('c', 'status');
         $total = (int) $byStatus->sum();
-        $used = (int) ($byStatus['used'] ?? 0) + (int) ($byStatus['expired'] ?? 0);
-        $last7Days = (clone $query)->where('created_at', '>=', now()->subDays(7))->count();
-        // Cards handed to a customer today, keyed off sold_at — distinct from cards
-        // merely generated today, which are still sitting in stock.
-        $soldToday = (int) (clone $query)->whereDate('vouchers.sold_at', now()->toDateString())->count();
+        $used = (int) ($byStatus['used'] ?? 0);
+        $last7Days = $live()->where('created_at', '>=', now()->subDays(7))->count();
+        // Cards handed to a customer today. sold_at alone can never fire for
+        // imported stock — nothing sets it — so this falls back to activated_at,
+        // matching how sales are counted everywhere else in this controller.
+        $soldToday = (int) $live()
+            ->whereRaw('DATE(COALESCE(vouchers.sold_at, vouchers.activated_at)) = ?', [now()->toDateString()])
+            ->count();
+
+        // Reported separately so the UI can show revoked stock as its own figure
+        // without it ever landing back in inventory totals. Counts only cards
+        // genuinely disabled — voided bad-import rows are not vouchers at all.
+        $disabled = (int) $real()->where('vouchers.status', 'disabled')->count();
 
         return [
             'total' => $total,
@@ -382,6 +412,7 @@ class DashboardController extends Controller
             'remaining' => $total - $used,
             'last_7_days' => $last7Days,
             'sold_today' => $soldToday,
+            'disabled' => $disabled,
         ];
     }
 
@@ -393,6 +424,9 @@ class DashboardController extends Controller
         }
 
         $q = Voucher::query()->whereNotNull($column)
+            ->whereNull('vouchers.legacy_id')
+            ->whereNull('vouchers.void_reason')
+            ->where(fn ($query) => $query->whereNotNull('vouchers.sold_at')->orWhereNotNull('vouchers.activated_at'))
             ->select($selects)
             ->groupBy($column)->orderByDesc('revenue')->limit(5);
         if ($restrictIds !== null) {

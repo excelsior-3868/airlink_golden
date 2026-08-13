@@ -5,8 +5,8 @@ import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, L
 import { api } from '../lib/api'
 import { useQuery } from '../lib/cache'
 import { useAuth } from '../lib/auth'
-import { rs, gb, num, date } from '../lib/format'
-import { StatCard, DualStatCard, PageTitle, GlassCard, EmptyState, Modal, Spinner, VoucherStatCard, CustomSelect, SelectOption, renderPaymentMethodIcon } from '../components/ui'
+import { rs, gb, num, date, statusPill } from '../lib/format'
+import { StatCard, DualStatCard, PageTitle, GlassCard, EmptyState, Modal, Spinner, VoucherStatCard, CustomSelect, SelectOption, renderPaymentMethodIcon, Pill } from '../components/ui'
 import { motion } from 'framer-motion'
 import FundModal from '../components/FundModal'
 
@@ -143,10 +143,10 @@ export default function Dashboard() {
       {d.role === 'admin' && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatCard label="Wallet Balance" value={<span className="text-emerald-600">{rs(d.balances.wallet)}</span>} icon={<Wallet size={22} />} iconColorClass="text-emerald-600 bg-emerald-50 border border-emerald-100/50" />
-            <StatCard label="GB Balance" value={<span className="text-cyan-600">{gb(d.balances.gb)}</span>} icon={<Database size={22} />} iconColorClass="text-cyan-600 bg-cyan-50 border border-cyan-100/50" />
+            <StatCard label="Total Wallet Voucher" value={<span className="text-emerald-600">{num(d.wallet_vouchers?.total || 0)}</span>} icon={<Wallet size={22} />} iconColorClass="text-emerald-600 bg-emerald-50 border border-emerald-100/50" />
+            <StatCard label="Total Wallet Voucher Used" value={<span className="text-cyan-600">{num(d.wallet_vouchers?.used ?? d.wallet_vouchers?.by_status?.used ?? 0)}</span>} icon={<Ticket size={22} />} iconColorClass="text-cyan-600 bg-cyan-50 border border-cyan-100/50" />
             <StatCard label="Wallet Distributed" value={<span className="text-blue-600">{rs(d.wallet_distributed)}</span>} icon={<Wallet size={22} />} iconColorClass="text-blue-600 bg-blue-50 border border-blue-100/50" />
-            <StatCard label="GB Distributed" value={<span className="text-purple-600">{gb(d.gb_distributed)}</span>} icon={<Database size={22} />} iconColorClass="text-purple-600 bg-purple-50 border border-purple-100/50" />
+            <StatCard label="GB Sold" value={<span className="text-purple-600">{gb(d.gb_distributed)}</span>} icon={<Database size={22} />} iconColorClass="text-purple-600 bg-purple-50 border border-purple-100/50" />
             <DualStatCard
               top={{
                 label: 'Commission Earned',
@@ -704,9 +704,9 @@ export default function Dashboard() {
                             <td className="font-bold text-primary">{rs(v.price)}</td>
                             <td className="text-xs text-muted-foreground">{v.activated_at ? date(v.activated_at) : (v.sold_at ? date(v.sold_at) : '—')}</td>
                             <td>
-                              <span className={`pill text-[10px] uppercase font-bold ${v.status === 'active' ? 'success' : (v.status === 'sold' ? 'info' : 'secondary')}`}>
+                              <Pill tone={statusPill[v.status] || 'secondary'}>
                                 {v.status}
-                              </span>
+                              </Pill>
                             </td>
                           </tr>
                         ))}

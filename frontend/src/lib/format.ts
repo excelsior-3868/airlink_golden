@@ -32,11 +32,9 @@ export const datet = (s: string | null) => (s ? parse(s).toLocaleString('en-GB',
 export const date = (s: string | null) => (s ? parse(s).toLocaleDateString('en-GB', { dateStyle: 'medium', timeZone: TZ }) : '—')
 
 export const statusPill: Record<string, string> = {
-  new: 'info',
-  used: 'info',
-  sold: 'warning',
+  ready: 'info',
   active: 'success',
-  expired: 'secondary',
+  used: 'warning',
   disabled: 'danger',
   activate: 'success',
 }
