@@ -191,21 +191,21 @@ export default function Dashboard() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <StatCard label="Total Wallet Voucher" value={<span className="text-emerald-600">{num(d.wallet_vouchers?.total || 0)}</span>} icon={<Wallet size={22} />} iconColorClass="text-emerald-600 bg-emerald-50 border border-emerald-100/50" />
             <StatCard label="Total Wallet Voucher Used" value={<span className="text-cyan-600">{num(d.wallet_vouchers?.used ?? d.wallet_vouchers?.by_status?.used ?? 0)}</span>} icon={<Ticket size={22} />} iconColorClass="text-cyan-600 bg-cyan-50 border border-cyan-100/50" />
-            <DualStatCard
-              top={{
-                label: 'Wallet Distributed',
-                value: rs(d.wallet_distributed),
-                valueColorClass: 'text-blue-600',
-                icon: <Wallet size={22} />,
-                iconColorClass: 'text-blue-600 bg-blue-50 border border-blue-100/50',
-              }}
-              bottom={{
-                label: 'GB Sold',
-                value: gb(d.gb_distributed),
-                valueColorClass: 'text-purple-600',
-                icon: <Database size={22} />,
-                iconColorClass: 'text-purple-600 bg-purple-50 border border-purple-100/50',
-              }}
+            {/* One row, two columns: the two distribution figures read as a
+                single fact, so they share a label and sit side by side rather
+                than stacking into two half-height rows. flex-wrap keeps large
+                amounts from overflowing the tile on narrow columns. */}
+            <StatCard
+              label="Wallet / GB Distributed"
+              value={
+                <span className="flex items-baseline gap-1.5 flex-wrap">
+                  <span className="text-blue-600">{rs(d.wallet_distributed)}</span>
+                  <span className="text-slate-300 dark:text-slate-600 font-normal">/</span>
+                  <span className="text-purple-600">{gb(d.gb_distributed)}</span>
+                </span>
+              }
+              icon={<Wallet size={22} />}
+              iconColorClass="text-blue-600 bg-blue-50 border border-blue-100/50"
             />
             <PppoeStatCard pppoe={d.pppoe} onClick={() => navigate('/pppoe/customers')} />
             <DualStatCard
