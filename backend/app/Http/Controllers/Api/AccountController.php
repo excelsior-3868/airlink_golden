@@ -442,20 +442,41 @@ class AccountController extends Controller
         $fromDate = $request->query('from_date');
         $toDate = $request->query('to_date');
 
-        $earnedQuery = Voucher::query()
+        $voucherEarnedQuery = Voucher::query()
             ->whereIn('reseller_id', $userIds)
             ->whereNotNull('sold_at')
             ->whereNotNull('admin_share');
         if ($fromDate) {
-            $earnedQuery->whereDate('sold_at', '>=', $fromDate);
+            $voucherEarnedQuery->whereDate('sold_at', '>=', $fromDate);
         }
         if ($toDate) {
-            $earnedQuery->whereDate('sold_at', '<=', $toDate);
+            $voucherEarnedQuery->whereDate('sold_at', '<=', $toDate);
         }
-        $earnedByPeriod = $earnedQuery
+        $voucherEarnedByPeriod = $voucherEarnedQuery
             ->selectRaw(sprintf($dateExpr, 'sold_at') . ' as period, SUM(admin_share) as total')
             ->groupBy('period')
             ->pluck('total', 'period');
+
+        $pppoeEarnedQuery = \App\Models\PppoeRecharge::query()
+            ->whereIn('reseller_id', $userIds)
+            ->whereNotNull('admin_share');
+        if ($fromDate) {
+            $pppoeEarnedQuery->whereDate('created_at', '>=', $fromDate);
+        }
+        if ($toDate) {
+            $pppoeEarnedQuery->whereDate('created_at', '<=', $toDate);
+        }
+        $pppoeEarnedByPeriod = $pppoeEarnedQuery
+            ->selectRaw(sprintf($dateExpr, 'created_at') . ' as period, SUM(admin_share) as total')
+            ->groupBy('period')
+            ->pluck('total', 'period');
+
+        $allPeriods = $voucherEarnedByPeriod->keys()->merge($pppoeEarnedByPeriod->keys())->unique();
+        $earnedByPeriod = $allPeriods->mapWithKeys(function ($p) use ($voucherEarnedByPeriod, $pppoeEarnedByPeriod) {
+            $v = (float) ($voucherEarnedByPeriod[$p] ?? 0);
+            $r = (float) ($pppoeEarnedByPeriod[$p] ?? 0);
+            return [$p => $v + $r];
+        });
 
         $collectedQuery = Payment::query()
             ->whereIn('sender_id', $userIds)
@@ -788,10 +809,24 @@ class AccountController extends Controller
             ->tap($applyVoucherScope)
             ->whereHas('plan', fn ($q) => $q->where('type', 'hotspot')->where('package_type', 'gb'))
             ->sum('price');
-        $pppoeRevenue = (float) Voucher::query()
-            ->tap($applyVoucherScope)
-            ->whereHas('plan', fn ($q) => $q->where('type', 'pppoe'))
-            ->sum('price');
+
+        $applyRechargeScope = function ($query) use ($startDate, $endDate) {
+            if ($startDate && $endDate) {
+                $query->whereBetween('created_at', [$startDate, $endDate]);
+            }
+        };
+
+        $pppoeRevenue = match (true) {
+            $actor->isAdmin() => (float) \App\Models\PppoeRecharge::query()
+                ->tap($applyRechargeScope)
+                ->whereNull('reseller_id')
+                ->sum('price'),
+            $actor->isReseller() => (float) \App\Models\PppoeRecharge::query()
+                ->tap($applyRechargeScope)
+                ->where('reseller_id', $actor->id)
+                ->sum(DB::raw('COALESCE(reseller_share, price)')),
+            default => 0.0,
+        };
 
         // Gross cash taken from end customers on wallet-package card sales. Only
         // part of it is the seller's own revenue (see below) — the rest is owed
@@ -1017,6 +1052,7 @@ class AccountController extends Controller
                 'net_operating_profit' => $netOperatingProfit,
                 'gb_voucher_revenue' => $gbVoucherRevenue,
                 'pppoe_revenue' => $pppoeRevenue,
+                'pppoe_revenue_applicable' => ! $actor->isSeller(),
                 'commission_revenue' => $commissionRevenue,
                 // Sellers hold no commission of their own — hide the line for them
                 // rather than reporting a permanent zero.

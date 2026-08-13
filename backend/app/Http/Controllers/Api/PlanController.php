@@ -46,7 +46,8 @@ class PlanController extends Controller
                     }
                 });
             } else if ($actor->isSeller()) {
-                $query->where('package_type', '!=', 'wallet')
+                $query->where('type', '!=', 'pppoe')
+                      ->where('package_type', '!=', 'wallet')
                       ->where(function ($q) use ($actor) {
                           $q->whereNull('created_by')
                             ->orWhere('created_by', $actor->id)
@@ -88,10 +89,8 @@ class PlanController extends Controller
         }
 
         $data = $this->validateData($request);
-        if ($request->input('type') === 'hotspot') {
-            $data['base_price'] = $data['base_price'] ?? 0;
-            $data['selling_price'] = $data['selling_price'] ?? 0;
-        }
+        $data['base_price'] = $data['base_price'] ?? 0;
+        $data['selling_price'] = $data['selling_price'] ?? 0;
 
         if (!empty($data['bandwidth_id'])) {
             $bw = \App\Models\Bandwidth::find($data['bandwidth_id']);
@@ -126,7 +125,10 @@ class PlanController extends Controller
         $data['created_by'] = $creatorId;
         $ownerObj = \App\Models\User::find($creatorId);
         $isOwnerAdmin = $ownerObj && $ownerObj->role === 'admin';
-        if ($request->filled('package_type') && in_array($request->input('package_type'), ['wallet', 'gb'])) {
+
+        if (($data['type'] ?? 'hotspot') === 'pppoe') {
+            $data['package_type'] = 'wallet';
+        } elseif ($request->filled('package_type') && in_array($request->input('package_type'), ['wallet', 'gb'])) {
             $data['package_type'] = ($isOwnerAdmin && $request->input('package_type') === 'wallet') ? 'wallet' : 'gb';
         } else {
             $data['package_type'] = ($isOwnerAdmin && !$request->boolean('via_voucher')) ? 'wallet' : 'gb';
@@ -152,15 +154,14 @@ class PlanController extends Controller
             return $this->fail("This API token does not have the 'plans.write' ability.", 403);
         }
 
-        if (!$request->user()->isAdmin() && ($plan->package_type === 'wallet' || $plan->created_by !== $request->user()->id)) {
+        $isPppoeCreator = $plan->type === 'pppoe' && $plan->created_by === $request->user()->id;
+        if (!$request->user()->isAdmin() && !$isPppoeCreator && ($plan->package_type === 'wallet' || $plan->created_by !== $request->user()->id)) {
             return $this->fail('You do not have permission to modify this plan.', 403);
         }
 
-        $data = $this->validateData($request, $plan->id);
-        if ($request->input('type') === 'hotspot') {
-            $data['base_price'] = $data['base_price'] ?? 0;
-            $data['selling_price'] = $data['selling_price'] ?? 0;
-        }
+        $data = $this->validateData($request, $plan);
+        $data['base_price'] = $data['base_price'] ?? 0;
+        $data['selling_price'] = $data['selling_price'] ?? 0;
 
         if (!empty($data['bandwidth_id'])) {
             $bw = \App\Models\Bandwidth::find($data['bandwidth_id']);
@@ -193,7 +194,10 @@ class PlanController extends Controller
             }
         }
         $data['created_by'] = $creatorId;
-        if ($request->filled('package_type') && in_array($request->input('package_type'), ['wallet', 'gb'])) {
+
+        if (($data['type'] ?? $plan->type) === 'pppoe') {
+            $data['package_type'] = 'wallet';
+        } elseif ($request->filled('package_type') && in_array($request->input('package_type'), ['wallet', 'gb'])) {
             $data['package_type'] = ($request->user()->isAdmin() && $request->input('package_type') === 'wallet') ? 'wallet' : 'gb';
         }
 
@@ -221,26 +225,33 @@ class PlanController extends Controller
             return $this->fail("This API token does not have the 'plans.write' ability.", 403);
         }
 
-        if (!request()->user()->isAdmin() && ($plan->package_type === 'wallet' || $plan->created_by !== request()->user()->id)) {
+        $isPppoeCreator = $plan->type === 'pppoe' && $plan->created_by === request()->user()->id;
+        if (!request()->user()->isAdmin() && !$isPppoeCreator && ($plan->package_type === 'wallet' || $plan->created_by !== request()->user()->id)) {
             return $this->fail('You do not have permission to delete this plan.', 403);
         }
 
         if ($plan->vouchers()->exists()) {
             return $this->fail('Cannot delete a plan that already has vouchers.', 422);
         }
+
+        if ($plan->pppoeCustomers()->exists()) {
+            return $this->fail('Cannot delete a plan that already has PPPoE subscribers.', 422);
+        }
+
         $plan->delete();
 
         return $this->ok(null, 'Plan deleted.');
     }
 
-    private function validateData(Request $request, ?int $ignoreId = null): array
+    private function validateData(Request $request, ?InternetPlan $plan = null): array
     {
+        $ignoreId = $plan?->id;
         $user = $request->user();
         if ($user && !$user->isAdmin()) {
             if (!\App\Models\SystemPermission::isAllowed('customize_plan_bandwidth', $user->role)) {
                 // If updating, verify they didn't change it. If creating, force defaults/null.
                 if ($ignoreId) {
-                    $original = InternetPlan::find($ignoreId);
+                    $original = $plan ?? InternetPlan::find($ignoreId);
                     if ($original && ($request->has('bandwidth_id') && $request->input('bandwidth_id') != $original->bandwidth_id)) {
                         throw \Illuminate\Validation\ValidationException::withMessages([
                             'bandwidth' => 'You do not have permission to customize bandwidth speed limits.'
@@ -253,7 +264,7 @@ class PlanController extends Controller
 
             if (!\App\Models\SystemPermission::isAllowed('customize_plan_data_limit', $user->role)) {
                 if ($ignoreId) {
-                    $original = InternetPlan::find($ignoreId);
+                    $original = $plan ?? InternetPlan::find($ignoreId);
                     if ($original && ($request->has('data_gb') && $request->input('data_gb') != $original->data_gb)) {
                         throw \Illuminate\Validation\ValidationException::withMessages([
                             'data_gb' => 'You do not have permission to customize data/volume limits.'
@@ -266,7 +277,7 @@ class PlanController extends Controller
 
             if (!\App\Models\SystemPermission::isAllowed('customize_plan_validity', $user->role)) {
                 if ($ignoreId) {
-                    $original = InternetPlan::find($ignoreId);
+                    $original = $plan ?? InternetPlan::find($ignoreId);
                     if ($original && ($request->has('validity_days') && $request->input('validity_days') != $original->validity_days)) {
                         throw \Illuminate\Validation\ValidationException::withMessages([
                             'validity_days' => 'You do not have permission to customize validity duration.'
@@ -278,12 +289,14 @@ class PlanController extends Controller
             }
         }
 
-        $isHotspot = $request->input('type') === 'hotspot';
+        $type = $request->input('type') ?? $plan?->type ?? 'hotspot';
+        $isPppoe = $type === 'pppoe';
+        $isHotspot = $type === 'hotspot';
 
-        return $request->validate([
-            'name' => ['required', 'string', 'max:255'],
+        $rules = [
+            'name' => [$ignoreId ? 'sometimes' : 'required', 'string', 'max:255'],
             'type' => ['nullable', 'in:hotspot,pppoe'],
-            'plan_type' => ['required', 'in:data,time,unlimited,daily_data'],
+            'plan_type' => ['required', $isPppoe ? 'in:unlimited' : 'in:data,time,unlimited,daily_data'],
             'bandwidth_id' => ['nullable', 'exists:bandwidths,id'],
             'bandwidth' => ['nullable', 'string', 'max:255'],
             'nas_device_id' => ['nullable', 'exists:nas_devices,id'],
@@ -291,13 +304,20 @@ class PlanController extends Controller
             'data_gb' => ['nullable', 'numeric', 'min:0'],
             'daily_data_gb' => ['nullable', 'numeric', 'min:0'],
             'time_limit' => ['nullable', 'integer', 'min:0'],
-            'validity_days' => ['required', 'integer', 'min:0'],
+            'validity_days' => ['required', 'integer', $isPppoe ? 'min:1' : 'min:0'],
             'simultaneous_use' => ['nullable', 'integer', 'min:1', 'max:10'],
             'base_price' => ['nullable', 'numeric', 'min:0'],
             'selling_price' => [$isHotspot ? 'nullable' : 'required', 'numeric', 'min:0'],
             'api_nas' => ['nullable', 'string', 'max:255'],
             'package_type' => ['nullable', 'in:wallet,gb'],
             'status' => ['nullable', 'in:active,disabled'],
-        ]);
+        ];
+
+        $validated = $request->validate($rules);
+        if ($isPppoe) {
+            unset($validated['time_limit'], $validated['daily_data_gb'], $validated['data_gb']);
+        }
+
+        return $validated;
     }
 }

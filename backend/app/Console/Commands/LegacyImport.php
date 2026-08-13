@@ -5,9 +5,11 @@ namespace App\Console\Commands;
 use App\Models\Batch;
 use App\Models\GbTransaction;
 use App\Models\InternetPlan;
+use App\Models\PppoeCustomer;
 use App\Models\User;
 use App\Models\Voucher;
 use App\Models\WalletTransaction;
+use App\Services\PppoeRadiusService;
 use App\Services\RadiusService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -32,7 +34,7 @@ class LegacyImport extends Command
     protected $signature = 'legacy:import
         {--dry-run : Compute and report without writing}
         {--fresh : Wipe previously imported rows first}
-        {--only= : Comma-separated sections to run (plans,staff,wallets,vouchers,radius). Default: all}';
+        {--only= : Comma-separated sections to run (plans,staff,wallets,vouchers,pppoe,radius). Default: all}';
 
     protected $description = 'Migrate legacy v2.0 data (airlink_legacy) into the v3.0 schema';
 
@@ -62,7 +64,7 @@ class LegacyImport extends Command
                 // re-flags must_reset_password on) an earlier one.
                 $planMap = $this->wants('plans') ? $this->importPlans() : $this->existingPlanMap();
 
-                if ($this->wants('staff') || $this->wants('wallets') || $this->wants('vouchers')) {
+                if ($this->wants('staff') || $this->wants('wallets') || $this->wants('vouchers') || $this->wants('pppoe')) {
                     $userMap = $this->wants('staff') ? $this->importStaff() : $this->existingUserMap();
 
                     if ($this->wants('wallets')) {
@@ -71,6 +73,10 @@ class LegacyImport extends Command
                     }
                     if ($this->wants('vouchers')) {
                         $this->importVouchers($planMap, $userMap);
+                    }
+                    if ($this->wants('pppoe')) {
+                        $this->purgePppoeVoucherRows();
+                        $this->importPppoeCustomers($userMap);
                     }
                 }
 
@@ -469,7 +475,19 @@ class LegacyImport extends Command
         $duplicateCodes = 0;
         $now = now();
 
-        DB::connection('legacy')->table('tbl_customers')->orderBy('id')->chunk(1000, function ($chunk) use (
+        // PPPoE subscribers live in the same tbl_customers table but are a
+        // different product entirely — they belong in pppoe_customers, not
+        // here. Leaving them in would be actively harmful: FreeRADIUS runs the
+        // voucher CASE first and only falls through to the PPPoE state machine
+        // when it finds nothing, so a subscriber that also exists as a voucher
+        // is silently governed by voucher rules and never sees its own
+        // lifecycle. See importPppoeCustomers() below.
+        // NULL-safe on purpose: 192,992 of the 195,182 rows have type IS NULL,
+        // and `type != 'PPPOE'` is NULL (not true) for those, which would drop
+        // almost the entire voucher estate.
+        DB::connection('legacy')->table('tbl_customers')
+            ->whereRaw("IFNULL(type, '') <> 'PPPOE'")
+            ->orderBy('id')->chunk(1000, function ($chunk) use (
             $legacyVouchers, $resolvePlan, $ownership, $plansById, $batchMap,
             &$imported, &$skippedNoPlan, &$seenCodes, &$duplicateCodes, $now
         ) {
@@ -581,6 +599,227 @@ class LegacyImport extends Command
             'skipped_duplicate_code' => $duplicateCodes,
             'batches' => count($batchMap),
             'legacy_id_note' => "voucher-only rows carry legacy_id = {$voucherIdOffset} + tbl_voucher.id to avoid colliding with tbl_customers ids",
+        ];
+    }
+
+    // ---- PPPoE subscribers -------------------------------------------------
+
+    /**
+     * Earlier runs of this import had no type filter on tbl_customers, so PPPoE
+     * subscribers were migrated into `vouchers`. Those rows shadow the real
+     * pppoe_customers entry — FreeRADIUS evaluates the voucher CASE first and
+     * only consults the PPPoE state machine when it comes back empty — so they
+     * have to go before the subscribers are inserted.
+     *
+     * Scoped by legacy_id against the legacy PPPoE ids, so a genuine hotspot
+     * voucher that merely happens to share a code is never touched.
+     */
+    private function purgePppoeVoucherRows(): void
+    {
+        $pppoeLegacyIds = DB::connection('legacy')->table('tbl_customers')
+            ->where('type', 'PPPOE')->pluck('id')->all();
+
+        if (! $pppoeLegacyIds) {
+            $this->report['pppoe_voucher_cleanup'] = ['deleted' => 0];
+
+            return;
+        }
+
+        $stale = Voucher::whereIn('legacy_id', $pppoeLegacyIds)->get(['id', 'username']);
+        $usernames = $stale->pluck('username')->filter()->all();
+
+        $deleted = Voucher::whereIn('id', $stale->pluck('id'))->delete();
+        if ($usernames) {
+            DB::table('radcheck')->whereIn('username', $usernames)->delete();
+            DB::table('radreply')->whereIn('username', $usernames)->delete();
+        }
+
+        $this->report['pppoe_voucher_cleanup'] = [
+            'deleted' => $deleted,
+            'note' => 'voucher rows that were really PPPoE subscribers, removed so they cannot shadow pppoe_customers in the FreeRADIUS authorize chain',
+        ];
+    }
+
+    /**
+     * PPPoE subscribers (tbl_customers.type = 'PPPOE') are a different product
+     * from vouchers: a named, long-lived account on a prepaid recharge cycle
+     * rather than an anonymous single-shot card. They land in pppoe_customers.
+     *
+     * Deliberately NOT imported: the 184 tbl_user_recharges rows. AccountController
+     * sums pppoe_recharges.price into account 4250 "PPPoE Sales Revenue", so
+     * replaying historical recharges would fabricate revenue in the income
+     * statement. Legacy billing history stays in the legacy schema; only the
+     * *derived* expiry date is carried across.
+     */
+    private function importPppoeCustomers(array $userMap): void
+    {
+        $admin = $userMap['admin'] ?? User::where('role', 'admin')->first();
+        if (! $admin) {
+            throw new \RuntimeException('No admin user to own unattributable subscribers — import staff first.');
+        }
+
+        // profile is a free-text plan NAME on the customer row, not an FK, so
+        // this is the only join available back to a plan.
+        $plansByName = InternetPlan::where('type', 'pppoe')->pluck('id', 'name');
+        $plansById = InternetPlan::whereIn('id', $plansByName->values())->get()->keyBy('id');
+
+        // Latest expiry per subscriber. tbl_customers has no expiry column of
+        // its own — the date lives on the recharge ledger.
+        $expiryByUser = DB::connection('legacy')->table('tbl_user_recharges')
+            ->select('username', DB::raw('MAX(expiration) as expiration'))
+            ->groupBy('username')
+            ->pluck('expiration', 'username');
+
+        $ownership = function (?string $generatedFor) use ($userMap, $admin): array {
+            $target = $generatedFor ? ($userMap[$generatedFor] ?? null) : null;
+            if (! $target) {
+                return ['owner' => $admin->id, 'reseller' => null];
+            }
+            if ($target->role === 'reseller') {
+                return ['owner' => $target->id, 'reseller' => $target->id];
+            }
+            // A seller never owns PPPoE (sellers are voucher-only), so a
+            // seller-allocated line is booked to its parent reseller.
+            if ($target->role === 'seller' && $target->parent_id) {
+                return ['owner' => $target->parent_id, 'reseller' => $target->parent_id];
+            }
+
+            return ['owner' => $target->id, 'reseller' => null];
+        };
+
+        $now = now();
+        $imported = 0;
+        $skippedNoPlan = [];
+        $skippedBadUsername = [];
+        $skippedDuplicate = 0;
+        $pendingNoExpiry = [];
+        $statusCounts = ['active' => 0, 'expired' => 0, 'pending' => 0];
+        $seen = [];
+        $insert = [];
+
+        $rows = DB::connection('legacy')->table('tbl_customers')
+            ->where('type', 'PPPOE')
+            ->orderBy('id')
+            ->get();
+
+        foreach ($rows as $c) {
+            $username = trim((string) $c->username);
+
+            // pppoe_customers.username is UNIQUE; legacy allowed duplicates.
+            if (isset($seen[$username])) {
+                $skippedDuplicate++;
+
+                continue;
+            }
+
+            // The app validates usernames as /^[A-Za-z0-9._@-]{3,64}$/. A handful
+            // of legacy accounts use a bare MAC address, which cannot be edited
+            // through the UI afterwards — report rather than smuggle them in.
+            if (! preg_match('/^[A-Za-z0-9._@-]{3,64}$/', $username)) {
+                $skippedBadUsername[] = ['legacy_id' => $c->id, 'username' => $username, 'full_name' => $c->fullname];
+
+                continue;
+            }
+
+            $planId = $c->profile ? ($plansByName[$c->profile] ?? null) : null;
+            if (! $planId) {
+                $skippedNoPlan[] = ['legacy_id' => $c->id, 'username' => $username, 'profile' => $c->profile];
+
+                continue;
+            }
+
+            $seen[$username] = true;
+            $plan = $plansById[$planId];
+            $own = $ownership($c->generated_for ?? null);
+
+            // Expiry is derived from the recharge ledger. No recharge row means
+            // no defensible paid-through date, so the line lands 'pending':
+            // visible in the UI, not provisioned in RADIUS, and cleared by an
+            // operator taking a real recharge.
+            $expiration = $expiryByUser[$username] ?? null;
+            if ($expiration) {
+                $expiresAt = \Carbon\Carbon::parse($expiration)->endOfDay();
+                $status = $expiresAt->isPast() ? 'expired' : 'active';
+            } else {
+                $expiresAt = null;
+                $status = 'pending';
+                $pendingNoExpiry[] = $username;
+            }
+            $statusCounts[$status]++;
+
+            $phone = trim((string) ($c->phonenumber ?? ''));
+
+            $insert[] = [
+                'username' => $username,
+                'password' => $c->password,
+                'plan_id' => $planId,
+                'owner_id' => $own['owner'],
+                'reseller_id' => $own['reseller'],
+                'full_name' => $c->fullname ?: $username,
+                'phone' => ($phone === '' || $phone === '0') ? null : $phone,
+                'address' => $c->address ?: null,
+                'status' => $status,
+                'activated_at' => $c->created_at ?: null,
+                'expires_at' => $expiresAt,
+                'bandwidth' => $plan->bandwidth,
+                'simultaneous_use' => (int) ($plan->simultaneous_use ?: 1),
+                'mac_bind' => false,
+                'legacy_id' => $c->id,
+                'created_at' => $c->created_at ?: $now,
+                'updated_at' => $now,
+            ];
+            $imported++;
+        }
+
+        if ($insert) {
+            foreach (array_chunk($insert, 500) as $slice) {
+                PppoeCustomer::upsert($slice, ['legacy_id'], [
+                    'plan_id', 'owner_id', 'reseller_id', 'full_name', 'phone',
+                    'address', 'status', 'expires_at', 'bandwidth', 'simultaneous_use',
+                ]);
+            }
+        }
+
+        // Provisioning invariant: radcheck/radreply rows exist for a subscriber
+        // iff status NOT IN ('pending','terminated').
+        $radius = app(PppoeRadiusService::class);
+        $checkRows = 0;
+        $replyRows = 0;
+        PppoeCustomer::with('plan')->whereNotIn('status', ['pending', 'terminated'])
+            ->orderBy('id')->chunk(500, function ($chunk) use ($radius, &$checkRows, &$replyRows) {
+                $check = [];
+                $reply = [];
+                foreach ($chunk as $customer) {
+                    if (! $customer->plan) {
+                        continue;
+                    }
+                    $r = $radius->rows($customer);
+                    $check = array_merge($check, $r['check']);
+                    $reply = array_merge($reply, $r['reply']);
+                }
+                $names = $chunk->pluck('username')->all();
+                DB::table('radcheck')->whereIn('username', $names)->delete();
+                DB::table('radreply')->whereIn('username', $names)->delete();
+                if ($check) {
+                    DB::table('radcheck')->insert($check);
+                    $checkRows += count($check);
+                }
+                if ($reply) {
+                    DB::table('radreply')->insert($reply);
+                    $replyRows += count($reply);
+                }
+            });
+
+        $this->report['pppoe_customers'] = [
+            'imported' => $imported,
+            'by_status' => $statusCounts,
+            'radcheck_generated' => $checkRows,
+            'radreply_generated' => $replyRows,
+            'skipped_no_matching_plan' => $skippedNoPlan,
+            'skipped_invalid_username' => $skippedBadUsername,
+            'skipped_duplicate_username' => $skippedDuplicate,
+            'pending_no_recharge_history' => $pendingNoExpiry,
+            'note' => 'tbl_user_recharges is NOT imported into pppoe_recharges — account 4250 sums that table as revenue, so replaying legacy billing would fabricate income. Only the derived expires_at is carried across.',
         ];
     }
 
@@ -751,8 +990,40 @@ class LegacyImport extends Command
             }
         });
 
+        // The wipe above is indiscriminate, so PPPoE subscribers must be
+        // reprovisioned here too — otherwise `--only=radius` silently strips the
+        // credentials off every PPPoE line. Same invariant as the import:
+        // rows exist iff status NOT IN ('pending','terminated').
+        $pppoeRadius = app(PppoeRadiusService::class);
+        $pppoeCheckRows = 0;
+        $pppoeReplyRows = 0;
+
+        PppoeCustomer::with('plan')->whereNotIn('status', ['pending', 'terminated'])
+            ->orderBy('id')->chunk(500, function ($chunk) use ($pppoeRadius, &$pppoeCheckRows, &$pppoeReplyRows) {
+                $check = [];
+                $reply = [];
+                foreach ($chunk as $customer) {
+                    if (! $customer->plan) {
+                        continue;
+                    }
+                    $r = $pppoeRadius->rows($customer);
+                    $check = array_merge($check, $r['check']);
+                    $reply = array_merge($reply, $r['reply']);
+                }
+                if ($check) {
+                    DB::table('radcheck')->insert($check);
+                    $pppoeCheckRows += count($check);
+                }
+                if ($reply) {
+                    DB::table('radreply')->insert($reply);
+                    $pppoeReplyRows += count($reply);
+                }
+            });
+
         $out['radcheck_generated'] = $checkRows;
         $out['radreply_generated'] = $replyRows;
+        $out['pppoe_radcheck_generated'] = $pppoeCheckRows;
+        $out['pppoe_radreply_generated'] = $pppoeReplyRows;
 
         // 2. Group config copies verbatim — small and purely declarative.
         foreach (['radgroupcheck', 'radgroupreply', 'radusergroup'] as $t) {

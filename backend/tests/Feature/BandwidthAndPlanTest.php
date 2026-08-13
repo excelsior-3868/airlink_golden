@@ -105,9 +105,13 @@ class BandwidthAndPlanTest extends TestCase
 
     public function test_plan_index_filters_by_type(): void
     {
+        // package_type defaults to 'wallet', and a seller's index deliberately
+        // hides wallet plans (they mint vouchers out of a GB allocation), so a
+        // seller-visible fixture has to be a GB package.
         InternetPlan::create([
             'name' => 'Hotspot Plan',
             'type' => 'hotspot',
+            'package_type' => 'gb',
             'plan_type' => 'unlimited',
             'validity_days' => 30,
             'base_price' => 100,
@@ -117,6 +121,7 @@ class BandwidthAndPlanTest extends TestCase
         InternetPlan::create([
             'name' => 'PPPOE Plan',
             'type' => 'pppoe',
+            'package_type' => 'gb',
             'plan_type' => 'unlimited',
             'validity_days' => 30,
             'base_price' => 100,
@@ -130,12 +135,13 @@ class BandwidthAndPlanTest extends TestCase
         $response->assertJsonCount(1, 'data');
         $this->assertEquals('Hotspot Plan', $response->json('data.0.name'));
 
+        // No seller touches PPPoE: a PPPoE plan must never surface in a
+        // seller's voucher-generation picker, where it cannot be used.
         $response = $this->actingAs($this->seller, 'sanctum')
             ->getJson('/api/plans?type=pppoe');
 
         $response->assertStatus(200);
-        $response->assertJsonCount(1, 'data');
-        $this->assertEquals('PPPOE Plan', $response->json('data.0.name'));
+        $response->assertJsonCount(0, 'data');
     }
 
     public function test_admin_can_set_creator_to_any_owner(): void

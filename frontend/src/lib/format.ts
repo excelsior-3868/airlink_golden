@@ -1,3 +1,5 @@
+import { adToBs, formatBsString } from './nepaliDate'
+
 export const rs = (n: number | string) =>
   'Rs ' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
@@ -26,10 +28,18 @@ const TZ = 'Asia/Kathmandu'
 // early in Nepal. Tag those as UTC before formatting, then pin output to NPT so the
 // display doesn't drift with whatever timezone the viewer's machine is set to.
 const NAIVE = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2})?(\.\d+)?$/
-const parse = (s: string) => new Date(NAIVE.test(s) ? s.replace(' ', 'T') + 'Z' : s)
+export const parseDate = (s: string) => new Date(NAIVE.test(s) ? s.replace(' ', 'T') + 'Z' : s)
 
-export const datet = (s: string | null) => (s ? parse(s).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short', timeZone: TZ }) : '—')
-export const date = (s: string | null) => (s ? parse(s).toLocaleDateString('en-GB', { dateStyle: 'medium', timeZone: TZ }) : '—')
+export const datet = (s: string | null) => (s ? parseDate(s).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short', timeZone: TZ }) : '—')
+export const date = (s: string | null) => (s ? parseDate(s).toLocaleDateString('en-GB', { dateStyle: 'medium', timeZone: TZ }) : '—')
+
+export const bsDate = (s: string | null): string => {
+  if (!s) return '—'
+  const d = parseDate(s)
+  if (isNaN(d.getTime())) return '—'
+  const bs = adToBs(d)
+  return bs ? formatBsString(bs.bsYear, bs.bsMonth, bs.bsDay, 'en') : '—'
+}
 
 export const statusPill: Record<string, string> = {
   new: 'info',
@@ -39,4 +49,7 @@ export const statusPill: Record<string, string> = {
   expired: 'secondary',
   disabled: 'danger',
   activate: 'success',
+  suspended: 'warning',
+  pending: 'secondary',
+  terminated: 'danger',
 }

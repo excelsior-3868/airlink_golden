@@ -1,5 +1,5 @@
-# Airlink v3.0 — minimal FreeRADIUS virtual server for hotspot voucher auth.
-# Voucher code is the username; radcheck holds Cleartext-Password (PAP).
+# Airlink v3.0 — minimal FreeRADIUS virtual server for hotspot voucher & PPPoE auth.
+# Voucher code or PPPoE username; radcheck holds Cleartext-Password (PAP/MS-CHAPv2).
 server default {
     listen {
         type   = auth
@@ -32,10 +32,15 @@ server default {
 
         # Voucher lifecycle check, straight from the `vouchers` table (not
         # radcheck) so it's correct even if the 5-min status-sync job
-        # Voucher lifecycle check, straight from the `vouchers` table (not
-        # radcheck) so it's correct even if the 5-min status-sync job
         # hasn't caught up yet: reject expired/disabled/quota-exhausted vouchers
         # with a distinct Reply-Message before ever touching Cleartext-Password.
+        #
+        # Order matters: the data-cap tests run BEFORE the status/expires_at
+        # tests. vouchers:sync-status collapses a quota-exhausted card into
+        # status='expired', so checking status first told a customer who had
+        # simply used up their GB that the card had "expired" — the wrong reason,
+        # and the wrong action for them to take.
+        #
         # Volume is summed across all radacct rows for this username so a
         # voucher can be reconnected on repeatedly until its cap is hit —
         # activation/expiry are lazy (see post-auth) so first login is what
@@ -44,14 +49,14 @@ server default {
             Tmp-String-0 := "%{sql: SELECT \
                 CASE \
                     WHEN status = 'disabled' THEN 'disabled' \
-                    WHEN status = 'expired' THEN 'expired' \
-                    WHEN expires_at IS NOT NULL AND expires_at < NOW() THEN 'expired' \
                     WHEN data_gb IS NOT NULL AND data_gb > 0 AND ( \
                         SELECT IFNULL(SUM(AcctInputOctets + AcctOutputOctets), 0) \
                         FROM radacct WHERE UserName = '%{User-Name}' \
                     ) >= (data_gb * 1073741824) THEN 'quota' \
                     WHEN daily_data_gb IS NOT NULL AND daily_data_gb > 0 \
                         AND daily_used_bytes >= (daily_data_gb * 1073741824) THEN 'daily_quota' \
+                    WHEN status = 'expired' THEN 'expired' \
+                    WHEN expires_at IS NOT NULL AND expires_at < NOW() THEN 'expired' \
                     WHEN nas_ip IS NOT NULL AND nas_ip <> '' AND nas_ip <> '%{NAS-IP-Address}' THEN 'nas_mismatch' \
                     WHEN mac_bind = 1 AND mac_address IS NOT NULL AND mac_address <> '' \
                         AND mac_address <> '%{Calling-Station-Id}' THEN 'mac_mismatch' \
@@ -61,27 +66,27 @@ server default {
         }
 
         switch &control:Tmp-String-0 {
-            case "disabled" {
-                update reply {
-                    Reply-Message := "This voucher is disabled. Please contact support."
-                }
-                reject
-            }
             case "expired" {
                 update reply {
                     Reply-Message := "This voucher has expired. Please purchase a new one."
                 }
                 reject
             }
+            case "disabled" {
+                update reply {
+                    Reply-Message := "This voucher is disabled. Please contact support."
+                }
+                reject
+            }
             case "quota" {
                 update reply {
-                    Reply-Message := "Data quota exceeded. Please purchase a new voucher."
+                    Reply-Message := "Data volume reached. Please purchase a new voucher."
                 }
                 reject
             }
             case "daily_quota" {
                 update reply {
-                    Reply-Message := "Daily data quota exceeded. Please try again after midnight."
+                    Reply-Message := "Daily data volume reached. Please try again after midnight."
                 }
                 reject
             }
@@ -96,6 +101,66 @@ server default {
                     Reply-Message := "This voucher is locked to a different device."
                 }
                 reject
+            }
+        }
+
+        # Airlink v3.0 PPPoE subscriber lifecycle check.
+        # Only reached when the voucher lookup above found nothing.
+        if (!&control:Tmp-String-0 || &control:Tmp-String-0 == "") {
+            update control {
+                Tmp-String-3 := "%{sql: SELECT \
+                    CASE \
+                        WHEN status = 'terminated' THEN 'terminated' \
+                        WHEN status = 'suspended' THEN 'suspended' \
+                        WHEN status = 'pending' THEN 'pending' \
+                        WHEN status = 'expired' THEN 'expired' \
+                        WHEN expires_at IS NULL OR expires_at < NOW() THEN 'expired' \
+                        WHEN nas_ip IS NOT NULL AND nas_ip <> '' AND nas_ip <> '%{NAS-IP-Address}' THEN 'nas_mismatch' \
+                        WHEN mac_bind = 1 AND mac_address IS NOT NULL AND mac_address <> '' \
+                            AND mac_address <> '%{Calling-Station-Id}' THEN 'mac_mismatch' \
+                        WHEN mac_bind = 1 AND (mac_address IS NULL OR mac_address = '') THEN 'ok_bind_mac' \
+                        ELSE 'ok' \
+                    END \
+                    FROM pppoe_customers WHERE username = '%{User-Name}' LIMIT 1}"
+            }
+
+            switch &control:Tmp-String-3 {
+                case "expired" {
+                    update reply {
+                        Reply-Message := "Your subscription has expired. Please recharge to continue."
+                    }
+                    reject
+                }
+                case "suspended" {
+                    update reply {
+                        Reply-Message := "Your connection is suspended. Please contact your service provider."
+                    }
+                    reject
+                }
+                case "terminated" {
+                    update reply {
+                        Reply-Message := "This account has been closed."
+                    }
+                    reject
+                }
+                case "pending" {
+                    update reply {
+                        Reply-Message := "This account is not activated yet. Please complete your first recharge."
+                    }
+                    reject
+                }
+                case "nas_mismatch" {
+                    update reply {
+                        Reply-Message := "This account is not permitted on this router."
+                    }
+                    reject
+                }
+                case "mac_mismatch" {
+                    update reply {
+                        Reply-Message := "This account is locked to a different device."
+                    }
+                    reject
+                }
             }
         }
 
@@ -132,6 +197,16 @@ server default {
                 expires_at = IFNULL(expires_at, DATE_ADD(NOW(), INTERVAL validity_days DAY)), \
                 mac_address = CASE WHEN mac_bind = 1 THEN IFNULL(mac_address, NULLIF('%{Calling-Station-Id}', '')) ELSE mac_address END \
                 WHERE username = '%{User-Name}' AND status IN ('active','sold','used')}"
+        }
+
+        # Airlink v3.0 PPPoE: MAC capture on first login for mac_bind subscribers.
+        if (&control:Tmp-String-3 && &control:Tmp-String-3 == "ok_bind_mac") {
+            update control {
+                Tmp-String-4 := "%{sql: UPDATE pppoe_customers SET \
+                    mac_address = NULLIF('%{Calling-Station-Id}', '') \
+                    WHERE username = '%{User-Name}' AND mac_bind = 1 \
+                        AND (mac_address IS NULL OR mac_address = '')}"
+            }
         }
 
         sql          # write radpostauth

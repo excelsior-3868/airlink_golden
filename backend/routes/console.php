@@ -11,6 +11,9 @@ Artisan::command('inspire', function () {
 // Drive voucher lifecycle (active/expired) every 5 minutes.
 Schedule::command('vouchers:sync-status')->everyFiveMinutes()->withoutOverlapping();
 
+// Drive PPPoE subscriber lifecycle (active/expired) every 5 minutes.
+Schedule::command('pppoe:sync-status')->everyFiveMinutes()->withoutOverlapping();
+
 // Settle GB Package vouchers activated (first login) outside an explicit sale.
 Schedule::command('vouchers:settle-gb')->everyFiveMinutes()->withoutOverlapping();
 

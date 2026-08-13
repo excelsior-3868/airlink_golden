@@ -41,11 +41,21 @@ const NAV: NavItem[] = [
     perm: 'view_plans',
     children: [
       { to: '/plans/hotspot', label: 'Hotspot Plans', roles: ['admin'], icon: Wifi, color: 'text-sky-500' },
-      { to: '/plans/pppoe', label: 'PPPOE Plans', roles: ['admin'], icon: Router, color: 'text-indigo-500' },
-      { to: '/plans/bandwidth', label: 'Bandwidth Plan', roles: ['admin'], icon: Gauge, color: 'text-violet-500' },
+      { to: '/plans/bandwidth', label: 'Bandwidth Plans', roles: ['admin'], icon: Gauge, color: 'text-violet-500' },
     ]
   },
-  { to: '/plans/hotspot', label: 'Hotspot Plan', icon: Wifi, roles: ['reseller', 'seller'], color: 'text-sky-500', perm: 'view_plans' },
+  { to: '/plans/hotspot', label: 'Hotspot Plans', icon: Wifi, roles: ['reseller', 'seller'], color: 'text-sky-500', perm: 'view_plans' },
+  {
+    label: 'PPPoE',
+    icon: Router,
+    roles: ['admin', 'reseller'],
+    color: 'text-indigo-500',
+    perm: ['view_pppoe', 'view_plans'],
+    children: [
+      { to: '/pppoe/customers', label: 'Subscribers', roles: ['admin', 'reseller'], icon: Users2, color: 'text-indigo-500', perm: 'view_pppoe' },
+      { to: '/plans/pppoe', label: 'PPPoE Plans', roles: ['admin', 'reseller'], icon: Package, color: 'text-violet-500', perm: 'view_plans' },
+    ]
+  },
   { to: '/resellers', label: 'Add/View Resellers', icon: Users2, roles: ['admin'], color: 'text-purple-500', perm: 'view_resellers' },
   { to: '/sellers', label: 'Add/View Sellers', icon: Store, roles: ['admin', 'reseller'], color: 'text-amber-500', perm: 'view_sellers' },
   { to: '/funds', label: 'Wallet / GB Allocation', icon: WalletIcon, roles: ['admin', 'reseller', 'seller'], color: 'text-emerald-500' },
@@ -191,7 +201,8 @@ export default function AppShell() {
   const nav = useNavigate()
   const location = useLocation()
   const [expanded, setExpanded] = useState<Record<string, boolean>>({
-    Plan: location.pathname.startsWith('/plans'),
+    Plan: location.pathname.startsWith('/plans') && location.pathname !== '/plans/pppoe',
+    PPPoE: location.pathname.startsWith('/pppoe') || location.pathname === '/plans/pppoe',
     Settings: location.pathname.startsWith('/settings') || ['/nas', '/logs', '/permissions'].includes(location.pathname),
   })
   const toggleExpanded = (label: string) => {

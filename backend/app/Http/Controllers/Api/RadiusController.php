@@ -22,27 +22,38 @@ class RadiusController extends Controller
     {
         $user = $request->user();
 
+        // Both products write to the same radacct table, so one live-session
+        // feed covers them. A username belongs to exactly one of them (the
+        // unique index on pppoe_customers.username plus the collision check in
+        // PppoeCustomerService/VoucherService guarantee it), so the two LEFT
+        // JOINs are mutually exclusive and every COALESCE below picks whichever
+        // side matched. connection_type tells the UI which badge to show.
         $query = OnlineSession::scopeLive(DB::table('radacct'))
             ->leftJoin('vouchers', 'vouchers.username', '=', 'radacct.username')
             ->leftJoin('internet_plans as p', 'p.id', '=', 'vouchers.plan_id')
             ->leftJoin('users as reseller', 'reseller.id', '=', 'vouchers.reseller_id')
             ->leftJoin('users as seller', 'seller.id', '=', 'vouchers.seller_id')
+            ->leftJoin('pppoe_customers as pc', 'pc.username', '=', 'radacct.username')
+            ->leftJoin('internet_plans as pp', 'pp.id', '=', 'pc.plan_id')
+            ->leftJoin('users as pppoe_reseller', 'pppoe_reseller.id', '=', 'pc.reseller_id')
             ->select(
                 'radacct.radacctid',
                 'vouchers.id as voucher_id',
                 'vouchers.code as voucher_code',
                 'radacct.username',
-                'vouchers.customer_username',
-                'vouchers.price',
-                'vouchers.status as voucher_status',
-                DB::raw('COALESCE(radacct.acctstarttime, vouchers.activated_at) as start_time'),
-                'vouchers.expires_at',
-                'p.name as plan_name',
-                'p.package_type',
-                DB::raw('COALESCE(radacct.framedipaddress, vouchers.nas_ip, "Dynamic") as ip_address'),
-                DB::raw('COALESCE(radacct.callingstationid, vouchers.mac_address, "Active") as mac_address'),
-                DB::raw('COALESCE(radacct.nasipaddress, vouchers.nas_ip) as nas_ip'),
-                DB::raw('CAST(GREATEST(0, TIMESTAMPDIFF(SECOND, COALESCE(radacct.acctstarttime, vouchers.activated_at, NOW()), NOW())) AS UNSIGNED) as session_time'),
+                'pc.id as pppoe_customer_id',
+                DB::raw("CASE WHEN pc.id IS NOT NULL THEN 'pppoe' ELSE 'hotspot' END as connection_type"),
+                DB::raw('COALESCE(vouchers.customer_username, pc.full_name) as customer_username'),
+                DB::raw('COALESCE(vouchers.price, pc.contract_price, pp.selling_price) as price'),
+                DB::raw('COALESCE(vouchers.status, pc.status) as voucher_status'),
+                DB::raw('COALESCE(radacct.acctstarttime, vouchers.activated_at, pc.activated_at) as start_time'),
+                DB::raw('COALESCE(vouchers.expires_at, pc.expires_at) as expires_at'),
+                DB::raw('COALESCE(p.name, pp.name) as plan_name'),
+                DB::raw('COALESCE(p.package_type, pp.package_type) as package_type'),
+                DB::raw('COALESCE(radacct.framedipaddress, vouchers.nas_ip, pc.nas_ip, "Dynamic") as ip_address'),
+                DB::raw('COALESCE(radacct.callingstationid, vouchers.mac_address, pc.mac_address, "Active") as mac_address'),
+                DB::raw('COALESCE(radacct.nasipaddress, vouchers.nas_ip, pc.nas_ip) as nas_ip'),
+                DB::raw('CAST(GREATEST(0, TIMESTAMPDIFF(SECOND, COALESCE(radacct.acctstarttime, vouchers.activated_at, pc.activated_at, NOW()), NOW())) AS UNSIGNED) as session_time'),
                 DB::raw('COALESCE(radacct.acctinputoctets, 0) as input_bytes'),
                 DB::raw('COALESCE(radacct.acctoutputoctets, 0) as output_bytes'),
                 DB::raw('GREATEST(
@@ -50,19 +61,23 @@ class RadiusController extends Controller
                     COALESCE(radacct.acctinputoctets, 0) + COALESCE(radacct.acctoutputoctets, 0),
                     COALESCE(vouchers.daily_used_bytes, 0)
                 ) as total_bytes'),
-                'reseller.username as reseller_username',
-                'reseller.name as reseller_name',
+                DB::raw('COALESCE(reseller.username, pppoe_reseller.username) as reseller_username'),
+                DB::raw('COALESCE(reseller.name, pppoe_reseller.name) as reseller_name'),
                 'seller.username as seller_username',
                 'seller.name as seller_name'
             );
 
         if ($user) {
             if ($user->role === 'reseller') {
+                // A reseller's own PPPoE subscribers belong in their list too.
                 $query->where(function ($q) use ($user) {
                     $q->where('vouchers.reseller_id', $user->id)
-                      ->orWhere('vouchers.owner_id', $user->id);
+                      ->orWhere('vouchers.owner_id', $user->id)
+                      ->orWhere('pc.reseller_id', $user->id)
+                      ->orWhere('pc.owner_id', $user->id);
                 });
             } elseif ($user->role === 'seller') {
+                // Sellers are voucher-only, so this necessarily excludes PPPoE.
                 $query->where('vouchers.seller_id', $user->id);
             }
         }
@@ -75,7 +90,10 @@ class RadiusController extends Controller
                   ->orWhere('radacct.callingstationid', 'like', "%{$search}%")
                   ->orWhere('radacct.framedipaddress', 'like', "%{$search}%")
                   ->orWhere('radacct.nasipaddress', 'like', "%{$search}%")
-                  ->orWhere('p.name', 'like', "%{$search}%");
+                  ->orWhere('p.name', 'like', "%{$search}%")
+                  ->orWhere('pc.full_name', 'like', "%{$search}%")
+                  ->orWhere('pc.phone', 'like', "%{$search}%")
+                  ->orWhere('pp.name', 'like', "%{$search}%");
             });
         }
 

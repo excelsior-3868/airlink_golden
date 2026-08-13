@@ -204,7 +204,9 @@ class VoucherService
                 $candidates[strtoupper(Str::random(8))] = true;
             }
             $list = array_keys($candidates);
-            $taken = array_fill_keys(Voucher::whereIn('code', $list)->pluck('code')->all(), true);
+            $takenVouchers = Voucher::whereIn('code', $list)->pluck('code')->all();
+            $takenPppoe = \App\Models\PppoeCustomer::whereIn('username', $list)->pluck('username')->all();
+            $taken = array_fill_keys(array_merge($takenVouchers, $takenPppoe), true);
             foreach ($list as $c) {
                 if (! isset($taken[$c])) {
                     $codes[$c] = true;

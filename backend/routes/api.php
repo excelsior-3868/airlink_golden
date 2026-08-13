@@ -21,6 +21,8 @@ use App\Http\Controllers\Api\SeasonController;
 use App\Http\Controllers\Api\AccountController;
 use App\Http\Controllers\Api\IntegrationTokenController;
 use App\Http\Controllers\Api\PaymentMethodController;
+use App\Http\Controllers\Api\PppoeCustomerController;
+use App\Http\Controllers\Api\PppoeRechargeController;
 use Illuminate\Support\Facades\Route;
 
 // --- Public ---
@@ -127,6 +129,27 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/vouchers/{voucher}', [VoucherController::class, 'destroy'])->middleware('permission:delete_voucher');
     Route::patch('/vouchers/{voucher}/disable', [VoucherController::class, 'disable']);
     Route::patch('/vouchers/{voucher}/enable', [VoucherController::class, 'enable']);
+
+    // PPPoE subscribers — admin + reseller only. The role: gate is deliberate
+    // belt-and-braces on top of permission:, so a well-meaning flip of a
+    // system_permissions row can never hand PPPoE to the seller tier.
+    Route::middleware('role:admin,reseller')->group(function () {
+        Route::get   ('/pppoe/customers',                        [PppoeCustomerController::class, 'index'])       ->middleware('permission:view_pppoe');
+        Route::get   ('/pppoe/customers/summary',                [PppoeCustomerController::class, 'summary'])     ->middleware('permission:view_pppoe');
+        Route::get   ('/pppoe/customers/export',                 [PppoeCustomerController::class, 'exportCsv'])   ->middleware('permission:view_pppoe');
+        Route::get   ('/pppoe/sessions',                         [PppoeCustomerController::class, 'liveSessions']) ->middleware('permission:view_pppoe');
+        Route::get   ('/pppoe/recharges',                        [PppoeRechargeController::class, 'index'])       ->middleware('permission:view_pppoe');
+        Route::post  ('/pppoe/customers',                        [PppoeCustomerController::class, 'store'])       ->middleware('permission:create_pppoe_customer');
+        Route::get   ('/pppoe/customers/{customer}',             [PppoeCustomerController::class, 'show'])        ->middleware('permission:view_pppoe');
+        Route::get   ('/pppoe/customers/{customer}/sessions',    [PppoeCustomerController::class, 'sessions'])    ->middleware('permission:view_pppoe');
+        Route::put   ('/pppoe/customers/{customer}',             [PppoeCustomerController::class, 'update'])      ->middleware('permission:create_pppoe_customer');
+        Route::patch ('/pppoe/customers/{customer}/plan',        [PppoeCustomerController::class, 'changePlan'])  ->middleware('permission:create_pppoe_customer');
+        Route::patch ('/pppoe/customers/{customer}/suspend',     [PppoeCustomerController::class, 'suspend'])     ->middleware('permission:suspend_pppoe_customer');
+        Route::patch ('/pppoe/customers/{customer}/resume',      [PppoeCustomerController::class, 'resume'])      ->middleware('permission:suspend_pppoe_customer');
+        Route::post  ('/pppoe/customers/{customer}/disconnect',  [PppoeCustomerController::class, 'disconnect'])  ->middleware('permission:suspend_pppoe_customer');
+        Route::post  ('/pppoe/customers/{customer}/recharge',    [PppoeRechargeController::class, 'store'])       ->middleware('permission:recharge_pppoe_customer');
+        Route::delete('/pppoe/customers/{customer}',             [PppoeCustomerController::class, 'destroy'])     ->middleware('permission:delete_pppoe_customer');
+    });
 
     // Reports — used-voucher package summary (scoped); drill-down via /vouchers.
     Route::get('/reports/package-summary', [ReportController::class, 'packageSummary'])->middleware('permission:reports');

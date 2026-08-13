@@ -8,6 +8,8 @@ import { GlassCard, PageTitle, Spinner, EmptyState, StatCard } from '../componen
 interface OnlineSession {
   radacctid: number
   voucher_id?: number
+  pppoe_customer_id?: number
+  connection_type?: 'hotspot' | 'pppoe'
   username: string
   ip_address?: string
   mac_address?: string
@@ -33,6 +35,7 @@ export default function OnlineUsers() {
   const [sessions, setSessions] = useState<OnlineSession[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [typeFilter, setTypeFilter] = useState<'all' | 'hotspot' | 'pppoe'>('all')
   const [disconnecting, setDisconnecting] = useState<string | null>(null)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
@@ -99,14 +102,28 @@ export default function OnlineUsers() {
     return `${s}s`
   }
 
-  const totalVolumeBytes = sessions.reduce((acc, s) => acc + (s.total_bytes || 0), 0)
-  const uniqueNasDevices = new Set(sessions.map((s) => s.nas_ip).filter(Boolean)).size
+  // Hotspot and PPPoE share one radacct feed; connection_type separates them.
+  // Filtering is client-side because the whole live list is already in memory.
+  const hotspotCount = sessions.filter((s) => s.connection_type !== 'pppoe').length
+  const pppoeCount = sessions.filter((s) => s.connection_type === 'pppoe').length
+  const visibleSessions = typeFilter === 'all'
+    ? sessions
+    : sessions.filter((s) => (s.connection_type ?? 'hotspot') === typeFilter)
+
+  const totalVolumeBytes = visibleSessions.reduce((acc, s) => acc + (s.total_bytes || 0), 0)
+  const uniqueNasDevices = new Set(visibleSessions.map((s) => s.nas_ip).filter(Boolean)).size
+
+  const typeTabs: { key: 'all' | 'hotspot' | 'pppoe'; label: string; count: number }[] = [
+    { key: 'all', label: 'All', count: sessions.length },
+    { key: 'hotspot', label: 'Hotspot', count: hotspotCount },
+    { key: 'pppoe', label: 'PPPoE', count: pppoeCount },
+  ]
 
   return (
     <div className="space-y-6">
       <PageTitle
         title="Online Users"
-        subtitle="Live RADIUS connected sessions across active hotspot networks"
+        subtitle="Live RADIUS sessions across hotspot vouchers and PPPoE subscribers"
         icon={<Wifi size={22} className="text-cyan-500" />}
         action={
           <button
@@ -121,7 +138,7 @@ export default function OnlineUsers() {
       />
 
       {/* Top Stat Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           label="Live Online Users"
           value={
@@ -133,6 +150,7 @@ export default function OnlineUsers() {
               {num(sessions.length)}
             </span>
           }
+          sub={`${num(hotspotCount)} hotspot · ${num(pppoeCount)} PPPoE`}
           icon={<Users size={22} />}
           iconColorClass="text-cyan-600 bg-cyan-50 border border-cyan-100/50"
         />
@@ -143,7 +161,14 @@ export default function OnlineUsers() {
           iconColorClass="text-purple-600 bg-purple-50 border border-purple-100/50"
         />
         <StatCard
-          label="Active Hotspot Gateways"
+          label="PPPoE Subscribers Online"
+          value={<span className="text-indigo-600">{num(pppoeCount)}</span>}
+          sub={`${num(hotspotCount)} hotspot vouchers online`}
+          icon={<Activity size={22} />}
+          iconColorClass="text-indigo-600 bg-indigo-50 border border-indigo-100/50"
+        />
+        <StatCard
+          label="Active Gateways"
           value={<span className="text-emerald-600">{num(uniqueNasDevices)}</span>}
           icon={<Router size={22} />}
           iconColorClass="text-emerald-600 bg-emerald-50 border border-emerald-100/50"
@@ -168,7 +193,22 @@ export default function OnlineUsers() {
         <div className="p-4 border-b border-slate-100 flex items-center justify-between flex-wrap gap-3">
           <div>
             <h3 className="font-extrabold text-slate-800 text-sm">Active Online Sessions</h3>
-            <p className="text-xs text-slate-400">Users currently accessing the Internet through Voucher Cards & RADIUS authentication</p>
+            <p className="text-xs text-slate-400">Hotspot voucher and PPPoE subscriber sessions, live from RADIUS accounting</p>
+            <div className="flex items-center gap-1.5 mt-2.5">
+              {typeTabs.map((t) => (
+                <button
+                  key={t.key}
+                  onClick={() => setTypeFilter(t.key)}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all ${
+                    typeFilter === t.key
+                      ? 'bg-cyan-50 border-cyan-200 text-cyan-700'
+                      : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                  }`}
+                >
+                  {t.label} <span className="tabular-nums opacity-70">({t.count})</span>
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="flex items-center gap-2">
@@ -202,6 +242,7 @@ export default function OnlineUsers() {
               <thead>
                 <tr>
                   <th>Username / Voucher</th>
+                  <th>Type</th>
                   <th>IP Address</th>
                   <th>MAC Address</th>
                   <th>Internet Plan</th>
@@ -212,9 +253,9 @@ export default function OnlineUsers() {
                 </tr>
               </thead>
               <tbody>
-                {sessions.map((s) => (
+                {visibleSessions.map((s) => (
                   <motion.tr
-                    key={s.voucher_id || s.radacctid}
+                    key={s.radacctid}
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     className="hover:bg-slate-50/70"
@@ -229,6 +270,17 @@ export default function OnlineUsers() {
                       </div>
                       {s.customer_username && (
                         <div className="text-xs text-slate-400 font-mono">User: {s.customer_username}</div>
+                      )}
+                    </td>
+                    <td>
+                      {s.connection_type === 'pppoe' ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200/70 dark:bg-indigo-950/40 dark:text-indigo-300">
+                          <Activity size={10} /> PPPoE
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-50 text-cyan-700 border border-cyan-200/70 dark:bg-cyan-950/40 dark:text-cyan-300">
+                          <Wifi size={10} /> Hotspot
+                        </span>
                       )}
                     </td>
                     <td className="font-mono text-slate-600 text-xs">{s.ip_address || 'Dynamic'}</td>
@@ -270,8 +322,12 @@ export default function OnlineUsers() {
               </tbody>
             </table>
           )}
-          {!loading && sessions.length === 0 && (
-            <EmptyState>No active online users connected at the moment.</EmptyState>
+          {!loading && visibleSessions.length === 0 && (
+            <EmptyState>
+              {typeFilter === 'all'
+                ? 'No active online users connected at the moment.'
+                : `No ${typeFilter === 'pppoe' ? 'PPPoE' : 'hotspot'} sessions are online right now.`}
+            </EmptyState>
           )}
         </div>
       </GlassCard>

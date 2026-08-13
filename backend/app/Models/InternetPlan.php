@@ -38,4 +38,9 @@ class InternetPlan extends Model
     {
         return $this->belongsTo(NasDevice::class, 'nas_device_id');
     }
+
+    public function pppoeCustomers(): HasMany
+    {
+        return $this->hasMany(PppoeCustomer::class, 'plan_id');
+    }
 }

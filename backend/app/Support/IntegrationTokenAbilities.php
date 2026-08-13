@@ -20,5 +20,6 @@ class IntegrationTokenAbilities
         'vouchers.sell' => 'Sell a voucher',
         'vouchers.disable' => 'Disable a voucher',
         'plans.read' => 'View plans',
+        'pppoe.read' => 'View PPPoE subscribers',
     ];
 }
