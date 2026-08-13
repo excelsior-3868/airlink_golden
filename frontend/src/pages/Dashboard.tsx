@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Wallet, Database, Users2, Store, Ticket, TrendingUp, History, UserCheck, LayoutDashboard, CreditCard, PlusCircle, Package, UserPlus, Receipt, Coins, Sparkles, Layers, Activity, BarChart3, HandCoins } from 'lucide-react'
+import { Wallet, Database, Users2, Store, Ticket, TrendingUp, History, UserCheck, LayoutDashboard, CreditCard, PlusCircle, Package, UserPlus, Receipt, Coins, Sparkles, Layers, Activity, BarChart3, HandCoins, Router } from 'lucide-react'
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { api } from '../lib/api'
 import { useQuery } from '../lib/cache'
@@ -9,6 +9,52 @@ import { rs, gb, num, date, statusPill } from '../lib/format'
 import { StatCard, DualStatCard, PageTitle, GlassCard, EmptyState, Modal, Spinner, VoucherStatCard, CustomSelect, SelectOption, renderPaymentMethodIcon, Pill } from '../components/ui'
 import { motion } from 'framer-motion'
 import FundModal from '../components/FundModal'
+
+/**
+ * PPPoE subscribers at a glance. The headline is every subscriber on the books
+ * (pending included — created but not yet recharged still counts); the two
+ * badges are the states an operator actually acts on. Suspended is folded into
+ * the expired badge only when it is non-zero, so the common case stays quiet.
+ */
+function PppoeStatCard({ pppoe, onClick }: { pppoe?: any; onClick?: () => void }) {
+  const total = pppoe?.total ?? 0
+  const active = pppoe?.active ?? 0
+  const expired = pppoe?.expired ?? 0
+  const suspended = pppoe?.suspended ?? 0
+
+  return (
+    <motion.button
+      type="button"
+      onClick={onClick}
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+      className="glass-card p-5 flex items-start justify-between text-left w-full hover:-translate-y-0.5 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 rounded-2xl"
+      title="View PPPoE subscribers"
+    >
+      <div className="min-w-0">
+        <p className="text-muted-foreground text-xs sm:text-sm font-medium">PPPoE Subscribers</p>
+        <p className="text-xl font-bold mt-1 tracking-tight tabular-nums text-indigo-600">{num(total)}</p>
+        <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/70">
+            {num(active)} Active
+          </span>
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200/70">
+            {num(expired)} Expired
+          </span>
+          {suspended > 0 && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200/70">
+              {num(suspended)} Suspended
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="rounded-2xl p-2.5 shrink-0 flex items-center justify-center text-indigo-600 bg-indigo-50 border border-indigo-100/50">
+        <Router size={22} />
+      </div>
+    </motion.button>
+  )
+}
 
 export default function Dashboard() {
   const navigate = useNavigate()
@@ -145,8 +191,23 @@ export default function Dashboard() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <StatCard label="Total Wallet Voucher" value={<span className="text-emerald-600">{num(d.wallet_vouchers?.total || 0)}</span>} icon={<Wallet size={22} />} iconColorClass="text-emerald-600 bg-emerald-50 border border-emerald-100/50" />
             <StatCard label="Total Wallet Voucher Used" value={<span className="text-cyan-600">{num(d.wallet_vouchers?.used ?? d.wallet_vouchers?.by_status?.used ?? 0)}</span>} icon={<Ticket size={22} />} iconColorClass="text-cyan-600 bg-cyan-50 border border-cyan-100/50" />
-            <StatCard label="Wallet Distributed" value={<span className="text-blue-600">{rs(d.wallet_distributed)}</span>} icon={<Wallet size={22} />} iconColorClass="text-blue-600 bg-blue-50 border border-blue-100/50" />
-            <StatCard label="GB Sold" value={<span className="text-purple-600">{gb(d.gb_distributed)}</span>} icon={<Database size={22} />} iconColorClass="text-purple-600 bg-purple-50 border border-purple-100/50" />
+            <DualStatCard
+              top={{
+                label: 'Wallet Distributed',
+                value: rs(d.wallet_distributed),
+                valueColorClass: 'text-blue-600',
+                icon: <Wallet size={22} />,
+                iconColorClass: 'text-blue-600 bg-blue-50 border border-blue-100/50',
+              }}
+              bottom={{
+                label: 'GB Sold',
+                value: gb(d.gb_distributed),
+                valueColorClass: 'text-purple-600',
+                icon: <Database size={22} />,
+                iconColorClass: 'text-purple-600 bg-purple-50 border border-purple-100/50',
+              }}
+            />
+            <PppoeStatCard pppoe={d.pppoe} onClick={() => navigate('/pppoe/customers')} />
             <DualStatCard
               top={{
                 label: 'Commission Earned',
@@ -365,6 +426,9 @@ export default function Dashboard() {
               iconColorClass="text-purple-600 bg-purple-50 border border-purple-100/50"
               sub={<span>Sellers: <strong className="text-slate-700">{num(d.counts.sellers)}</strong></span>}
             />
+            {can('view_pppoe') && (
+              <PppoeStatCard pppoe={d.pppoe} onClick={() => navigate('/pppoe/customers')} />
+            )}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
