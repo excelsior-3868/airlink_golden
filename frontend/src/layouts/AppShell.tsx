@@ -134,7 +134,7 @@ const NavList = ({ items, location, expanded, toggleExpanded, user, can, onNavig
               }`}
             >
               <it.icon size={18} className={`shrink-0 transition-transform group-hover:scale-110 ${it.color}`} />
-              <span className={`${labelClass} font-bold`}>{label}</span>
+              <span className={labelClass}>{label}</span>
               {/* No `transition-transform` here — the utility layer would beat
                   .app-sidebar-label and the fade would pop. That class already
                   transitions transform and opacity together. */}

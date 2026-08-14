@@ -61,7 +61,7 @@ export default function RadiusLogs() {
   const statusTone = (status: string) => (status === 'success' ? 'success' : status === 'error' ? 'danger' : 'warning')
 
   return (
-    <div className="w-full space-y-6 py-4">
+    <div className="w-full space-y-6">
       <PageTitle
         title="Voucher Diagnostics"
         subtitle="Troubleshoot authentication & authorization issues for voucher cards"

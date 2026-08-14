@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useBranding, BrandingData } from '../lib/branding';
+import { PageTitle } from '../components/ui';
 
 export default function BrandingSettings() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -118,13 +119,11 @@ export default function BrandingSettings() {
 
   return (
     <div className="w-full space-y-6 pb-12">
-      {/* Page Title */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-extrabold text-slate-800 tracking-tight">Branding Settings</h1>
-          <p className="text-sm text-slate-500 font-medium">Manage property name, system logo, theme color, and contact details</p>
-        </div>
-      </div>
+      <PageTitle
+        title="Branding Settings"
+        subtitle="Manage property name, system logo, theme color, and contact details"
+        icon={<Palette size={22} className="text-indigo-500" />}
+      />
 
       {/* Notifications / Alerts */}
       {error && (
