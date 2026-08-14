@@ -5,9 +5,10 @@ import {
   LayoutDashboard, Package, Users2, Store, Wallet as WalletIcon,
   Database, Ticket, LogOut, Wifi, Router, ShieldCheck, Shield,
   ChevronDown, ChevronRight, ChevronsLeft, Key, Gauge, ArrowLeftRight, Menu, X, Terminal, Calendar,
-  BookOpen, Receipt, Scale, CreditCard, UsersRound
+  BookOpen, Receipt, Scale, CreditCard, UsersRound, Palette
 } from 'lucide-react'
 import { Role, useAuth } from '../lib/auth'
+import { useBranding } from '../lib/branding'
 import { rs, gb } from '../lib/format'
 import ChangePasswordModal from '../components/ChangePasswordModal'
 
@@ -68,6 +69,7 @@ const NAV: NavItem[] = [
     roles: ['admin', 'reseller', 'seller'],
     color: 'text-slate-500',
     children: [
+      { to: '/settings/branding', label: 'Branding', roles: ['admin', 'reseller', 'seller'], icon: Palette, color: 'text-indigo-500' },
       { to: '/settings/payment-methods', label: 'Payment Methods', roles: ['admin'], icon: CreditCard, color: 'text-sky-500' },
       { to: '/settings/chart-of-accounts', label: 'Chart of Accounts', roles: ['admin'], icon: BookOpen, color: 'text-emerald-600' },
       { to: '/settings/system-load', label: 'System Load', roles: ['admin'], icon: WalletIcon, color: 'text-emerald-500' },
@@ -198,6 +200,7 @@ const NavList = ({ items, location, expanded, toggleExpanded, user, can, onNavig
 
 export default function AppShell() {
   const { user, logout, can } = useAuth()
+  const { branding } = useBranding()
   const nav = useNavigate()
   const location = useLocation()
   const [expanded, setExpanded] = useState<Record<string, boolean>>({
@@ -282,9 +285,17 @@ export default function AppShell() {
         </button>
 
         <div className="mb-4 flex items-center gap-3 py-2">
-          <div className="bg-[#003164] text-white rounded-2xl p-2.5 shadow-sm shrink-0"><Wifi size={18} /></div>
+          <div className="bg-[#003164] text-white rounded-2xl p-2 shadow-sm shrink-0 w-10 h-10 flex items-center justify-center overflow-hidden">
+            {branding.logo_url ? (
+              <img src={branding.logo_url} alt="Logo" className="w-full h-full object-contain" />
+            ) : (
+              <Wifi size={18} />
+            )}
+          </div>
           <div className={`app-sidebar-label ${collapsed ? 'app-sidebar-label-out' : 'app-sidebar-label-in'} min-w-0 flex-1 overflow-hidden`}>
-            <p className="font-medium text-2xl tracking-tight text-[#003164] leading-none whitespace-nowrap">Airlink</p>
+            <p className="font-extrabold text-lg tracking-tight text-[#003164] leading-none whitespace-nowrap overflow-hidden text-ellipsis">
+              {branding.property_name || 'Airlink'}
+            </p>
             <p className="text-[10px] text-slate-400 font-bold tracking-wider mt-1 uppercase whitespace-nowrap">Billing v3.0</p>
           </div>
         </div>
@@ -376,8 +387,10 @@ export default function AppShell() {
           </button>
 
           <div className="flex items-center gap-2">
-            <div className="bg-[#003164] text-white rounded-xl p-1.5 shadow-sm"><Wifi size={15} /></div>
-            <p className="font-medium text-lg tracking-tight text-[#003164] leading-none">Airlink</p>
+            <div className="bg-[#003164] text-white rounded-xl p-1 shadow-sm w-7 h-7 flex items-center justify-center overflow-hidden">
+              {branding.logo_url ? <img src={branding.logo_url} alt="Logo" className="w-full h-full object-contain" /> : <Wifi size={14} />}
+            </div>
+            <p className="font-extrabold text-base tracking-tight text-[#003164] leading-none">{branding.property_name || 'Airlink'}</p>
           </div>
 
           {/* Compact balance badges — icon substitutes for the label so large
@@ -421,9 +434,11 @@ export default function AppShell() {
           >
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3 px-1">
-                  <div className="bg-[#003164] text-white rounded-2xl p-2.5 shadow-sm"><Wifi size={18} /></div>
+                  <div className="bg-[#003164] text-white rounded-2xl p-2 shadow-sm shrink-0 w-10 h-10 flex items-center justify-center overflow-hidden">
+                    {branding.logo_url ? <img src={branding.logo_url} alt="Logo" className="w-full h-full object-contain" /> : <Wifi size={18} />}
+                  </div>
                   <div>
-                    <p className="font-medium text-2xl tracking-tight text-[#003164] leading-none">Airlink</p>
+                    <p className="font-extrabold text-lg tracking-tight text-[#003164] leading-none">{branding.property_name || 'Airlink'}</p>
                     <p className="text-[10px] text-slate-400 font-bold tracking-wider mt-1 uppercase">Billing v3.0</p>
                   </div>
                 </div>

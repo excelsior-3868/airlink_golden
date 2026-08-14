@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-Tenant FreeRADIUS Architecture & Deployment Guide — Airlink 3.0</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-main: #090d16;
+            --bg-card: rgba(17, 24, 39, 0.7);
+            --bg-card-border: rgba(255, 255, 255, 0.08);
+            --bg-card-hover: rgba(255, 255, 255, 0.12);
+            --accent-cyan: #06b6d4;
+            --accent-blue: #3b82f6;
+            --accent-purple: #8b5cf6;
+            --accent-green: #10b981;
+            --accent-amber: #f59e0b;
+            --text-primary: #f3f4f6;
+            --text-secondary: #9ca3af;
+            --text-muted: #6b7280;
+            --code-bg: #050811;
+            --radius-lg: 16px;
+            --radius-md: 12px;
+            --radius-sm: 8px;
+            --shadow-glow: 0 0 25px rgba(6, 182, 212, 0.15);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-main);
+            color: var(--text-primary);
+            line-height: 1.6;
+            padding: 2rem;
+            background-image: 
+                radial-gradient(circle at 10% 10%, rgba(59, 130, 246, 0.08) 0%, transparent 40%),
+                radial-gradient(circle at 90% 80%, rgba(6, 182, 212, 0.08) 0%, transparent 40%);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1280px;
+            margin: 0 auto;
+        }
+
+        /* Glassmorphism Navigation / Header */
+        header {
+            background: var(--bg-card);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--bg-card-border);
+            border-radius: var(--radius-lg);
+            padding: 2rem 2.5rem;
+            margin-bottom: 2rem;
+            box-shadow: var(--shadow-glow);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1.5rem;
+        }
+
+        .header-title h1 {
+            font-size: 2rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #38bdf8, #818cf8, #c084fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.5rem;
+            letter-spacing: -0.02em;
+        }
+
+        .header-title p {
+            color: var(--text-secondary);
+            font-size: 1rem;
+        }
+
+        .header-badges {
+            display: flex;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+        }
+
+        .badge {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--bg-card-border);
+            border-radius: 9999px;
+            padding: 0.5rem 1rem;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--accent-cyan);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .badge-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: var(--accent-green);
+            box-shadow: 0 0 10px var(--accent-green);
+        }
+
+        /* Metrics Row */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .metric-card {
+            background: var(--bg-card);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--bg-card-border);
+            border-radius: var(--radius-md);
+            padding: 1.5rem;
+            transition: all 0.3s ease;
+        }
+
+        .metric-card:hover {
+            border-color: rgba(6, 182, 212, 0.4);
+            transform: translateY(-2px);
+        }
+
+        .metric-label {
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.5rem;
+        }
+
+        .metric-value {
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .metric-sub {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-top: 0.25rem;
+        }
+
+        /* Architecture Visualizer */
+        .section-card {
+            background: var(--bg-card);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--bg-card-border);
+            border-radius: var(--radius-lg);
+            padding: 2rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            border-bottom: 1px solid var(--bg-card-border);
+            padding-bottom: 1rem;
+        }
+
+        .section-title {
+            font-size: 1.35rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .section-title span {
+            color: var(--accent-cyan);
+        }
+
+        /* Interactive Architecture Grid */
+        .arch-diagram {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            margin-top: 1rem;
+        }
+
+        @media (max-width: 868px) {
+            .arch-diagram {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .tenant-box {
+            background: rgba(10, 15, 29, 0.8);
+            border: 1px solid var(--bg-card-border);
+            border-radius: var(--radius-md);
+            padding: 1.5rem;
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .tenant-box.everest {
+            border-left: 4px solid var(--accent-cyan);
+        }
+
+        .tenant-box.mera {
+            border-left: 4px solid var(--accent-purple);
+        }
+
+        .tenant-box:hover {
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.05);
+        }
+
+        .tenant-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .tenant-name {
+            font-size: 1.2rem;
+            font-weight: 700;
+        }
+
+        .tenant-tag {
+            font-size: 0.75rem;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .everest .tenant-tag {
+            background: rgba(6, 182, 212, 0.15);
+            color: var(--accent-cyan);
+            border: 1px solid rgba(6, 182, 212, 0.3);
+        }
+
+        .mera .tenant-tag {
+            background: rgba(139, 92, 246, 0.15);
+            color: var(--accent-purple);
+            border: 1px solid rgba(139, 92, 246, 0.3);
+        }
+
+        .arch-flow {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .flow-step {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 0.75rem 1rem;
+            border-radius: var(--radius-sm);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.9rem;
+        }
+
+        .flow-step .key {
+            color: var(--text-secondary);
+        }
+
+        .flow-step .val {
+            font-family: 'Fira Code', monospace;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        /* Styled Table */
+        .table-container {
+            overflow-x: auto;
+            border-radius: var(--radius-md);
+            border: 1px solid var(--bg-card-border);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            font-size: 0.95rem;
+        }
+
+        th {
+            background: rgba(15, 23, 42, 0.9);
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            padding: 1rem 1.25rem;
+            border-bottom: 1px solid var(--bg-card-border);
+        }
+
+        td {
+            padding: 1rem 1.25rem;
+            border-bottom: 1px solid var(--bg-card-border);
+            color: var(--text-primary);
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        tr:hover td {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .port-badge {
+            font-family: 'Fira Code', monospace;
+            background: rgba(6, 182, 212, 0.1);
+            color: var(--accent-cyan);
+            border: 1px solid rgba(6, 182, 212, 0.2);
+            padding: 0.2rem 0.6rem;
+            border-radius: 4px;
+            font-size: 0.85rem;
+        }
+
+        /* Tabs System for Code Configs */
+        .tabs-nav {
+            display: flex;
+            gap: 0.5rem;
+            overflow-x: auto;
+            border-bottom: 1px solid var(--bg-card-border);
+            padding-bottom: 0.75rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .tab-btn {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--bg-card-border);
+            color: var(--text-secondary);
+            padding: 0.6rem 1.2rem;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.9rem;
+            transition: all 0.2s ease;
+            white-space: nowrap;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .tab-btn:hover {
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text-primary);
+        }
+
+        .tab-btn.active {
+            background: var(--accent-blue);
+            color: #ffffff;
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.4);
+        }
+
+        .tab-content {
+            display: none;
+            position: relative;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Code View Container */
+        .code-container {
+            background: var(--code-bg);
+            border: 1px solid var(--bg-card-border);
+            border-radius: var(--radius-md);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .code-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(15, 23, 42, 0.8);
+            padding: 0.75rem 1.25rem;
+            border-bottom: 1px solid var(--bg-card-border);
+            font-family: 'Fira Code', monospace;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .copy-btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: var(--text-primary);
+            padding: 0.35rem 0.85rem;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            font-size: 0.75rem;
+            font-weight: 600;
+            transition: all 0.2s ease;
+        }
+
+        .copy-btn:hover {
+            background: var(--accent-cyan);
+            color: #000;
+            border-color: var(--accent-cyan);
+        }
+
+        pre {
+            padding: 1.25rem;
+            overflow-x: auto;
+            font-family: 'Fira Code', monospace;
+            font-size: 0.875rem;
+            line-height: 1.6;
+            color: #e5e7eb;
+        }
+
+        /* Interactive Dynamic Calculator Tool */
+        .calc-grid {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 2rem;
+        }
+
+        @media (max-width: 768px) {
+            .calc-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .form-group {
+            margin-bottom: 1.25rem;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+        }
+
+        .form-input, select {
+            width: 100%;
+            background: rgba(5, 8, 17, 0.9);
+            border: 1px solid var(--bg-card-border);
+            border-radius: var(--radius-sm);
+            padding: 0.75rem 1rem;
+            color: var(--text-primary);
+            font-family: 'Inter', sans-serif;
+            font-size: 0.95rem;
+            outline: none;
+            transition: border-color 0.2s ease;
+        }
+
+        .form-input:focus, select:focus {
+            border-color: var(--accent-cyan);
+            box-shadow: 0 0 10px rgba(6, 182, 212, 0.2);
+        }
+
+        /* Custom Select Styling */
+        .custom-select-wrapper {
+            position: relative;
+        }
+
+        .calc-output {
+            background: var(--code-bg);
+            border: 1px solid var(--bg-card-border);
+            border-radius: var(--radius-md);
+            padding: 1.25rem;
+        }
+
+        /* Footer */
+        footer {
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            margin-top: 3rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid var(--bg-card-border);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <div class="header-title">
+                <h1>Airlink 3.0 Multi-Tenant FreeRADIUS</h1>
+                <p>VPS Deployment & Architecture Guide (Strategy 1: Single IP Port Offsets)</p>
+            </div>
+            <div class="header-badges">
+                <div class="badge">
+                    <div class="badge-dot"></div>
+                    Status: Verified Production Architecture
+                </div>
+                <div class="badge" style="color: var(--accent-purple);">
+                    2 Dedicated Tenants (Everest & Mera)
+                </div>
+            </div>
+        </header>
+
+        <!-- Metric Summary Cards -->
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-label">Deployment Model</div>
+                <div class="metric-value">Container per Tenant</div>
+                <div class="metric-sub">Isolated Docker FreeRADIUS instances</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Tenant 1: Everest</div>
+                <div class="metric-value" style="color: var(--accent-cyan);">UDP 1812 / 1813</div>
+                <div class="metric-sub">Database: <code>airlink_everest</code></div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Tenant 2: Mera</div>
+                <div class="metric-value" style="color: var(--accent-purple);">UDP 1814 / 1815</div>
+                <div class="metric-sub">Database: <code>airlink_mera</code></div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Isolation Level</div>
+                <div class="metric-value" style="color: var(--accent-green);">100% Security</div>
+                <div class="metric-sub">Zero cross-tenant crash risk</div>
+            </div>
+        </div>
+
+        <!-- Section 1: Architecture Layout -->
+        <div class="section-card">
+            <div class="section-header">
+                <div class="section-title"><span>01.</span> Topology & Network Architecture</div>
+            </div>
+            <p style="color: var(--text-secondary); margin-bottom: 1.5rem;">
+                Each tenant operates inside a dedicated FreeRADIUS container linked to its own isolated MariaDB database schema and shared secret key configuration.
+            </p>
+            
+            <div class="arch-diagram">
+                <!-- Everest Box -->
+                <div class="tenant-box everest">
+                    <div class="tenant-header">
+                        <div class="tenant-name">Everest Tenant</div>
+                        <div class="tenant-tag">Primary Tenant</div>
+                    </div>
+                    <div class="arch-flow">
+                        <div class="flow-step">
+                            <span class="key">Container Name</span>
+                            <span class="val">freeradius-everest</span>
+                        </div>
+                        <div class="flow-step">
+                            <span class="key">Authentication Port</span>
+                            <span class="val port-badge">UDP 1812</span>
+                        </div>
+                        <div class="flow-step">
+                            <span class="key">Accounting Port</span>
+                            <span class="val port-badge">UDP 1813</span>
+                        </div>
+                        <div class="flow-step">
+                            <span class="key">Database Schema</span>
+                            <span class="val">airlink_everest</span>
+                        </div>
+                        <div class="flow-step">
+                            <span class="key">NAS Client Secret</span>
+                            <span class="val">EverestSecretKey123</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Mera Box -->
+                <div class="tenant-box mera">
+                    <div class="tenant-header">
+                        <div class="tenant-name">Mera Tenant</div>
+                        <div class="tenant-tag">Secondary Tenant</div>
+                    </div>
+                    <div class="arch-flow">
+                        <div class="flow-step">
+                            <span class="key">Container Name</span>
+                            <span class="val">freeradius-mera</span>
+                        </div>
+                        <div class="flow-step">
+                            <span class="key">Authentication Port</span>
+                            <span class="val port-badge" style="color: var(--accent-purple); border-color: rgba(139,92,246,0.3); background: rgba(139,92,246,0.1);">UDP 1814</span>
+                        </div>
+                        <div class="flow-step">
+                            <span class="key">Accounting Port</span>
+                            <span class="val port-badge" style="color: var(--accent-purple); border-color: rgba(139,92,246,0.3); background: rgba(139,92,246,0.1);">UDP 1815</span>
+                        </div>
+                        <div class="flow-step">
+                            <span class="key">Database Schema</span>
+                            <span class="val">airlink_mera</span>
+                        </div>
+                        <div class="flow-step">
+                            <span class="key">NAS Client Secret</span>
+                            <span class="val">MeraSecretKey123</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Section 2: Interactive Configuration Tab System -->
+        <div class="section-card">
+            <div class="section-header">
+                <div class="section-title"><span>02.</span> Production Configuration Blueprint</div>
+            </div>
+
+            <!-- Tab Buttons -->
+            <div class="tabs-nav">
+                <button class="tab-btn active" onclick="switchTab('docker-compose')">🐳 docker-compose.yml</button>
+                <button class="tab-btn" onclick="switchTab('entrypoint')">🚀 entrypoint.sh</button>
+                <button class="tab-btn" onclick="switchTab('sql-init')">🐬 init-multitenant.sql</button>
+                <button class="tab-btn" onclick="switchTab('clients-conf')">🔑 clients.conf</button>
+                <button class="tab-btn" onclick="switchTab('ufw-rules')">🛡️ UFW Firewall</button>
+                <button class="tab-btn" onclick="switchTab('mikrotik-cmd')">📡 MikroTik RouterOS</button>
+            </div>
+
+            <!-- Tab 1: docker-compose.yml -->
+            <div id="tab-docker-compose" class="tab-content active">
+                <div class="code-container">
+                    <div class="code-header">
+                        <span>docker-compose.yml</span>
+                        <button class="copy-btn" onclick="copyCode('code-docker-compose', this)">Copy Code</button>
+                    </div>
+                    <pre><code id="code-docker-compose">version: '3.8'
+
+services:
+  # Shared MariaDB Engine with Separate Tenant Databases
+  mariadb:
+    image: mariadb:11
+    container_name: airlink-mariadb
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-super_secret_root_pass}
+    ports:
+      - "127.0.0.1:3306:3306"
+    volumes:
+      - mariadb_data:/var/lib/mysql
+      - ./docker/mariadb/init-multitenant.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # TENANT 1: EVEREST (Ports 1812 / 1813)
+  freeradius-everest:
+    build:
+      context: ./docker/freeradius
+    container_name: freeradius-everest
+    restart: unless-stopped
+    environment:
+      DB_HOST: mariadb
+      DB_DATABASE: airlink_everest
+      DB_USER: everest_user
+      DB_PASS: everest_pass_secret
+    ports:
+      - "1812:1812/udp" # Auth
+      - "1813:1813/udp" # Acct
+    volumes:
+      - ./tenants/everest/clients.conf:/etc/freeradius/clients.conf:ro
+      - radius_logs_everest:/var/log/freeradius
+    depends_on:
+      mariadb:
+        condition: service_healthy
+
+  # TENANT 2: MERA (Ports 1814 / 1815)
+  freeradius-mera:
+    build:
+      context: ./docker/freeradius
+    container_name: freeradius-mera
+    restart: unless-stopped
+    environment:
+      DB_HOST: mariadb
+      DB_DATABASE: airlink_mera
+      DB_USER: mera_user
+      DB_PASS: mera_pass_secret
+    ports:
+      - "1814:1812/udp" # Auth (Offset)
+      - "1815:1813/udp" # Acct (Offset)
+    volumes:
+      - ./tenants/mera/clients.conf:/etc/freeradius/clients.conf:ro
+      - radius_logs_mera:/var/log/freeradius
+    depends_on:
+      mariadb:
+        condition: service_healthy
+
+volumes:
+  mariadb_data:
+  radius_logs_everest:
+  radius_logs_mera:</code></pre>
+                </div>
+            </div>
+
+            <!-- Tab 2: entrypoint.sh -->
+            <div id="tab-entrypoint" class="tab-content">
+                <div class="code-container">
+                    <div class="code-header">
+                        <span>docker/freeradius/entrypoint.sh</span>
+                        <button class="copy-btn" onclick="copyCode('code-entrypoint', this)">Copy Code</button>
+                    </div>
+                    <pre><code id="code-entrypoint">#!/bin/bash
+set -e
+
+# Dynamically inject environment variables into FreeRADIUS SQL configuration
+if [ -f /etc/freeradius/mods-enabled/sql ]; then
+    sed -i "s/server = .*/server = \"${DB_HOST:-mariadb}\"/" /etc/freeradius/mods-enabled/sql
+    sed -i "s/radius_db = .*/radius_db = \"${DB_DATABASE:-airlink}\"/" /etc/freeradius/mods-enabled/sql
+    sed -i "s/login = .*/login = \"${DB_USER:-airlink}\"/" /etc/freeradius/mods-enabled/sql
+    sed -i "s/password = .*/password = \"${DB_PASS:-airlink_pass}\"/" /etc/freeradius/mods-enabled/sql
+fi
+
+# Execute FreeRADIUS server in foreground mode
+exec freeradius -f -l stdout</code></pre>
+                </div>
+            </div>
+
+            <!-- Tab 3: SQL Init -->
+            <div id="tab-sql-init" class="tab-content">
+                <div class="code-container">
+                    <div class="code-header">
+                        <span>docker/mariadb/init-multitenant.sql</span>
+                        <button class="copy-btn" onclick="copyCode('code-sql-init', this)">Copy Code</button>
+                    </div>
+                    <pre><code id="code-sql-init">-- Everest Database & User
+CREATE DATABASE IF NOT EXISTS `airlink_everest` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER IF NOT EXISTS 'everest_user'@'%' IDENTIFIED BY 'everest_pass_secret';
+GRANT ALL PRIVILEGES ON `airlink_everest`.* TO 'everest_user'@'%';
+
+-- Mera Database & User
+CREATE DATABASE IF NOT EXISTS `airlink_mera` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER IF NOT EXISTS 'mera_user'@'%' IDENTIFIED BY 'mera_pass_secret';
+GRANT ALL PRIVILEGES ON `airlink_mera`.* TO 'mera_user'@'%';
+
+FLUSH PRIVILEGES;</code></pre>
+                </div>
+            </div>
+
+            <!-- Tab 4: clients.conf -->
+            <div id="tab-clients-conf" class="tab-content">
+                <div class="code-container">
+                    <div class="code-header">
+                        <span>tenants/everest/clients.conf & tenants/mera/clients.conf</span>
+                        <button class="copy-btn" onclick="copyCode('code-clients-conf', this)">Copy Code</button>
+                    </div>
+                    <pre><code id="code-clients-conf"># Everest NAS Client Setup (tenants/everest/clients.conf)
+client everest_routers {
+    ipaddr = 0.0.0.0/0
+    secret = EverestSecretKey123
+    shortname = everest-nas
+}
+
+# Mera NAS Client Setup (tenants/mera/clients.conf)
+client mera_routers {
+    ipaddr = 0.0.0.0/0
+    secret = MeraSecretKey123
+    shortname = mera-nas
+}</code></pre>
+                </div>
+            </div>
+
+            <!-- Tab 5: UFW Rules -->
+            <div id="tab-ufw-rules" class="tab-content">
+                <div class="code-container">
+                    <div class="code-header">
+                        <span>VPS Terminal Firewall Setup (UFW)</span>
+                        <button class="copy-btn" onclick="copyCode('code-ufw-rules', this)">Copy Code</button>
+                    </div>
+                    <pre><code id="code-ufw-rules"># Everest RADIUS Ports
+sudo ufw allow 1812/udp comment 'FreeRADIUS Everest Auth'
+sudo ufw allow 1813/udp comment 'FreeRADIUS Everest Acct'
+
+# Mera RADIUS Ports
+sudo ufw allow 1814/udp comment 'FreeRADIUS Mera Auth'
+sudo ufw allow 1815/udp comment 'FreeRADIUS Mera Acct'
+
+# Reload Firewall
+sudo ufw reload</code></pre>
+                </div>
+            </div>
+
+            <!-- Tab 6: MikroTik Commands -->
+            <div id="tab-mikrotik-cmd" class="tab-content">
+                <div class="code-container">
+                    <div class="code-header">
+                        <span>MikroTik RouterOS WinBox / Terminal Commands</span>
+                        <button class="copy-btn" onclick="copyCode('code-mikrotik-cmd', this)">Copy Code</button>
+                    </div>
+                    <pre><code id="code-mikrotik-cmd"># Everest MikroTik Router Configuration
+/radius
+add service=ppp,hotspot address=YOUR_VPS_IP authentication-port=1812 accounting-port=1813 secret="EverestSecretKey123"
+
+# Mera MikroTik Router Configuration
+/radius
+add service=ppp,hotspot address=YOUR_VPS_IP authentication-port=1814 accounting-port=1815 secret="MeraSecretKey123"</code></pre>
+                </div>
+            </div>
+        </div>
+
+        <!-- Section 3: Interactive Port & Config Generator -->
+        <div class="section-card">
+            <div class="section-header">
+                <div class="section-title"><span>03.</span> Dynamic Tenant Command Generator for Configuration in the NAS</div>
+            </div>
+            
+            <div class="calc-grid">
+                <div>
+                    <div class="form-group">
+                        <label class="form-label" for="tenant-select">Select Tenant</label>
+                        <select id="tenant-select" onchange="generateConfig()">
+                            <option value="everest">Everest (Ports 1812 / 1813)</option>
+                            <option value="mera">Mera (Ports 1814 / 1815)</option>
+                            <option value="custom">Custom Tenant...</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="vps-ip">VPS IP Address</label>
+                        <input type="text" id="vps-ip" class="form-input" value="103.15.22.40" oninput="generateConfig()">
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="auth-port">Auth Port (UDP)</label>
+                        <input type="number" id="auth-port" class="form-input" value="1812" oninput="generateConfig()">
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="acct-port">Acct Port (UDP)</label>
+                        <input type="number" id="acct-port" class="form-input" value="1813" oninput="generateConfig()">
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="shared-secret">NAS Shared Secret</label>
+                        <input type="text" id="shared-secret" class="form-input" value="EverestSecretKey123" oninput="generateConfig()">
+                    </div>
+                </div>
+
+                <div>
+                    <div class="form-label">Generated RouterOS Command</div>
+                    <div class="code-container" style="margin-bottom: 1rem;">
+                        <pre><code id="out-mikrotik">/radius add service=ppp,hotspot address=103.15.22.40 authentication-port=1812 accounting-port=1813 secret="EverestSecretKey123"</code></pre>
+                    </div>
+
+                    <div class="form-label">Generated Test Verification Command (`radtest`)</div>
+                    <div class="code-container">
+                        <pre><code id="out-radtest">radtest test_user password123 127.0.0.1:1812 0 EverestSecretKey123</code></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <footer>
+            <p>Airlink v3.0 Billing Platform — Multi-Tenant Architecture & Deployment Documentation</p>
+        </footer>
+    </div>
+
+    <!-- Interactive JavaScript -->
+    <script>
+        // Tab switching logic
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+
+            event.currentTarget.classList.add('active');
+            document.getElementById('tab-' + tabId).classList.add('active');
+        }
+
+        // Copy code to clipboard with animated button text
+        function copyCode(elementId, btn) {
+            const codeText = document.getElementById(elementId).innerText;
+            navigator.clipboard.writeText(codeText).then(() => {
+                const originalText = btn.innerText;
+                btn.innerText = 'Copied!';
+                btn.style.background = '#10b981';
+                btn.style.color = '#fff';
+
+                setTimeout(() => {
+                    btn.innerText = originalText;
+                    btn.style.background = '';
+                    btn.style.color = '';
+                }, 2000);
+            });
+        }
+
+        // Interactive Config Generator
+        function generateConfig() {
+            const tenant = document.getElementById('tenant-select').value;
+            const ip = document.getElementById('vps-ip').value || '103.15.22.40';
+            const authPortInput = document.getElementById('auth-port');
+            const acctPortInput = document.getElementById('acct-port');
+            const secretInput = document.getElementById('shared-secret');
+
+            if (tenant === 'everest') {
+                authPortInput.value = 1812;
+                acctPortInput.value = 1813;
+                secretInput.value = 'EverestSecretKey123';
+            } else if (tenant === 'mera') {
+                authPortInput.value = 1814;
+                acctPortInput.value = 1815;
+                secretInput.value = 'MeraSecretKey123';
+            }
+
+            const authPort = authPortInput.value;
+            const acctPort = acctPortInput.value;
+            const secret = secretInput.value;
+
+            document.getElementById('out-mikrotik').innerText = 
+                `/radius add service=ppp,hotspot address=${ip} authentication-port=${authPort} accounting-port=${acctPort} secret="${secret}"`;
+
+            document.getElementById('out-radtest').innerText = 
+                `radtest test_user password123 127.0.0.1:${authPort} 0 ${secret}`;
+        }
+    </script>
+</body>
+</html>

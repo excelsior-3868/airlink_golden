@@ -3,10 +3,12 @@ import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Lock, User as UserIcon, Wifi, Eye, EyeOff, LogIn, Loader2 } from 'lucide-react'
 import { useAuth } from '../lib/auth'
+import { useBranding } from '../lib/branding'
 import { apiError } from '../lib/api'
 
 export default function Login() {
   const { login, user } = useAuth()
+  const { branding } = useBranding()
   const nav = useNavigate()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -44,12 +46,18 @@ export default function Login() {
       >
         {/* Logo and Header */}
         <div className="flex flex-col items-center mb-8">
-          <div className="bg-[#003164] text-white rounded-3xl p-4 mb-4 shadow-xl shadow-[#003164]/20 flex items-center justify-center">
-            <Wifi size={28} />
+          <div className="bg-[#003164] text-white rounded-3xl p-4 mb-4 shadow-xl shadow-[#003164]/20 flex items-center justify-center w-16 h-16 overflow-hidden">
+            {branding.logo_url ? (
+              <img src={branding.logo_url} alt="Logo" className="w-full h-full object-contain" />
+            ) : (
+              <Wifi size={28} />
+            )}
           </div>
-          <h1 className="text-3xl font-extrabold tracking-tight text-[#003164]">Airlink</h1>
+          <h1 className="text-3xl font-extrabold tracking-tight text-[#003164] text-center">
+            {branding.property_name || 'Airlink'}
+          </h1>
           <p className="text-slate-500 text-sm mt-2 text-center font-medium">
-            Please enter your credentials to access Airlink.
+            Please enter your credentials to access {branding.property_name || 'Airlink'}.
           </p>
         </div>
 

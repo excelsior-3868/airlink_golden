@@ -23,10 +23,12 @@ use App\Http\Controllers\Api\IntegrationTokenController;
 use App\Http\Controllers\Api\PaymentMethodController;
 use App\Http\Controllers\Api\PppoeCustomerController;
 use App\Http\Controllers\Api\PppoeRechargeController;
+use App\Http\Controllers\Api\BrandingSettingController;
 use Illuminate\Support\Facades\Route;
 
 // --- Public ---
 Route::post('/login', [AuthController::class, 'login']);
+Route::get('/settings/branding', [BrandingSettingController::class, 'show']);
 
 // --- Authenticated ---
 Route::middleware('auth:sanctum')->group(function () {
@@ -163,6 +165,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/voucher-template', [VoucherTemplateController::class, 'index']);
     Route::post('/voucher-template', [VoucherTemplateController::class, 'save']);
     Route::delete('/voucher-template', [VoucherTemplateController::class, 'reset']);
+
+    // Branding Settings — update.
+    Route::post('/settings/branding', [BrandingSettingController::class, 'update']);
 
     // NAS / router management (admin only). List is readable by all authed users.
     Route::get('/nas', [NasController::class, 'index']);

@@ -28,6 +28,7 @@ import ChartOfAccounts from './pages/ChartOfAccounts'
 import PaymentMethods from './pages/PaymentMethods'
 import OnlineUsers from './pages/OnlineUsers'
 import PppoeCustomers from './pages/PppoeCustomers'
+import BrandingSettings from './pages/BrandingSettings'
 
 function Protected({ children }: { children: JSX.Element }) {
   const { user, loading } = useAuth()
@@ -100,6 +101,8 @@ export default function App() {
         <Route path="/nas" element={<Guard perm="view_settings" roles={['admin']}><Nas /></Guard>} />
         <Route path="/logs" element={<Guard perm="view_settings" roles={['admin']}><LoginLogs /></Guard>} />
         <Route path="/permissions" element={<Guard perm="view_settings" roles={['admin']}><Permissions /></Guard>} />
+        <Route path="/settings" element={<Navigate to="/settings/branding" replace />} />
+        <Route path="/settings/branding" element={<Guard roles={['admin', 'reseller', 'seller']}><BrandingSettings /></Guard>} />
         <Route path="/settings/payment-methods" element={<Guard perm="view_settings" roles={['admin']}><PaymentMethods /></Guard>} />
         <Route path="/settings/chart-of-accounts" element={<Guard roles={['admin']}><ChartOfAccounts /></Guard>} />
         <Route path="/settings/system-load" element={<Guard perm="view_settings" roles={['admin']}><SystemLoad /></Guard>} />
