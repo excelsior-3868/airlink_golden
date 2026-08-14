@@ -212,21 +212,171 @@ class RadiusController extends Controller
         $secret = env('RADIUS_SECRET', 'testing123');
 
         try {
-            $success = $this->radiusAuthenticate($host, $port, $secret, $data['username'], $data['password']);
-            if ($success) {
+            $result = $this->radiusAuthenticate($host, $port, $secret, $data['username'], $data['password']);
+            if ($result['accepted']) {
                 return $this->ok([
                     'status' => 'Access-Accept',
-                    'message' => 'Authentication succeeded.'
+                    'message' => $result['reply_message'] ?? 'Authentication succeeded.'
                 ], 'Authentication succeeded (Access-Accept).');
             } else {
                 return $this->ok([
                     'status' => 'Access-Reject',
-                    'message' => 'Authentication failed.'
+                    'message' => $result['reply_message'] ?? 'Authentication failed.'
                 ], 'Authentication failed (Access-Reject).');
             }
         } catch (Exception $e) {
             return $this->fail('RADIUS authentication test failed: ' . $e->getMessage(), 500);
         }
+    }
+
+    /**
+     * Real, live voucher diagnosis — no log-scraping guesswork. Checks the
+     * voucher's DB record, whether FreeRADIUS actually has credentials for
+     * it (radcheck/radreply), its real connection history (radacct), a
+     * targeted grep of the full radius.log for this exact username (not
+     * just whatever happens to be in the last N generic lines), and — when
+     * safe — fires a real Access-Request at the live RADIUS server to get
+     * its actual, current Reply-Message straight from the policy engine.
+     *
+     * "When safe": the site's post-auth policy stamps activated_at/expires_at
+     * and flips status to 'used' on a voucher's FIRST successful login. A
+     * live probe against a never-activated voucher would burn its validity
+     * window for real, so that case is skipped and explained instead.
+     */
+    public function diagnoseVoucher(string $code): JsonResponse
+    {
+        $code = trim($code);
+
+        $voucher = DB::table('vouchers')
+            ->leftJoin('internet_plans', 'internet_plans.id', '=', 'vouchers.plan_id')
+            ->whereRaw('UPPER(vouchers.code) = ?', [strtoupper($code)])
+            ->select('vouchers.*', 'internet_plans.name as plan_name')
+            ->first();
+
+        if (!$voucher) {
+            return $this->ok([
+                'code' => $code,
+                'db' => ['exists' => false],
+                'overall_status' => 'error',
+                'summary' => 'Voucher code does not exist in the database. Please verify the code.',
+            ]);
+        }
+
+        $username = $voucher->username;
+        $reasons = [];
+        $overallStatus = 'success';
+
+        // Ground truth: does FreeRADIUS actually have credentials for this
+        // username at all? A missing radcheck row means it can never
+        // authenticate regardless of what the vouchers table says.
+        $radcheck = DB::table('radcheck')->where('username', $username)->get(['attribute', 'op', 'value']);
+        $radreply = DB::table('radreply')->where('username', $username)->get(['attribute', 'op', 'value']);
+        $hasCredentials = $radcheck->contains('attribute', 'Cleartext-Password');
+
+        // Real connection history — has this voucher ever actually reached a NAS?
+        $recentSessions = DB::table('radacct')
+            ->where('username', $username)
+            ->orderByDesc('acctstarttime')
+            ->limit(5)
+            ->get(['acctstarttime', 'acctstoptime', 'acctsessiontime', 'nasipaddress', 'framedipaddress', 'callingstationid', 'acctinputoctets', 'acctoutputoctets']);
+        $isOnlineNow = OnlineSession::scopeLive(DB::table('radacct'))->where('username', $username)->exists();
+
+        $isExpired = $voucher->expires_at && now()->greaterThan($voucher->expires_at);
+
+        if ($voucher->status === 'disabled') {
+            $overallStatus = 'error';
+            $reasons[] = 'Voucher is disabled — it will not authenticate until re-enabled.';
+        } elseif ($isExpired) {
+            $overallStatus = 'error';
+            $reasons[] = 'Voucher has expired (past its validity window).';
+        }
+
+        if (!$hasCredentials) {
+            $overallStatus = 'error';
+            $reasons[] = "No RADIUS credentials found for '{$username}' in radcheck — FreeRADIUS has nothing to check this login against. Regenerate credentials for this voucher.";
+        }
+
+        // Live probe — only when it can't cost the voucher its validity window.
+        $liveTest = ['ran' => false, 'skipped_reason' => null, 'accepted' => null, 'reply_message' => null];
+        if (!$hasCredentials) {
+            $liveTest['skipped_reason'] = 'No radcheck credentials to test against.';
+        } elseif (!$voucher->activated_at) {
+            $liveTest['skipped_reason'] = "Voucher hasn't been activated yet — testing it live would start its validity clock for real (first successful login stamps activated_at/expires_at), consuming the customer's window before they've ever connected. Skipped to avoid that.";
+        } else {
+            try {
+                $host = env('RADIUS_HOST', 'host.docker.internal');
+                $port = (int) env('RADIUS_PORT', 1812);
+                $secret = env('RADIUS_SECRET', 'testing123');
+                $result = $this->radiusAuthenticate($host, $port, $secret, $username, $voucher->password);
+
+                $liveTest['ran'] = true;
+                $liveTest['accepted'] = $result['accepted'];
+                $liveTest['reply_message'] = $result['reply_message'];
+
+                if ($result['accepted']) {
+                    $reasons[] = 'Live test just now: RADIUS ACCEPTED this voucher'
+                        . ($result['reply_message'] ? " — \"{$result['reply_message']}\"" : '') . '.';
+                } else {
+                    $overallStatus = 'error';
+                    $msg = $result['reply_message'] ?? 'no reason given by the server';
+                    $reasons[] = "Live test just now: RADIUS REJECTED this voucher — \"{$msg}\".";
+                    if (($voucher->mac_bind || $voucher->nas_ip)
+                        && $result['reply_message']
+                        && (str_contains($result['reply_message'], 'different device') || str_contains($result['reply_message'], 'not valid on this hotspot'))) {
+                        $reasons[] = 'Note: this voucher is locked to a specific device/NAS, and this diagnostic probe doesn\'t send a real MAC address or NAS IP — the customer\'s actual device may authenticate fine even though this specific test didn\'t.';
+                    }
+                }
+            } catch (Exception $e) {
+                $liveTest['skipped_reason'] = 'Could not reach the RADIUS server: ' . $e->getMessage();
+                $overallStatus = $overallStatus === 'success' ? 'warning' : $overallStatus;
+            }
+        }
+
+        // Targeted history — grep the WHOLE log for this exact username,
+        // not just whatever happens to be in the last N generic lines.
+        $logPath = '/var/log/radius/radius.log';
+        if (!file_exists($logPath)) {
+            $logPath = '/var/log/freeradius/radius.log';
+        }
+        $logMatches = [];
+        if (file_exists($logPath) && is_readable($logPath)) {
+            $scan = $this->scanLogFile($logPath, $username, 20);
+            $logMatches = array_map(fn ($l) => $this->parseLogLine($l), array_reverse($scan['lines']));
+        }
+
+        if (!$reasons) {
+            $reasons[] = 'No issues found — voucher is active, has valid RADIUS credentials'
+                . ($liveTest['ran'] ? ', and the live authentication test just succeeded.' : '.');
+        }
+
+        return $this->ok([
+            'code' => $voucher->code,
+            'username' => $username,
+            'db' => [
+                'exists' => true,
+                'status' => $voucher->status,
+                'is_expired' => $isExpired,
+                'plan_name' => $voucher->plan_name,
+                'price' => $voucher->price,
+                'activated_at' => $voucher->activated_at,
+                'expires_at' => $voucher->expires_at,
+                'mac_bind' => (bool) $voucher->mac_bind,
+                'nas_ip' => $voucher->nas_ip,
+            ],
+            'radius_tables' => [
+                'has_credentials' => $hasCredentials,
+                'radcheck' => $radcheck,
+                'radreply' => $radreply,
+            ],
+            'live_test' => $liveTest,
+            'sessions' => [
+                'is_online_now' => $isOnlineNow,
+                'recent' => $recentSessions,
+            ],
+            'log_matches' => $logMatches,
+            'overall_status' => $overallStatus,
+            'summary' => implode(' ', $reasons),
+        ]);
     }
 
     /**
@@ -249,7 +399,10 @@ class RadiusController extends Controller
         }
     }
 
-    private function radiusAuthenticate(string $host, int $port, string $secret, string $username, string $password): bool
+    /**
+     * @return array{accepted: bool, code: int, reply_message: ?string}
+     */
+    private function radiusAuthenticate(string $host, int $port, string $secret, string $username, string $password): array
     {
         $server = "udp://$host:$port";
         $fp = @stream_socket_client($server, $errno, $errstr, 2);
@@ -311,9 +464,111 @@ class RadiusController extends Controller
         }
 
         $responseHeader = unpack('CCode/CIdentifier/nLength', substr($buf, 0, 4));
-        
+        $code = $responseHeader['Code'];
+        $totalLen = min($responseHeader['Length'], strlen($buf));
+
+        // Walk the reply's attribute TLVs looking for Reply-Message (type 18)
+        // — the actual, human-readable reason the site's policy set, straight
+        // from sites-enabled/default (e.g. "This voucher has expired.").
+        $replyMessages = [];
+        $offset = 20;
+        while ($offset + 2 <= $totalLen) {
+            $attrType = ord($buf[$offset]);
+            $attrLen = ord($buf[$offset + 1]);
+            if ($attrLen < 2 || $offset + $attrLen > $totalLen) {
+                break;
+            }
+            if ($attrType === 18) {
+                $replyMessages[] = substr($buf, $offset + 2, $attrLen - 2);
+            }
+            $offset += $attrLen;
+        }
+
         // Code 2 = Access-Accept, Code 3 = Access-Reject
-        return $responseHeader['Code'] === 2;
+        return [
+            'accepted' => $code === 2,
+            'code' => $code,
+            'reply_message' => $replyMessages ? implode(' ', $replyMessages) : null,
+        ];
+    }
+
+    /**
+     * Case-insensitive scan of the whole log file for $search, keeping only
+     * the most recent $limit matching lines (oldest-of-the-kept-set first
+     * dropped) — streamed so a multi-gigabyte log never lands in memory.
+     *
+     * @return array{lines: array<int,string>, total_lines: int, match_count: int}
+     *   lines are raw matched text, oldest to newest.
+     */
+    private function scanLogFile(string $path, string $search, int $limit): array
+    {
+        $lines = [];
+        $totalLines = 0;
+        $matchCount = 0;
+        $handle = fopen($path, 'r');
+        if ($handle === false) {
+            return ['lines' => [], 'total_lines' => 0, 'match_count' => 0];
+        }
+
+        while (($line = fgets($handle)) !== false) {
+            $totalLines++;
+            $line = trim($line);
+            if ($line === '' || stripos($line, $search) === false) {
+                continue;
+            }
+            $matchCount++;
+            $lines[] = $line;
+            if (count($lines) > $limit) {
+                array_shift($lines);
+            }
+        }
+        fclose($handle);
+
+        return ['lines' => $lines, 'total_lines' => $totalLines, 'match_count' => $matchCount];
+    }
+
+    /**
+     * Parse one raw FreeRADIUS log line into a structured event.
+     * Example: "Sat Jul 18 12:30:15 2026 : Auth: (12) Login OK: [ASMRWRHR] (from client localhost port 0)"
+     *
+     * @return array{raw:string,timestamp:?string,module:?string,id:?string,status_message:string,username:?string,client:?string,type:string}
+     */
+    private function parseLogLine(string $rawLine): array
+    {
+        $pattern = '/^([A-Za-z]{3}\s+[A-Za-z]{3}\s+\d+\s+\d{2}:\d{2}:\d{2}\s+\d{4})\s*:\s*([A-Za-z]+):\s*(?:\((\d+)\)\s+)?(.*?)(?::\s*\[(.*?)\])?\s*(\(from client.*?\))?$/';
+        if (!preg_match($pattern, $rawLine, $matches)) {
+            return [
+                'raw' => $rawLine,
+                'timestamp' => null,
+                'module' => 'System',
+                'id' => null,
+                'status_message' => $rawLine,
+                'username' => null,
+                'client' => null,
+                'type' => 'system',
+            ];
+        }
+
+        $statusMsg = $matches[4] ?? '';
+        $client = ($matches[6] ?? '') ?: null;
+
+        $type = 'info';
+        if (str_contains($statusMsg, 'Login OK') || str_contains($statusMsg, 'OK')) {
+            $type = 'success';
+        } elseif (str_contains($statusMsg, 'Login incorrect') || str_contains($statusMsg, 'Reject') || str_contains($statusMsg, 'mismatch') || str_contains($statusMsg, 'not found')) {
+            $type = 'reject';
+        }
+
+        return [
+            'raw' => $rawLine,
+            'timestamp' => $matches[1] ?? null,
+            'module' => $matches[2] ?? null,
+            'id' => ($matches[3] ?? '') ?: null,
+            'status_message' => $statusMsg,
+            'username' => ($matches[5] ?? '') ?: null,
+            'client' => $client ? trim(str_replace(['(from client ', ')'], '', $client)) : null,
+            'type' => $type,
+        ];
     }
 
     /** Fetch FreeRADIUS authentication logs with brute-force warnings (admin only). */
@@ -407,28 +662,13 @@ class RadiusController extends Controller
         try {
             if ($search !== '') {
                 // Case-insensitive scan of the whole file, equivalent to
-                // `grep -i "<search>" radius.log`. Streams the file so a
+                // `grep -i "<search>" radius.log` — streamed so a
                 // multi-gigabyte log never lands in memory; only the most
                 // recent $limit matches are kept.
-                $handle = fopen($path, 'r');
-                if ($handle === false) {
-                    return $this->fail('Failed opening log file for search.', 500);
-                }
-
-                $totalLines = 0;
-                while (($line = fgets($handle)) !== false) {
-                    $totalLines++;
-                    $line = trim($line);
-                    if ($line === '' || stripos($line, $search) === false) {
-                        continue;
-                    }
-                    $matchCount++;
-                    $lines[] = $line;
-                    if (count($lines) > $limit) {
-                        array_shift($lines);
-                    }
-                }
-                fclose($handle);
+                $scan = $this->scanLogFile($path, $search, $limit);
+                $lines = $scan['lines'];
+                $totalLines = $scan['total_lines'];
+                $matchCount = $scan['match_count'];
             } else {
                 $file = new \SplFileObject($path, 'r');
                 $file->seek(PHP_INT_MAX);
@@ -449,49 +689,7 @@ class RadiusController extends Controller
         }
 
         // Parse lines into structured log events
-        $parsedLogs = [];
-        foreach (array_reverse($lines) as $rawLine) {
-            // Regex to parse: Day Month Date Time Year : Module: (ID) Status: [Username] (client details)
-            // Example: Sat Jul 18 12:30:15 2026 : Auth: (12) Login OK: [ASMRWRHR] (from client localhost port 0)
-            $pattern = '/^([A-Za-z]{3}\s+[A-Za-z]{3}\s+\d+\s+\d{2}:\d{2}:\d{2}\s+\d{4})\s*:\s*([A-Za-z]+):\s*(?:\((\d+)\)\s+)?(.*?)(?::\s*\[(.*?)\])?\s*(\(from client.*?\))?$/';
-            if (preg_match($pattern, $rawLine, $matches)) {
-                $timestamp = $matches[1] ?? null;
-                $module = $matches[2] ?? null;
-                $id = ($matches[3] ?? '') ?: null;
-                $statusMsg = $matches[4] ?? '';
-                $username = ($matches[5] ?? '') ?: null;
-                $client = ($matches[6] ?? '') ?: null;
-
-                $type = 'info';
-                if (str_contains($statusMsg, 'Login OK') || str_contains($statusMsg, 'OK')) {
-                    $type = 'success';
-                } elseif (str_contains($statusMsg, 'Login incorrect') || str_contains($statusMsg, 'Reject') || str_contains($statusMsg, 'mismatch') || str_contains($statusMsg, 'not found')) {
-                    $type = 'reject';
-                }
-
-                $parsedLogs[] = [
-                    'raw' => $rawLine,
-                    'timestamp' => $timestamp,
-                    'module' => $module,
-                    'id' => $id,
-                    'status_message' => $statusMsg,
-                    'username' => $username,
-                    'client' => $client ? trim(str_replace(['(from client ', ')'], '', $client)) : null,
-                    'type' => $type
-                ];
-            } else {
-                $parsedLogs[] = [
-                    'raw' => $rawLine,
-                    'timestamp' => null,
-                    'module' => 'System',
-                    'id' => null,
-                    'status_message' => $rawLine,
-                    'username' => null,
-                    'client' => null,
-                    'type' => 'system'
-                ];
-            }
-        }
+        $parsedLogs = array_map(fn ($rawLine) => $this->parseLogLine($rawLine), array_reverse($lines));
 
         return $this->ok([
             'exists' => true,

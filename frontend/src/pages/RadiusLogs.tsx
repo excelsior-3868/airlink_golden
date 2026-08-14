@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { AlertCircle, CheckCircle, XCircle, HelpCircle, Activity, ShieldCheck, ShieldAlert, RefreshCw } from 'lucide-react'
+import { AlertCircle, CheckCircle, XCircle, HelpCircle, Activity, ShieldCheck, ShieldAlert, RefreshCw, Wifi } from 'lucide-react'
 import { api } from '../lib/api'
 import { GlassCard, PageTitle, Pill } from '../components/ui'
 
@@ -12,123 +12,60 @@ export default function RadiusLogs() {
   const [diagCode, setDiagCode] = useState('')
   const [diagLoading, setDiagLoading] = useState(false)
   const [diagResults, setDiagResults] = useState<any>(null)
+  const [diagError, setDiagError] = useState<string | null>(null)
 
-  const fetchLogs = async () => {
+  // Cheap availability check only — the actual diagnostic grep runs
+  // server-side, scoped to the specific voucher, when Diagnose is clicked.
+  const checkLogAvailability = async () => {
     setLoading(true)
     setError(null)
     try {
-      const response = await api.get('/radius/server-log', { params: { limit: 500 } })
+      const response = await api.get('/radius/server-log', { params: { limit: 1 } })
       setLogData(response.data.data)
+      if (response.data.data?.exists === false) {
+        setError(response.data.data.message || 'FreeRADIUS log file not found or not readable.')
+      }
     } catch (err: any) {
-      setError(err.response?.data?.message || err.message || 'Failed to fetch Radius logs.')
+      setError(err.response?.data?.message || err.message || 'Failed to reach the RADIUS log endpoint.')
     } finally {
       setLoading(false)
     }
   }
 
   useEffect(() => {
-    fetchLogs()
+    checkLogAvailability()
   }, [])
 
+  // Real diagnosis, sourced from one backend call: DB record, live radcheck/
+  // radreply presence, real radacct session history, a targeted grep of the
+  // FULL radius.log for this exact voucher (not just the last 500 generic
+  // lines), and — when it's safe to do so without burning the voucher's
+  // validity window — a live Access-Request fired at FreeRADIUS right now.
   const runDiagnostics = async () => {
-    if (!diagCode.trim()) return
+    const code = diagCode.trim()
+    if (!code) return
     setDiagLoading(true)
+    setDiagError(null)
     setDiagResults(null)
 
     try {
-      // Step 1: Query the voucher database
-      const vResponse = await api.get('/vouchers', { params: { code: diagCode.trim() } })
-      const matchingVouchers = vResponse.data.data?.data || []
-      const voucher = matchingVouchers.find((v: any) => v.code.toLowerCase() === diagCode.trim().toLowerCase())
-
-      if (!voucher) {
-        setDiagResults({
-          status: 'error',
-          code: diagCode.trim(),
-          checks: {
-            dbExists: false,
-            dbActive: false,
-            radiusAuth: false,
-          },
-          summary: 'Voucher code does not exist in the database. Please verify the code.'
-        })
-        setDiagLoading(false)
-        return
-      }
-
-      // Step 2: Scan parsed logs for matching messages for this voucher
-      const serverLogs = logData?.logs || []
-      const matchedLogs = serverLogs.filter((l: any) => 
-        l.username && l.username.toLowerCase() === diagCode.trim().toLowerCase()
-      )
-      const lastReject = matchedLogs.find((l: any) => l.type === 'reject')
-      const lastOk = matchedLogs.find((l: any) => l.type === 'success')
-      const latestLog = matchedLogs[0]
-
-      // Step 3: Determine auth response from the logs
-      let authStatus = 'No attempts'
-      let isOk = false
-      if (latestLog) {
-        if (latestLog.type === 'success') {
-          authStatus = 'Access-Accept'
-          isOk = true
-        } else if (latestLog.type === 'reject') {
-          authStatus = 'Access-Reject'
-        } else {
-          authStatus = latestLog.status_message || 'Info'
-        }
-      }
-
-      // Step 4: Compile summary logic
-      let summary = ''
-      
-      if (voucher.status === 'disabled') {
-        summary = 'The voucher is currently disabled. Please enable it in the Voucher Sales dashboard.'
-      } else if (voucher.status === 'expired') {
-        summary = 'The voucher has expired because its validity duration has passed.'
-      } else if (authStatus === 'Access-Reject') {
-        summary = `RADIUS auth rejected this voucher. Log error message: "${latestLog.status_message}" (logged on ${latestLog.timestamp || '—'}).`
-      } else if (authStatus === 'Access-Accept') {
-        summary = `RADIUS auth succeeded! The voucher authenticated successfully (logged on ${latestLog.timestamp || '—'}).`
-      } else {
-        summary = 'No recent authentication attempts found for this voucher in the server logs. Ask the user to try connecting.'
-      }
-
-      setDiagResults({
-        status: isOk ? 'success' : 'warning',
-        code: diagCode.trim(),
-        voucher,
-        authStatus,
-        matchedLogs,
-        lastReject,
-        lastOk,
-        latestLog,
-        checks: {
-          dbExists: true,
-          dbStatus: voucher.status,
-          planName: voucher.plan?.name,
-          radiusAuth: authStatus === 'Access-Accept',
-        },
-        summary
-      })
-
+      const response = await api.get(`/radius/diagnose/${encodeURIComponent(code)}`)
+      setDiagResults(response.data.data)
     } catch (err: any) {
-      setDiagResults({
-        status: 'error',
-        code: diagCode.trim(),
-        summary: 'Diagnostics failed: ' + (err.response?.data?.message || err.message)
-      })
+      setDiagError(err.response?.data?.message || err.message || 'Diagnostics request failed.')
     } finally {
       setDiagLoading(false)
     }
   }
 
+  const statusTone = (status: string) => (status === 'success' ? 'success' : status === 'error' ? 'danger' : 'warning')
+
   return (
     <div className="w-full space-y-6 py-4">
-      <PageTitle 
-        title="Voucher Diagnostics" 
-        subtitle="Troubleshoot authentication & authorization issues for voucher cards" 
-        icon={<Activity size={22} className="text-primary" />} 
+      <PageTitle
+        title="Voucher Diagnostics"
+        subtitle="Troubleshoot authentication & authorization issues for voucher cards"
+        icon={<Activity size={22} className="text-primary" />}
       />
 
       {error && (
@@ -164,13 +101,20 @@ export default function RadiusLogs() {
           </div>
         </div>
 
+        {diagError && (
+          <div className="bg-rose-50 text-rose-800 border border-rose-200 rounded-2xl p-4 flex items-center gap-2">
+            <AlertCircle size={18} className="shrink-0" />
+            <span className="text-sm font-semibold">{diagError}</span>
+          </div>
+        )}
+
         {/* Diagnostics Output */}
         {diagResults ? (
           <div className="border border-slate-100 rounded-2xl p-5 bg-slate-50/50 space-y-4 text-sm leading-relaxed">
             <div className="flex items-center justify-between border-b pb-3">
               <span className="font-bold text-slate-800 text-base">Voucher: "{diagResults.code}"</span>
-              <Pill tone={diagResults.status === 'success' ? 'success' : (diagResults.status === 'error' ? 'danger' : 'warning')}>
-                {diagResults.status.toUpperCase()}
+              <Pill tone={statusTone(diagResults.overall_status)}>
+                {diagResults.overall_status?.toUpperCase()}
               </Pill>
             </div>
 
@@ -178,9 +122,9 @@ export default function RadiusLogs() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-slate-500">Database Record:</span>
-                  {diagResults.checks.dbExists ? (
+                  {diagResults.db?.exists ? (
                     <span className="flex items-center gap-1 font-semibold text-emerald-600">
-                      <CheckCircle size={15} /> Found ({diagResults.checks.dbStatus})
+                      <CheckCircle size={15} /> Found ({diagResults.db.status}{diagResults.db.is_expired ? ', expired' : ''})
                     </span>
                   ) : (
                     <span className="flex items-center gap-1 font-semibold text-rose-600">
@@ -189,15 +133,37 @@ export default function RadiusLogs() {
                   )}
                 </div>
 
-                {diagResults.checks.dbExists && (
+                {diagResults.db?.exists && (
                   <>
                     <div className="flex items-center justify-between">
                       <span className="text-slate-500">Plan Package:</span>
-                      <span className="font-semibold text-slate-700">{diagResults.checks.planName || '—'}</span>
+                      <span className="font-semibold text-slate-700">{diagResults.db.plan_name || '—'}</span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-slate-500">Voucher Price:</span>
-                      <span className="font-semibold text-slate-700">Rs. {diagResults.voucher?.price}</span>
+                      <span className="font-semibold text-slate-700">Rs. {diagResults.db.price}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500">RADIUS Credentials:</span>
+                      {diagResults.radius_tables?.has_credentials ? (
+                        <span className="flex items-center gap-1 font-semibold text-emerald-600">
+                          <CheckCircle size={15} /> Present
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1 font-semibold text-rose-600">
+                          <XCircle size={15} /> Missing from radcheck
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500">Online Right Now:</span>
+                      {diagResults.sessions?.is_online_now ? (
+                        <span className="flex items-center gap-1 font-semibold text-emerald-600">
+                          <Wifi size={15} /> Yes
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 font-semibold">No</span>
+                      )}
                     </div>
                   </>
                 )}
@@ -205,26 +171,42 @@ export default function RadiusLogs() {
 
               <div className="space-y-2 border-t md:border-t-0 md:border-l pt-3 md:pt-0 md:pl-4">
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-500">RADIUS Auth Response:</span>
-                  {diagResults.checks.radiusAuth ? (
-                    <span className="flex items-center gap-1 font-semibold text-emerald-600">
-                      <CheckCircle size={15} /> Access-Accept
-                    </span>
-                  ) : diagResults.authStatus === 'Access-Reject' ? (
-                    <span className="flex items-center gap-1 font-semibold text-rose-600">
-                      <XCircle size={15} /> Access-Reject
-                    </span>
+                  <span className="text-slate-500">Live RADIUS Test:</span>
+                  {diagResults.live_test?.ran ? (
+                    diagResults.live_test.accepted ? (
+                      <span className="flex items-center gap-1 font-semibold text-emerald-600">
+                        <CheckCircle size={15} /> Access-Accept
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1 font-semibold text-rose-600">
+                        <XCircle size={15} /> Access-Reject
+                      </span>
+                    )
                   ) : (
-                    <span className="flex items-center gap-1 font-semibold text-slate-400">
-                      <HelpCircle size={15} /> {diagResults.authStatus || 'Skipped'}
+                    <span className="flex items-center gap-1 font-semibold text-slate-400" title={diagResults.live_test?.skipped_reason}>
+                      <HelpCircle size={15} /> Skipped
                     </span>
                   )}
                 </div>
 
-                {diagResults.matchedLogs?.length > 0 && (
+                {diagResults.live_test?.reply_message && (
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-slate-500 shrink-0">Server Reply-Message:</span>
+                    <span className="font-semibold text-slate-700 text-right">"{diagResults.live_test.reply_message}"</span>
+                  </div>
+                )}
+
+                {diagResults.log_matches?.length > 0 && (
                   <div className="flex items-center justify-between">
                     <span className="text-slate-500">Server Log Matches:</span>
-                    <span className="font-semibold text-slate-700">{diagResults.matchedLogs.length} events</span>
+                    <span className="font-semibold text-slate-700">{diagResults.log_matches.length} events</span>
+                  </div>
+                )}
+
+                {diagResults.sessions?.recent?.length > 0 && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500">Recent Sessions:</span>
+                    <span className="font-semibold text-slate-700">{diagResults.sessions.recent.length} found</span>
                   </div>
                 )}
               </div>
@@ -241,18 +223,44 @@ export default function RadiusLogs() {
               </p>
             </div>
 
+            {/* Recent sessions detail */}
+            {diagResults.sessions?.recent?.length > 0 && (
+              <div className="space-y-2 mt-2">
+                <p className="font-bold text-slate-700 text-xs">Recent Connections (radacct):</p>
+                <div className="divide-y border border-slate-100 bg-white rounded-xl overflow-hidden max-h-[160px] overflow-y-auto">
+                  {diagResults.sessions.recent.map((s: any, i: number) => (
+                    <div key={i} className="p-3 text-xs flex items-start justify-between gap-3 hover:bg-slate-50/50">
+                      <div>
+                        <p className="font-semibold text-slate-700">
+                          {s.acctstarttime || '—'} {s.acctstoptime ? `→ ${s.acctstoptime}` : '(still open)'}
+                        </p>
+                        <p className="text-[10px] text-slate-400 font-mono">
+                          NAS: {s.nasipaddress || '—'} · IP: {s.framedipaddress || '—'} · MAC: {s.callingstationid || '—'}
+                        </p>
+                      </div>
+                      <span className="text-[10px] text-slate-400 shrink-0 whitespace-nowrap">
+                        {((Number(s.acctinputoctets || 0) + Number(s.acctoutputoctets || 0)) / 1048576).toFixed(1)} MB
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Relevant logs detail list */}
-            {diagResults.matchedLogs?.length > 0 && (
+            {diagResults.log_matches?.length > 0 && (
               <div className="space-y-2 mt-2">
                 <p className="font-bold text-slate-700 text-xs">Recent Server Log Entries for this Voucher:</p>
                 <div className="divide-y border border-slate-100 bg-white rounded-xl overflow-hidden max-h-[140px] overflow-y-auto">
-                  {diagResults.matchedLogs.slice(0, 3).map((l: any, i: number) => (
+                  {diagResults.log_matches.slice(0, 5).map((l: any, i: number) => (
                     <div key={i} className="p-3 text-xs flex items-start justify-between gap-3 hover:bg-slate-50/50">
                       <div className="flex gap-2 items-start">
                         {l.type === 'success' ? (
                           <ShieldCheck size={16} className="text-emerald-500 shrink-0 mt-0.5" />
-                        ) : (
+                        ) : l.type === 'reject' ? (
                           <ShieldAlert size={16} className="text-rose-500 shrink-0 mt-0.5" />
+                        ) : (
+                          <HelpCircle size={16} className="text-slate-400 shrink-0 mt-0.5" />
                         )}
                         <div>
                           <p className="font-semibold text-slate-700">{l.status_message}</p>

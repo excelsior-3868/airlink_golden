@@ -174,6 +174,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Voucher Diagnostics log — readable by all authenticated roles.
     Route::get('/radius/server-log', [RadiusController::class, 'serverLog']);
+    Route::get('/radius/diagnose/{code}', [RadiusController::class, 'diagnoseVoucher']);
 
     // Seasons lookup readable by all authenticated roles
     Route::get('/seasons', [SeasonController::class, 'index']);

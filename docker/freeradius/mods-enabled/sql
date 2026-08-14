@@ -1,45 +1,53 @@
-# Airlink v3.0 — FreeRADIUS SQL module, pointed at the shared airlink DB.
-# Reads radcheck/radreply, writes radacct/radpostauth. Table names are the
-# FreeRADIUS defaults, which match our migrations exactly.
+# Airlink v3.0 — FreeRADIUS SQL module.
+#
+# Ported from the mature policy replicated off the sibling VPS
+# (scripts/radius-replica), re-pointed at this stack's dockerized mariadb
+# instead of a host-installed FreeRADIUS talking to 127.0.0.1:3308.
 sql {
-    dialect = "mysql"
-    driver  = "rlm_sql_${dialect}"
+	dialect = "mysql"
+	driver = "rlm_sql_mysql"
 
-    server   = "mariadb"
-    port     = 3306
-    login    = "airlink"
-    password = "airlink_pass"
-    radius_db = "airlink"
+	mysql {
+		warnings = auto
+	}
 
-    # Read dynamic clients from the database nas table.
-    read_clients = yes
-    client_table = "nas"
+	# Internal docker network — service name, not the host-published port.
+	server = "mariadb"
+	port = 3306
+	login = "airlink"
+	password = "airlink_pass"
+	radius_db = "airlink_mera"
 
-    # Standard table names (match our schema).
-    acct_table1   = "radacct"
-    acct_table2   = "radacct"
-    postauth_table = "radpostauth"
-    authcheck_table = "radcheck"
-    authreply_table = "radreply"
-    groupcheck_table = "radgroupcheck"
-    groupreply_table = "radgroupreply"
-    usergroup_table = "radusergroup"
-    delete_stale_sessions = yes
+	acct_table1 = "radacct"
+	acct_table2 = "radacct"
+	postauth_table = "radpostauth"
+	authcheck_table = "radcheck"
+	groupcheck_table = "radgroupcheck"
+	authreply_table = "radreply"
+	groupreply_table = "radgroupreply"
+	usergroup_table = "radusergroup"
+	delete_stale_sessions = yes
 
-    pool {
-        start = 1
-        min   = 0
-        max   = 5
-        spare = 1
-        uses  = 0
-        retry_delay = 30
-        lifetime = 0
-        idle_timeout = 60
-    }
+	pool {
+		start = 1
+		min = 0
+		max = 5
+		spare = 1
+		uses = 0
+		retry_delay = 30
+		lifetime = 0
+		idle_timeout = 60
+	}
 
-    read_groups = yes
-    group_attribute = "SQL-Group"
+	# NAS clients are managed as client{} stanzas in the shared clients.conf
+	# (written by the Airlink app's ClientsConfService) rather than the 'nas'
+	# SQL table, so there's exactly one definition per device and
+	# require_message_authenticator can be set per client (SQL-loaded
+	# clients don't support that field).
+	read_clients = no
+	client_table = "nas"
 
-    # Canonical query set shipped with the image.
-    $INCLUDE ${modconfdir}/${.:name}/main/${dialect}/queries.conf
+	group_attribute = "SQL-Group"
+
+	$INCLUDE ${modconfdir}/${.:name}/main/${dialect}/queries.conf
 }

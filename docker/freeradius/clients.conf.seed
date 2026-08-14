@@ -1,0 +1,100 @@
+# Airlink v3.0 — RADIUS clients (NAS).
+#
+# This is the SEED content for the shared clients.conf (see entrypoint.sh) —
+# it is only written once, the first time the volume is empty. After that,
+# this file is owned by the running system: the app's ClientsConfService
+# appends/edits client{} blocks below the marker as NAS devices are added
+# in the UI. Editing this seed file has no effect on an existing volume —
+# edit the live file directly (or reset the volume) if it needs to change.
+#
+# `client localhost` / `localhost_ipv6` are already defined in the stock
+# clients.conf that $INCLUDEs this file — don't redefine them here or
+# FreeRADIUS refuses to start ("Failed to add duplicate client localhost").
+
+# Lets the containerized backend's built-in RADIUS test-auth tool
+# (RadiusController::radiusAuthenticate) reach this server across the
+# Docker bridge network. Always sends Message-Authenticator.
+#
+# MUST match RADIUS_DOCKER_NETWORKS_SECRET / RADIUS_SECRET in .env and
+# docker-compose.prod.yml — rotate both together if you change this.
+client docker_networks {
+	ipaddr = 172.16.0.0/12
+	secret = "testing123"
+	require_message_authenticator = yes
+}
+
+#######################################################################
+#
+#  Real NAS devices. Same "testing123" placeholder secret on every one —
+#  FreeRADIUS will warn that it's short/guessable for each. Rotate these
+#  to real per-device secrets (and update the matching router config)
+#  before this server handles live production traffic.
+#
+client testuser {
+	ipaddr = 192.168.1.3
+	secret = testing123
+}
+
+client testbinod {
+	ipaddr = 192.168.1.16
+	secret = testing123
+}
+
+client vmi-server {
+	ipaddr = 62.72.43.73
+	secret = testing123
+}
+
+client mikrotik1 {
+	ipaddr = 172.22.22.1
+	secret = testing123
+}
+
+client mikrotik3 {
+	ipaddr = 172.22.22.3
+	secret = testing123
+}
+
+client mikrotik4 {
+	ipaddr = 172.22.22.4
+	secret = testing123
+}
+
+client mikrotik5 {
+	ipaddr = 172.22.22.5
+	secret = testing123
+}
+
+client mikrotik6 {
+	ipaddr = 172.22.22.6
+	secret = testing123
+}
+
+client mikrotik7 {
+	ipaddr = 172.22.22.7
+	secret = testing123
+}
+
+client mikrotik8 {
+	ipaddr = 111.119.46.50
+	secret = testing123
+}
+
+client mikrotik9 {
+	ipaddr = 110.34.2.2
+	secret = testing123
+}
+
+client mikrotik10 {
+	ipaddr = 118.91.162.14
+	secret = testing123
+}
+
+client mikrotiksubisu {
+	ipaddr = 110.34.1.63
+	secret = testing123
+}
+
+# Admin-managed NAS devices below this line are written/updated by the
+# Airlink app (app/Services/ClientsConfService.php). Manual edits will be
+# overwritten the next time the matching device is saved from the frontend.

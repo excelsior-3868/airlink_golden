@@ -17,3 +17,8 @@ backend/storage/app/legacy-import-report.json
 # the dev MariaDB, not in git. Only the compressed form is ignored: plain .sql
 # is left alone so docker/mariadb/initdb.d schema scripts stay tracked.
 *.sql.gz
+
+# Ad-hoc DB backups and legacy dumps dropped at the repo root/frontend —
+# real customer data (voucher codes, passwords), never belongs in git history.
+/backups/
+/frontend/*.sql
