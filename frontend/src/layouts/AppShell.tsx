@@ -129,7 +129,7 @@ const NavList = ({ items, location, expanded, toggleExpanded, user, can, onNavig
               title={collapsed ? label : undefined}
               aria-label={collapsed ? label : undefined}
               aria-expanded={open}
-              className={`app-sidebar-nav-item w-full group ${
+              className={`app-sidebar-nav-item app-sidebar-nav-item-header w-full group ${
                 hasActiveChild ? 'app-sidebar-nav-item-active' : 'app-sidebar-nav-item-idle'
               }`}
             >
@@ -293,10 +293,10 @@ export default function AppShell() {
             )}
           </div>
           <div className={`app-sidebar-label ${collapsed ? 'app-sidebar-label-out' : 'app-sidebar-label-in'} min-w-0 flex-1 overflow-hidden`}>
-            <p className="font-extrabold text-lg tracking-tight text-[#003164] leading-none whitespace-nowrap overflow-hidden text-ellipsis">
+            <p className="font-medium text-lg tracking-tight text-[#003164] leading-none whitespace-nowrap overflow-hidden text-ellipsis">
               {branding.property_name || 'Airlink'}
             </p>
-            <p className="text-[10px] text-slate-400 font-bold tracking-wider mt-1 uppercase whitespace-nowrap">Billing v3.0</p>
+            <p className="text-[10px] text-slate-400 font-medium tracking-wider mt-1 whitespace-nowrap">Billing V3.0</p>
           </div>
         </div>
 
@@ -390,7 +390,7 @@ export default function AppShell() {
             <div className="bg-[#003164] text-white rounded-xl p-1 shadow-sm w-7 h-7 flex items-center justify-center overflow-hidden">
               {branding.logo_url ? <img src={branding.logo_url} alt="Logo" className="w-full h-full object-contain" /> : <Wifi size={14} />}
             </div>
-            <p className="font-extrabold text-base tracking-tight text-[#003164] leading-none">{branding.property_name || 'Airlink'}</p>
+            <p className="font-medium text-base tracking-tight text-[#003164] leading-none">{branding.property_name || 'Airlink'}</p>
           </div>
 
           {/* Compact balance badges — icon substitutes for the label so large
@@ -438,8 +438,8 @@ export default function AppShell() {
                     {branding.logo_url ? <img src={branding.logo_url} alt="Logo" className="w-full h-full object-contain" /> : <Wifi size={18} />}
                   </div>
                   <div>
-                    <p className="font-extrabold text-lg tracking-tight text-[#003164] leading-none">{branding.property_name || 'Airlink'}</p>
-                    <p className="text-[10px] text-slate-400 font-bold tracking-wider mt-1 uppercase">Billing v3.0</p>
+                    <p className="font-medium text-lg tracking-tight text-[#003164] leading-none">{branding.property_name || 'Airlink'}</p>
+                    <p className="text-[10px] text-slate-400 font-medium tracking-wider mt-1">Billing V3.0</p>
                   </div>
                 </div>
                 <button

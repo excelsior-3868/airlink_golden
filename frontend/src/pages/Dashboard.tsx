@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Wallet, Database, Users2, Store, Ticket, TrendingUp, History, UserCheck, LayoutDashboard, CreditCard, PlusCircle, Package, UserPlus, Receipt, Coins, Sparkles, Layers, Activity, BarChart3, HandCoins, Router } from 'lucide-react'
+import { Wallet, Database, Users2, Store, Ticket, TrendingUp, History, UserCheck, LayoutDashboard, CreditCard, PlusCircle, Package, UserPlus, Receipt, Coins, Sparkles, Layers, Activity, BarChart3, HandCoins, Router, Terminal } from 'lucide-react'
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { api } from '../lib/api'
 import { useQuery } from '../lib/cache'
@@ -149,6 +149,14 @@ export default function Dashboard() {
   const isDownlineManager = d.role === 'admin' || d.role === 'reseller'
   const showCollect = isDownlineManager && can('wallet_load')
   const showQuickFund = isDownlineManager && (can('allocate_gb') || (d.role === 'admin' && can('wallet_load')))
+  const showVoucherSales = can('generate_voucher') || can('reports')
+
+  // Segmented-pill toolbar for every quick action. Quick Fund is the primary
+  // action (bold, navy) since it's what most operators reach for first; the
+  // rest (Voucher Sales, Voucher Diagnostics just route elsewhere — the other
+  // two open a modal here) sit alongside it in a muted, uniform style.
+  const toolbarPrimaryClass = 'flex items-center gap-2 px-4 py-2.5 text-sm font-bold text-[#003164] hover:bg-slate-50 transition-colors whitespace-nowrap'
+  const toolbarItemClass = 'flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors whitespace-nowrap'
 
   return (
     <div>
@@ -158,28 +166,42 @@ export default function Dashboard() {
         icon={<LayoutDashboard size={22} className="text-blue-500" />}
         showOnlineUsers={true}
         action={
-          (showCollect || showQuickFund) && (
-            <div className="flex items-center gap-2">
-              {showCollect && (
-                <motion.button
-                  whileTap={{ scale: 0.95 }}
-                  className="btn-ghost flex items-center gap-2"
-                  onClick={() => { setCollectErr(''); setCollectOpen(true) }}
-                >
-                  <CreditCard size={16} /> Collect Payment
-                </motion.button>
-              )}
-              {showQuickFund && (
-                <motion.button
-                  whileTap={{ scale: 0.95 }}
-                  className="btn-primary flex items-center gap-2"
-                  onClick={() => setQuickFundOpen(true)}
-                >
-                  <PlusCircle size={16} /> Quick Fund
-                </motion.button>
-              )}
-            </div>
-          )
+          <div className="flex items-center divide-x divide-slate-200 rounded-full border border-slate-200 bg-white overflow-hidden shadow-sm">
+            {showQuickFund && (
+              <motion.button
+                whileTap={{ scale: 0.95 }}
+                className={toolbarPrimaryClass}
+                onClick={() => setQuickFundOpen(true)}
+              >
+                <PlusCircle size={16} className="text-[#003164]" /> Quick Fund
+              </motion.button>
+            )}
+            {showCollect && (
+              <motion.button
+                whileTap={{ scale: 0.95 }}
+                className={toolbarItemClass}
+                onClick={() => { setCollectErr(''); setCollectOpen(true) }}
+              >
+                <CreditCard size={16} className="text-slate-400" /> Collect Payment
+              </motion.button>
+            )}
+            {showVoucherSales && (
+              <motion.button
+                whileTap={{ scale: 0.95 }}
+                className={toolbarItemClass}
+                onClick={() => navigate('/vouchers')}
+              >
+                <Ticket size={16} className="text-slate-400" /> Voucher Sales
+              </motion.button>
+            )}
+            <motion.button
+              whileTap={{ scale: 0.95 }}
+              className={toolbarItemClass}
+              onClick={() => navigate('/diagnostics')}
+            >
+              <Terminal size={16} className="text-slate-400" /> Voucher Diagnostics
+            </motion.button>
+          </div>
         }
       />
 

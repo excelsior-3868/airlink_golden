@@ -130,6 +130,12 @@
     display: flex; align-items: center; gap: 0.75rem; padding: 0.7rem 0.75rem;
     border-radius: 16px; font-weight: 600; font-size: 0.875rem; transition: all 0.15s ease;
   }
+  /* Group headers (Plan, PPPoE, Settings) are section labels, not links —
+     drop the bold weight the shared item class applies so they read lighter
+     than the leaf items underneath them. */
+  .app-sidebar-nav-item-header {
+    font-weight: 500;
+  }
   .app-sidebar-nav-item-idle { color: rgb(100 116 139); }
   .app-sidebar-nav-item-idle:hover { background: rgba(255,255,255,0.8); color: rgb(51 65 85); }
   .app-sidebar-nav-item-active {
