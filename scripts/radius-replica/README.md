@@ -33,10 +33,10 @@ This toolkit enables automated replication of the exact FreeRADIUS server setup 
 On this server, run the export script as root:
 
 ```bash
-sudo bash /home/airlink_3.0/scripts/radius-replica/export-radius.sh
+sudo bash /home/airlink_mera/scripts/radius-replica/export-radius.sh
 ```
 
-This generates an archive in `/home/airlink_3.0/scripts/radius-replica/output/`:
+This generates an archive in `/home/airlink_mera/scripts/radius-replica/output/`:
 - `radius-replica-bundle-<TIMESTAMP>.tar.gz` (and symlink `radius-replica-bundle.tar.gz`)
 
 ---
@@ -46,7 +46,7 @@ This generates an archive in `/home/airlink_3.0/scripts/radius-replica/output/`:
 Copy the generated tarball to your new VPS:
 
 ```bash
-scp /home/airlink_3.0/scripts/radius-replica/output/radius-replica-bundle.tar.gz root@<NEW_VPS_IP>:/tmp/
+scp /home/airlink_mera/scripts/radius-replica/output/radius-replica-bundle.tar.gz root@<NEW_VPS_IP>:/tmp/
 ```
 
 ---

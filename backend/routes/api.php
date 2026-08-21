@@ -156,6 +156,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Reports — used-voucher package summary (scoped); drill-down via /vouchers.
     Route::get('/reports/package-summary', [ReportController::class, 'packageSummary'])->middleware('permission:reports');
     Route::get('/reports/reseller-summary', [ReportController::class, 'resellerSummary'])->middleware('permission:reports');
+    Route::get('/reports/sales-summary', [ReportController::class, 'salesSummary']);
 
     // System Permissions Configuration Matrix
     Route::get('/permissions', [PermissionController::class, 'index']);
@@ -172,7 +173,9 @@ Route::middleware('auth:sanctum')->group(function () {
     // NAS / router management (admin only). List is readable by all authed users.
     Route::get('/nas', [NasController::class, 'index']);
 
-    // Voucher Diagnostics log — readable by all authenticated roles.
+    // Voucher Diagnostics & Online Users — readable by all authenticated roles.
+    Route::get('/radius/online-users', [RadiusController::class, 'onlineUsers']);
+    Route::post('/radius/disconnect-user', [RadiusController::class, 'disconnectUser']);
     Route::get('/radius/server-log', [RadiusController::class, 'serverLog']);
     Route::get('/radius/diagnose/{code}', [RadiusController::class, 'diagnoseVoucher']);
 
@@ -199,8 +202,6 @@ Route::middleware('auth:sanctum')->group(function () {
 
         Route::get('/login-logs', [LoginLogController::class, 'index']);
         Route::get('/radius/status', [RadiusController::class, 'status']);
-        Route::get('/radius/online-users', [RadiusController::class, 'onlineUsers']);
-        Route::post('/radius/disconnect-user', [RadiusController::class, 'disconnectUser']);
         Route::get('/radius/auth-logs', [RadiusController::class, 'authLogs']);
         Route::get('/radius/clients-config', [RadiusController::class, 'clientsConfig']);
         Route::post('/radius/test-auth', [RadiusController::class, 'testAuth']);

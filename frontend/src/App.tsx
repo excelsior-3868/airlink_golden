@@ -29,6 +29,7 @@ import PaymentMethods from './pages/PaymentMethods'
 import OnlineUsers from './pages/OnlineUsers'
 import PppoeCustomers from './pages/PppoeCustomers'
 import BrandingSettings from './pages/BrandingSettings'
+import SalesSummary from './pages/SalesSummary'
 
 function Protected({ children }: { children: JSX.Element }) {
   const { user, loading } = useAuth()
@@ -78,6 +79,7 @@ export default function App() {
       >
         <Route path="/" element={<Guard perm="dashboard"><Dashboard /></Guard>} />
         <Route path="/financial-dashboard" element={<Guard roles={['admin', 'reseller', 'seller']}><FinancialDashboard /></Guard>} />
+        <Route path="/sales-summary" element={<Guard roles={['admin', 'reseller', 'seller']}><SalesSummary /></Guard>} />
         <Route path="/online-users" element={<Guard roles={['admin', 'reseller', 'seller']}><OnlineUsers /></Guard>} />
         <Route path="/pppoe" element={<Navigate to="/pppoe/customers" replace />} />
         <Route path="/pppoe/customers" element={<Guard perm="view_pppoe" roles={['admin', 'reseller']}><PppoeCustomers /></Guard>} />

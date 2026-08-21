@@ -421,18 +421,20 @@ export default function Dashboard() {
       {d.role === 'reseller' && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatCard
-              label="Wallet Balance"
-              value={<span className="text-emerald-600">{rs(d.balances.wallet)}</span>}
-              icon={<Wallet size={22} />}
-              iconColorClass="text-emerald-600 bg-emerald-50 border border-emerald-100/50"
-            />
-            <StatCard
-              label="GB Balance (Stock)"
-              value={<span className="text-cyan-600">{gb(d.balances.gb)}</span>}
-              icon={<Database size={22} />}
-              iconColorClass="text-cyan-600 bg-cyan-50 border border-cyan-100/50"
-              sub={<span>Purchased: <strong className="text-slate-700">{gb(d.gb_purchased)}</strong></span>}
+            <DualStatCard
+              top={{
+                label: 'Wallet Balance',
+                value: <span className="text-emerald-600">{rs(d.balances.wallet)}</span>,
+                icon: <Wallet size={22} />,
+                iconColorClass: 'text-emerald-600 bg-emerald-50 border border-emerald-100/50',
+              }}
+              bottom={{
+                label: 'GB Balance (Stock)',
+                value: <span className="text-cyan-600">{gb(d.balances.gb)}</span>,
+                icon: <Database size={22} />,
+                iconColorClass: 'text-cyan-600 bg-cyan-50 border border-cyan-100/50',
+                sub: <span>Purchased: <strong className="text-slate-700">{gb(d.gb_purchased)}</strong></span>,
+              }}
             />
             <StatCard
               label="Allowable GB Balance"

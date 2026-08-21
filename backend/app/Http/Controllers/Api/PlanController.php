@@ -59,7 +59,36 @@ class PlanController extends Controller
             }
         }
 
-        return $this->ok($query->get());
+        $plans = $query->get();
+
+        if ($request->boolean('with_stock')) {
+            $voucherQuery = \App\Models\Voucher::query()
+                ->whereNull('void_reason')
+                ->where('status', 'ready');
+
+            if ($actor && ! $actor->isAdmin()) {
+                if ($actor->isReseller()) {
+                    $voucherQuery->where('reseller_id', $actor->id);
+                    if (! $this->isFullAccessToken($actor)) {
+                        $voucherQuery->where('owner_id', $actor->id);
+                    }
+                } elseif ($actor->isSeller()) {
+                    $voucherQuery->where('seller_id', $actor->id);
+                }
+            }
+
+            $stockCounts = $voucherQuery
+                ->selectRaw('plan_id, COUNT(*) as aggregate')
+                ->groupBy('plan_id')
+                ->pluck('aggregate', 'plan_id')
+                ->all();
+
+            foreach ($plans as $plan) {
+                $plan->ready_voucher_count = (int) ($stockCounts[$plan->id] ?? 0);
+            }
+        }
+
+        return $this->ok($plans);
     }
 
     public function show(Request $request, InternetPlan $plan): JsonResponse

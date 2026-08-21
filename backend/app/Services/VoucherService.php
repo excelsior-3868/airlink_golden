@@ -194,17 +194,23 @@ class VoucherService
         return $code;
     }
 
-    /** Code length: 6 uppercase alphanumerics, matching the legacy voucher format. */
+    /** Code length: 6 uppercase alphanumerics, matching the legacy voucher format. Excludes 0 and O to prevent user confusion. */
     private const CODE_LENGTH = 6;
+    private const CODE_CHARSET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZ';
 
     /** @return string[] $count unique voucher codes not already in the DB. */
     private function uniqueCodes(int $count): array
     {
         $codes = []; // set of code => true
+        $charsetLen = strlen(self::CODE_CHARSET);
         while (count($codes) < $count) {
             $candidates = [];
             for ($i = 0, $need = $count - count($codes); $i < $need; $i++) {
-                $candidates[strtoupper(Str::random(self::CODE_LENGTH))] = true;
+                $code = '';
+                for ($j = 0; $j < self::CODE_LENGTH; $j++) {
+                    $code .= self::CODE_CHARSET[random_int(0, $charsetLen - 1)];
+                }
+                $candidates[$code] = true;
             }
             $list = array_keys($candidates);
             $takenVouchers = Voucher::whereIn('code', $list)->pluck('code')->all();

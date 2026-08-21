@@ -34,6 +34,8 @@ services:
     container_name: airlink-backend
     restart: unless-stopped
     environment:
+      # .env.example defaults to sqlite; prod sets this too.
+      DB_CONNECTION: mysql
       DB_HOST: mariadb
       DB_PORT: 3306
       DB_DATABASE: ${DB_DATABASE:-airlink}
@@ -44,9 +46,14 @@ services:
       COMPOSER_PROCESS_TIMEOUT: 0
       DOCKER_PROXY_URL: http://docker-proxy:2375
       FREERADIUS_CONTAINER: airlink-freeradius
+      # Same shared paths prod uses — ClientsConfService writes clients.conf
+      # and touches the trigger inside the radius_shared volume, which the
+      # freeradius container seeds and watches. NOT the repo bind mount.
+      RADIUS_CLIENTS_CONF_PATH: /var/lib/airlink-radius/clients.conf
+      RADIUS_RESTART_TRIGGER_PATH: /var/lib/airlink-radius/.restart-trigger
     volumes:
       - ./backend:/var/www/html
-      - ./docker/freeradius/clients.conf:/var/www/html/clients.conf:ro
+      - radius_shared:/var/lib/airlink-radius
       # vendor lives in a fast Linux volume, not the slow Windows bind mount.
       - backend_vendor:/var/www/html/vendor
       - radius_logs:/var/log/freeradius:ro
@@ -74,6 +81,8 @@ services:
     container_name: airlink-queue
     restart: unless-stopped
     environment:
+      # .env.example defaults to sqlite; prod sets this too.
+      DB_CONNECTION: mysql
       DB_HOST: mariadb
       DB_PORT: 3306
       DB_DATABASE: ${DB_DATABASE:-airlink}
@@ -95,6 +104,8 @@ services:
     container_name: airlink-scheduler
     restart: unless-stopped
     environment:
+      # .env.example defaults to sqlite; prod sets this too.
+      DB_CONNECTION: mysql
       DB_HOST: mariadb
       DB_PORT: 3306
       DB_DATABASE: ${DB_DATABASE:-airlink}
@@ -139,6 +150,7 @@ services:
       - "${RADIUS_AUTH_PORT:-18120}:1812/udp"
       - "${RADIUS_ACCT_PORT:-18130}:1813/udp"
     volumes:
+      - radius_shared:/var/lib/airlink-radius
       - radius_logs:/var/log/freeradius
     depends_on:
       mariadb:
@@ -162,4 +174,5 @@ volumes:
   mariadb_data:
   backend_vendor:
   frontend_node_modules:
+  radius_shared:
   radius_logs:

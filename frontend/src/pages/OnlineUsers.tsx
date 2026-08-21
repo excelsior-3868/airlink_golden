@@ -14,6 +14,7 @@ interface OnlineSession {
   ip_address?: string
   mac_address?: string
   nas_ip?: string
+  nas_name?: string
   start_time?: string
   session_time?: number
   input_bytes?: number
@@ -110,8 +111,13 @@ export default function OnlineUsers() {
     ? sessions
     : sessions.filter((s) => (s.connection_type ?? 'hotspot') === typeFilter)
 
-  const totalVolumeBytes = visibleSessions.reduce((acc, s) => acc + (s.total_bytes || 0), 0)
-  const uniqueNasDevices = new Set(visibleSessions.map((s) => s.nas_ip).filter(Boolean)).size
+  // The summary cards always describe every live session, never the active tab —
+  // a number that silently changed with the Hotspot/PPPoE filter read as a bug.
+  const sumBytes = (list: OnlineSession[]) => list.reduce((acc, s) => acc + (s.total_bytes || 0), 0)
+  const totalVolumeBytes = sumBytes(sessions)
+  const hotspotVolumeBytes = sumBytes(sessions.filter((s) => s.connection_type !== 'pppoe'))
+  const pppoeVolumeBytes = sumBytes(sessions.filter((s) => s.connection_type === 'pppoe'))
+  const uniqueNasDevices = new Set(sessions.map((s) => s.nas_name || s.nas_ip).filter(Boolean)).size
 
   const typeTabs: { key: 'all' | 'hotspot' | 'pppoe'; label: string; count: number }[] = [
     { key: 'all', label: 'All', count: sessions.length },
@@ -138,7 +144,7 @@ export default function OnlineUsers() {
       />
 
       {/* Top Stat Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         <StatCard
           label="Live Online Users"
           value={
@@ -155,21 +161,30 @@ export default function OnlineUsers() {
           iconColorClass="text-cyan-600 bg-cyan-50 border border-cyan-100/50"
         />
         <StatCard
-          label="Total Bandwidth Consumed"
-          value={<span className="text-purple-600">{formatBytes(totalVolumeBytes)}</span>}
-          icon={<Database size={22} />}
-          iconColorClass="text-purple-600 bg-purple-50 border border-purple-100/50"
+          label="Hotspot Users Online"
+          value={<span className="text-sky-600">{num(hotspotCount)}</span>}
+          sub={`${formatBytes(hotspotVolumeBytes)} consumed`}
+          icon={<Wifi size={22} />}
+          iconColorClass="text-sky-600 bg-sky-50 border border-sky-100/50"
         />
         <StatCard
           label="PPPoE Subscribers Online"
           value={<span className="text-indigo-600">{num(pppoeCount)}</span>}
-          sub={`${num(hotspotCount)} hotspot vouchers online`}
+          sub={`${formatBytes(pppoeVolumeBytes)} consumed`}
           icon={<Activity size={22} />}
           iconColorClass="text-indigo-600 bg-indigo-50 border border-indigo-100/50"
         />
         <StatCard
+          label="Total Bandwidth Consumed"
+          value={<span className="text-purple-600">{formatBytes(totalVolumeBytes)}</span>}
+          sub={`${num(sessions.length)} live sessions`}
+          icon={<Database size={22} />}
+          iconColorClass="text-purple-600 bg-purple-50 border border-purple-100/50"
+        />
+        <StatCard
           label="Active Gateways"
           value={<span className="text-emerald-600">{num(uniqueNasDevices)}</span>}
+          sub="Carrying live traffic"
           icon={<Router size={22} />}
           iconColorClass="text-emerald-600 bg-emerald-50 border border-emerald-100/50"
         />
@@ -245,6 +260,7 @@ export default function OnlineUsers() {
                   <th>Type</th>
                   <th>IP Address</th>
                   <th>MAC Address</th>
+                  <th>NAS / Gateway</th>
                   <th>Internet Plan</th>
                   <th>Connected Since</th>
                   <th>Data Volume</th>
@@ -285,6 +301,13 @@ export default function OnlineUsers() {
                     </td>
                     <td className="font-mono text-slate-600 text-xs">{s.ip_address || 'Dynamic'}</td>
                     <td className="font-mono text-xs text-slate-500">{s.mac_address || 'Active'}</td>
+                    <td className="text-xs text-slate-600">
+                      <div className="flex items-center gap-1.5 font-semibold">
+                        <Router size={12} className="text-slate-400 shrink-0" />
+                        <span>{s.nas_name || 'Unknown'}</span>
+                      </div>
+                      {s.nas_ip && <div className="text-[10px] text-slate-400 font-mono">{s.nas_ip}</div>}
+                    </td>
                     <td>
                       <span className="pill info font-bold">{s.plan_name || 'Standard'}</span>
                     </td>

@@ -8,6 +8,7 @@ use App\Services\ClientsConfService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 /**
  * MikroTik router / NAS registry (admin-only). Each device is written as its
@@ -67,7 +68,11 @@ class NasController extends Controller
     {
         return $request->validate([
             'name' => ['required', 'string', 'max:255'],
-            'nasname' => ['required', 'string', 'max:255'],
+            // Two devices sharing an IP means two client{} stanzas in
+            // clients.conf with the same ipaddr — FreeRADIUS treats that as a
+            // fatal config error and refuses to start at all (crash-loops on
+            // every restart, taking every NAS down, not just the duplicate).
+            'nasname' => ['required', 'string', 'max:255', Rule::unique('nas_devices', 'nasname')->ignore($id)],
             'shortname' => ['nullable', 'string', 'max:255'],
             'type' => ['nullable', 'string', 'max:50'],
             'secret' => ['required', 'string', 'max:255'],
@@ -80,6 +85,8 @@ class NasController extends Controller
             'status' => ['nullable', 'in:active,disabled'],
             'require_message_authenticator' => ['nullable', 'in:auto,yes,no'],
             'owner_id' => ['nullable', 'exists:users,id'],
+        ], [
+            'nasname.unique' => 'This IP/hostname is already registered to another NAS device.',
         ]);
     }
 }

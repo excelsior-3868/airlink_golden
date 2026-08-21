@@ -170,7 +170,9 @@ export default function PppoeCustomers() {
   }, [allNas])
 
   const resellerOptions = useMemo(() => {
-    const opts: SelectOption[] = [{ value: '', label: 'System Admin (Direct Subscriber)' }]
+    // Resellers only: the empty value stays unlisted and simply means the admin
+    // is creating the subscriber for themselves (no delegation).
+    const opts: SelectOption[] = []
     allResellers.forEach((r: any) => opts.push({ value: String(r.id), label: r.name }))
     return opts
   }, [allResellers])
@@ -521,7 +523,7 @@ export default function PppoeCustomers() {
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
-                    <tr className="border-b border-slate-200/80 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 uppercase font-semibold tracking-wider">
+                    <tr className="border-b border-slate-200/80 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 font-semibold">
                       <th className="py-3 px-4">Subscriber</th>
                       <th className="py-3 px-4">Internet Plan</th>
                       <th className="py-3 px-4">Subscription Expiry</th>
@@ -732,7 +734,7 @@ export default function PppoeCustomers() {
             <div className="space-y-3.5 pt-1">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
                     Username / Login ID <span className="text-rose-500">*</span>
                   </label>
                   <input
@@ -745,7 +747,7 @@ export default function PppoeCustomers() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
                     PPPoE Password <span className="text-rose-500">*</span>
                   </label>
                   <input
@@ -760,7 +762,7 @@ export default function PppoeCustomers() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
                     Full Name
                   </label>
                   <input
@@ -773,7 +775,7 @@ export default function PppoeCustomers() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
                     Phone Number
                   </label>
                   <input
@@ -788,7 +790,7 @@ export default function PppoeCustomers() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
                     Physical Address / Location
                   </label>
                   <input
@@ -803,13 +805,15 @@ export default function PppoeCustomers() {
 
               {isAdmin && (
                 <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5">
-                    Assigned Reseller
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
+                    On the Behalf of
                   </label>
                   <CustomSelect
                     value={form.owner_id}
                     onChange={(v) => setForm({ ...form, owner_id: v })}
                     options={resellerOptions}
+                    placeholder="Select a reseller (optional)"
+                    searchable
                   />
                 </div>
               )}
@@ -820,7 +824,7 @@ export default function PppoeCustomers() {
           {modalTab === 'subscription' && (
             <div className="space-y-3.5 pt-1">
               <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5">
+                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
                   Internet Plan <span className="text-rose-500">*</span>
                 </label>
                 <Combobox
@@ -833,7 +837,7 @@ export default function PppoeCustomers() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
                     Contract Price Override (NPR)
                   </label>
                   <input
@@ -848,7 +852,7 @@ export default function PppoeCustomers() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
                     Initial Validity Multiplier
                   </label>
                   <input
@@ -886,7 +890,7 @@ export default function PppoeCustomers() {
             <div className="space-y-3.5 pt-1">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
                     Router / NAS Restriction
                   </label>
                   <CustomSelect
@@ -899,7 +903,7 @@ export default function PppoeCustomers() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
                     Manual MAC Address (Optional)
                   </label>
                   <input
@@ -912,7 +916,7 @@ export default function PppoeCustomers() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
                     Simultaneous Connections
                   </label>
                   <input
@@ -1014,7 +1018,7 @@ export default function PppoeCustomers() {
           {modalTab === 'identity' && (
             <div className="space-y-3.5 pt-1">
               <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5">
+                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
                   PPPoE Password <span className="text-rose-500">*</span>
                 </label>
                 <input
@@ -1027,7 +1031,7 @@ export default function PppoeCustomers() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
                     Full Name
                   </label>
                   <input
@@ -1039,7 +1043,7 @@ export default function PppoeCustomers() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
                     Phone Number
                   </label>
                   <input
@@ -1053,7 +1057,7 @@ export default function PppoeCustomers() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
                     Physical Address
                   </label>
                   <input
@@ -1070,7 +1074,7 @@ export default function PppoeCustomers() {
           {modalTab === 'subscription' && (
             <div className="space-y-3.5 pt-1">
               <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5">
+                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
                   Contract Price Override (NPR)
                 </label>
                 <input
@@ -1097,7 +1101,7 @@ export default function PppoeCustomers() {
             <div className="space-y-3.5 pt-1">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
                     Router / NAS Restriction
                   </label>
                   <CustomSelect
@@ -1110,7 +1114,7 @@ export default function PppoeCustomers() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
                     Bound MAC Address
                   </label>
                   <input
@@ -1123,7 +1127,7 @@ export default function PppoeCustomers() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
                     Simultaneous Connections
                   </label>
                   <input
@@ -1301,7 +1305,7 @@ export default function PppoeCustomers() {
                   <div className="overflow-x-auto max-h-80">
                     <table className="w-full text-left text-xs border-collapse">
                       <thead>
-                        <tr className="border-b border-slate-200/80 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-800/50 text-slate-500 uppercase font-semibold">
+                        <tr className="border-b border-slate-200/80 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-800/50 text-slate-500 font-semibold">
                           <th className="py-2.5 px-3">Session IP</th>
                           <th className="py-2.5 px-3">Caller MAC</th>
                           <th className="py-2.5 px-3">Start Time</th>
@@ -1336,7 +1340,7 @@ export default function PppoeCustomers() {
                   <div className="overflow-x-auto max-h-80">
                     <table className="w-full text-left text-xs border-collapse">
                       <thead>
-                        <tr className="border-b border-slate-200/80 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-800/50 text-slate-500 uppercase font-semibold">
+                        <tr className="border-b border-slate-200/80 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-800/50 text-slate-500 font-semibold">
                           <th className="py-2.5 px-3">Reference</th>
                           <th className="py-2.5 px-3">Plan</th>
                           <th className="py-2.5 px-3">Price Paid</th>

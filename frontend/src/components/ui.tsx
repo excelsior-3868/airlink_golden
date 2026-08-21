@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion'
-import { ReactNode, useState, useEffect, useRef } from 'react'
+import { ReactNode, useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useAuth } from '../lib/auth'
 import { rs, gb } from '../lib/format'
@@ -412,17 +412,25 @@ export function CustomSelect({
   const dropdownRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const [searchQuery, setSearchQuery] = useState('')
-  const [coords, setCoords] = useState({ top: 0, left: 0, width: 0 })
+  const [coords, setCoords] = useState({ top: 0, left: 0, width: 0, up: false })
 
   const updateCoords = () => {
-    if (ref.current) {
-      const rect = ref.current.getBoundingClientRect()
-      setCoords({
-        top: rect.bottom + window.scrollY,
-        left: rect.left + window.scrollX,
-        width: rect.width
-      })
-    }
+    if (!ref.current) return
+    const rect = ref.current.getBoundingClientRect()
+    // Flip above the trigger when the list would run past the viewport bottom
+    // (common inside modals, where the field sits near the lower edge).
+    const height = dropdownRef.current?.offsetHeight || 280
+    const spaceBelow = window.innerHeight - rect.bottom - 12
+    const spaceAbove = rect.top - 12
+    const up = spaceBelow < height && spaceAbove > spaceBelow
+    setCoords({
+      top: up
+        ? rect.top + window.scrollY - height - 6
+        : rect.bottom + window.scrollY + 6,
+      left: rect.left + window.scrollX,
+      width: rect.width,
+      up
+    })
   }
 
   useEffect(() => {
@@ -436,6 +444,12 @@ export function CustomSelect({
       window.removeEventListener('scroll', updateCoords, true)
     }
   }, [open])
+
+  // Re-measure once the list is mounted (and whenever filtering changes its
+  // height) so a flipped dropdown sits flush above the trigger.
+  useLayoutEffect(() => {
+    if (open) updateCoords()
+  }, [open, searchQuery, options.length])
 
   useEffect(() => {
     if (!open) return
@@ -536,7 +550,7 @@ export function CustomSelect({
           ref={dropdownRef}
           style={{
             position: 'absolute',
-            top: coords.top + 6,
+            top: coords.top,
             left: coords.left,
             minWidth: Math.max(coords.width, 320)
           }}

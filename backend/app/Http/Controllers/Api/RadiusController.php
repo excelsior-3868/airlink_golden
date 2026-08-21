@@ -15,6 +15,7 @@ class RadiusController extends Controller
     public function __construct(
         private ClientsConfService $clientsConf,
         private \App\Services\Radius\CoaService $coa,
+        private \App\Services\Radius\NasActivityService $nasActivity,
     ) {}
 
     /** Fetch list of active RADIUS sessions currently connected to Hotspot networks. */
@@ -69,15 +70,19 @@ class RadiusController extends Controller
 
         if ($user) {
             if ($user->role === 'reseller') {
-                // A reseller's own PPPoE subscribers belong in their list too.
+                // Resellers see online sessions for vouchers generated for/by the reseller (seller_id IS NULL) + PPPoE subscribers owned by/attributed to the reseller.
                 $query->where(function ($q) use ($user) {
-                    $q->where('vouchers.reseller_id', $user->id)
-                      ->orWhere('vouchers.owner_id', $user->id)
-                      ->orWhere('pc.reseller_id', $user->id)
-                      ->orWhere('pc.owner_id', $user->id);
+                    $q->where(function ($vq) use ($user) {
+                        $vq->where(function ($inner) use ($user) {
+                            $inner->where('vouchers.reseller_id', $user->id)
+                                  ->orWhere('vouchers.owner_id', $user->id);
+                        })->whereNull('vouchers.seller_id');
+                    })
+                    ->orWhere('pc.reseller_id', $user->id)
+                    ->orWhere('pc.owner_id', $user->id);
                 });
             } elseif ($user->role === 'seller') {
-                // Sellers are voucher-only, so this necessarily excludes PPPoE.
+                // Sellers see online sessions for vouchers generated for/by the seller (seller_id = seller.id).
                 $query->where('vouchers.seller_id', $user->id);
             }
         }
@@ -97,11 +102,19 @@ class RadiusController extends Controller
             });
         }
 
-        $sessions = $query->orderBy('radacct.acctstarttime', 'desc')->get()->map(function ($s) {
+        // radacct only ever stores the NAS's self-reported address (nas_ip
+        // above), which can differ from the address it's registered under
+        // behind NAT — see NasActivityService's docblock. Resolve it to a
+        // device name the same way the NAS page's "last seen" status does,
+        // rather than showing the raw, potentially-private IP.
+        $nasNames = $this->nasActivity->deviceNamesByIp();
+
+        $sessions = $query->orderBy('radacct.acctstarttime', 'desc')->get()->map(function ($s) use ($nasNames) {
             $s->session_time = (int) ($s->session_time ?? 0);
             $s->input_bytes = (int) ($s->input_bytes ?? 0);
             $s->output_bytes = (int) ($s->output_bytes ?? 0);
             $s->total_bytes = (int) ($s->total_bytes ?? 0);
+            $s->nas_name = $s->nas_ip ? ($nasNames[$s->nas_ip] ?? null) : null;
             return $s;
         });
 
@@ -117,6 +130,39 @@ class RadiusController extends Controller
         $data = $request->validate([
             'username' => ['required', 'string'],
         ]);
+
+        $user = $request->user();
+        if ($user && !$user->isAdmin()) {
+            $username = $data['username'];
+            $isAuthorized = false;
+
+            if ($user->isReseller()) {
+                $isAuthorized = DB::table('vouchers')
+                    ->where('username', $username)
+                    ->where(function ($q) use ($user) {
+                        $q->where('reseller_id', $user->id)
+                          ->orWhere('owner_id', $user->id);
+                    })
+                    ->whereNull('seller_id')
+                    ->exists()
+                    || DB::table('pppoe_customers')
+                    ->where('username', $username)
+                    ->where(function ($q) use ($user) {
+                        $q->where('reseller_id', $user->id)
+                          ->orWhere('owner_id', $user->id);
+                    })
+                    ->exists();
+            } elseif ($user->isSeller()) {
+                $isAuthorized = DB::table('vouchers')
+                    ->where('username', $username)
+                    ->where('seller_id', $user->id)
+                    ->exists();
+            }
+
+            if (!$isAuthorized) {
+                return $this->fail('You are not authorized to disconnect this session.', 403);
+            }
+        }
 
         $results = $this->coa->disconnectUsername($data['username']);
 

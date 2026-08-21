@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # Airlink v3.0 backend — production image (php-fpm, no dev deps, code baked in).
 # Build context is the repo root: docker build -f docker/backend/Dockerfile.prod .
 FROM php:8.3-fpm-bookworm
@@ -10,6 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 ENV COMPOSER_ALLOW_SUPERUSER=1
+ENV COMPOSER_CACHE_DIR=/composer-cache
 WORKDIR /var/www/html
 
 # Shared GID with the host's `radiusweb` group, so www-data can write the
@@ -17,8 +19,23 @@ WORKDIR /var/www/html
 RUN groupadd -g 5555 radiusweb && usermod -aG radiusweb www-data
 
 # App code + production dependencies.
+#
+# - The cache mount persists downloaded packages across builds (and across
+#   `docker compose build` for app/queue/scheduler, which all share this same
+#   Dockerfile+context) so a retry only re-fetches what actually failed last
+#   time, instead of hitting GitHub for all ~100 packages every attempt.
+# - The github_token secret is optional (BuildKit leaves it unmounted if not
+#   passed via `--secret id=github_token,...`). When present, it switches
+#   Composer's GitHub downloads from the low-ceiling anonymous path to the
+#   authenticated API, which is what actually fixes sustained 429/504s from
+#   codeload.github.com — a token needs no scopes, it just needs to exist.
 COPY backend/ /var/www/html/
-RUN composer install --no-dev --optimize-autoloader --no-interaction --no-progress \
+RUN --mount=type=cache,target=/composer-cache,sharing=locked \
+    --mount=type=secret,id=github_token \
+    if [ -s /run/secrets/github_token ]; then \
+        composer config -g github-oauth.github.com "$(cat /run/secrets/github_token)"; \
+    fi \
+    && composer install --no-dev --optimize-autoloader --no-interaction --no-progress \
     && chown -R www-data:www-data storage bootstrap/cache
 
 COPY docker/backend/prod-entrypoint.sh /usr/local/bin/prod-entrypoint.sh

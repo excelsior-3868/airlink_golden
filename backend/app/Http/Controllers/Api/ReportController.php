@@ -281,4 +281,219 @@ class ReportController extends Controller
 
         return $q;
     }
+
+    /**
+     * Comprehensive Sales Summary Report:
+     * Revenue, Hotspot Voucher sales split (Wallet vs GB), PPPoE New Subscribers & Recharges.
+     */
+    public function salesSummary(Request $request): JsonResponse
+    {
+        $actor = $request->user();
+        $from = $request->query('from');
+        $to = $request->query('to');
+        $resellerId = $request->query('reseller_id');
+        $sellerId = $request->query('seller_id');
+
+        // Scoping vouchers
+        $voucherQuery = Voucher::query()
+            ->whereNull('vouchers.void_reason')
+            ->join('internet_plans as p', 'p.id', '=', 'vouchers.plan_id')
+            ->where(function ($q) {
+                $q->whereIn('vouchers.status', ['active', 'used'])
+                  ->orWhereNotNull('vouchers.activated_at');
+            });
+
+        if ($actor->isReseller()) {
+            $voucherQuery->where('vouchers.reseller_id', $actor->id);
+            if ($sellerId) {
+                $voucherQuery->where('vouchers.seller_id', $sellerId);
+            }
+        } elseif ($actor->isSeller()) {
+            $voucherQuery->where('vouchers.seller_id', $actor->id);
+        } else { // Admin
+            if ($resellerId) {
+                $voucherQuery->where('vouchers.reseller_id', $resellerId);
+            }
+            if ($sellerId) {
+                $voucherQuery->where('vouchers.seller_id', $sellerId);
+            }
+        }
+
+        if ($from) {
+            $voucherQuery->whereDate('vouchers.created_at', '>=', $from);
+        }
+        if ($to) {
+            $voucherQuery->whereDate('vouchers.created_at', '<=', $to);
+        }
+
+        // Aggregate vouchers by plan
+        $voucherRows = (clone $voucherQuery)
+            ->select(
+                'p.id as plan_id',
+                'p.name as plan_name',
+                'p.package_type',
+                DB::raw('count(*) as count'),
+                DB::raw('sum(vouchers.price) as revenue'),
+                DB::raw('sum(vouchers.data_gb) as data_gb')
+            )
+            ->groupBy('p.id', 'p.name', 'p.package_type')
+            ->get();
+
+        $walletVoucherCount = 0;
+        $walletVoucherRevenue = 0.0;
+        $gbVoucherCount = 0;
+        $gbVoucherRevenue = 0.0;
+        $gbVoucherGb = 0.0;
+
+        $voucherPlans = [];
+
+        foreach ($voucherRows as $vr) {
+            $count = (int) $vr->count;
+            $revenue = (float) $vr->revenue;
+            $gb = (float) $vr->data_gb;
+
+            if ($vr->package_type === 'wallet') {
+                $walletVoucherCount += $count;
+                $walletVoucherRevenue += $revenue;
+            } else {
+                $gbVoucherCount += $count;
+                $gbVoucherRevenue += $revenue;
+                $gbVoucherGb += $gb;
+            }
+
+            $voucherPlans[] = [
+                'plan_id' => $vr->plan_id,
+                'plan_name' => $vr->plan_name,
+                'package_type' => $vr->package_type,
+                'count' => $count,
+                'revenue' => round($revenue, 2),
+                'data_gb' => round($gb, 3),
+            ];
+        }
+
+        // PPPoE Subscribers & Recharges
+        $pppoeNewSubscribersCount = 0;
+        $pppoeNewSubscribersRevenue = 0.0;
+        $pppoeRechargesCount = 0;
+        $pppoeRechargesRevenue = 0.0;
+        $pppoeNewPlans = [];
+        $pppoeRechargePlans = [];
+
+        if (!$actor->isSeller()) {
+            // New PPPoE Subscribers
+            $pppoeCustQuery = DB::table('pppoe_customers as pc')
+                ->join('internet_plans as p', 'p.id', '=', 'pc.plan_id');
+
+            if ($actor->isReseller()) {
+                $pppoeCustQuery->where(function ($q) use ($actor) {
+                    $q->where('pc.reseller_id', $actor->id)
+                      ->orWhere('pc.owner_id', $actor->id);
+                });
+            } elseif ($resellerId) {
+                $pppoeCustQuery->where('pc.reseller_id', $resellerId);
+            }
+
+            if ($from) {
+                $pppoeCustQuery->whereDate('pc.created_at', '>=', $from);
+            }
+            if ($to) {
+                $pppoeCustQuery->whereDate('pc.created_at', '<=', $to);
+            }
+
+            $newSubRows = (clone $pppoeCustQuery)
+                ->select(
+                    'p.id as plan_id',
+                    'p.name as plan_name',
+                    DB::raw('count(*) as count'),
+                    DB::raw('sum(COALESCE(pc.contract_price, p.selling_price, 0)) as revenue')
+                )
+                ->groupBy('p.id', 'p.name')
+                ->get();
+
+            foreach ($newSubRows as $r) {
+                $c = (int) $r->count;
+                $rev = (float) $r->revenue;
+                $pppoeNewSubscribersCount += $c;
+                $pppoeNewSubscribersRevenue += $rev;
+                $pppoeNewPlans[] = [
+                    'plan_id' => $r->plan_id,
+                    'plan_name' => $r->plan_name,
+                    'count' => $c,
+                    'revenue' => round($rev, 2),
+                ];
+            }
+
+            // PPPoE Recharges
+            $pppoeRechargeQuery = DB::table('pppoe_recharges as pr')
+                ->join('pppoe_customers as pc', 'pc.id', '=', 'pr.customer_id')
+                ->join('internet_plans as p', 'p.id', '=', 'pr.plan_id');
+
+            if ($actor->isReseller()) {
+                $pppoeRechargeQuery->where(function ($q) use ($actor) {
+                    $q->where('pc.reseller_id', $actor->id)
+                      ->orWhere('pc.owner_id', $actor->id);
+                });
+            } elseif ($resellerId) {
+                $pppoeRechargeQuery->where('pc.reseller_id', $resellerId);
+            }
+
+            if ($from) {
+                $pppoeRechargeQuery->whereDate('pr.created_at', '>=', $from);
+            }
+            if ($to) {
+                $pppoeRechargeQuery->whereDate('pr.created_at', '<=', $to);
+            }
+
+            $rechargeRows = (clone $pppoeRechargeQuery)
+                ->select(
+                    'p.id as plan_id',
+                    'p.name as plan_name',
+                    DB::raw('count(*) as count'),
+                    DB::raw('sum(pr.amount) as revenue')
+                )
+                ->groupBy('p.id', 'p.name')
+                ->get();
+
+            foreach ($rechargeRows as $r) {
+                $c = (int) $r->count;
+                $rev = (float) $r->revenue;
+                $pppoeRechargesCount += $c;
+                $pppoeRechargesRevenue += $rev;
+                $pppoeRechargePlans[] = [
+                    'plan_id' => $r->plan_id,
+                    'plan_name' => $r->plan_name,
+                    'count' => $c,
+                    'revenue' => round($rev, 2),
+                ];
+            }
+        }
+
+        $totalSalesRevenue = $walletVoucherRevenue + $gbVoucherRevenue + $pppoeNewSubscribersRevenue + $pppoeRechargesRevenue;
+
+        return $this->ok([
+            'summary' => [
+                'total_sales_revenue' => round($totalSalesRevenue, 2),
+                'wallet_voucher_sales' => [
+                    'count' => $walletVoucherCount,
+                    'revenue' => round($walletVoucherRevenue, 2),
+                ],
+                'gb_voucher_sales' => [
+                    'count' => $gbVoucherCount,
+                    'revenue' => round($gbVoucherRevenue, 2),
+                    'total_gb' => round($gbVoucherGb, 3),
+                ],
+                'pppoe_new_subscribers' => [
+                    'count' => $pppoeNewSubscribersCount,
+                    'revenue' => round($pppoeNewSubscribersRevenue, 2),
+                ],
+                'pppoe_active_recharges' => [
+                    'count' => $pppoeRechargesCount,
+                    'revenue' => round($pppoeRechargesRevenue, 2),
+                ],
+            ],
+            'voucher_plans' => $voucherPlans,
+            'pppoe_new_plans' => $pppoeNewPlans,
+            'pppoe_recharge_plans' => $pppoeRechargePlans,
+        ]);
+    }
 }

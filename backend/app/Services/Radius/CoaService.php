@@ -150,6 +150,21 @@ class CoaService
             if ($inSubnet = $devices->first(fn ($d) => $this->ipInCidr($nasIp, $d->nasname))) {
                 return $inSubnet;
             }
+
+            // Fallback: Match reported NAS IP via NasActivityService
+            try {
+                $activityService = app(\App\Services\Radius\NasActivityService::class);
+                $activity = $activityService->forDevices();
+                foreach ($devices as $d) {
+                    $reported = $activity[$d->id]['reported_nas_ips'] ?? [];
+                    if (in_array($nasIp, $reported, true)) {
+                        Log::info("CoA: matched session NAS IP '{$nasIp}' to device '{$d->name}' ({$d->nasname}) via reported NAS IP activity mapping");
+                        return $d;
+                    }
+                }
+            } catch (Throwable $e) {
+                Log::warning("CoA: failed checking NasActivityService for '{$nasIp}': {$e->getMessage()}");
+            }
         }
 
         // With one active router there's no ambiguity about who owns the session,

@@ -70,6 +70,44 @@ class NasActivityService
     }
 
     /**
+     * Flat map from every IP address a NAS is known under — its real source
+     * address, any NAS-IP-Address it self-reports (see class docblock for why
+     * those can differ), or its plain registered `nasname` for devices with no
+     * accounting history yet — to that device's display name.
+     *
+     * Built for attributing radacct rows (which only ever carry the
+     * self-reported address) back to a NAS device name, e.g. on the Online
+     * Users page, without re-deriving the source/reported matching done above.
+     *
+     * @return array<string, string>
+     */
+    public function deviceNamesByIp(): array
+    {
+        $devices = NasDevice::all()->keyBy('id');
+        $map = [];
+
+        foreach ($this->forDevices() as $deviceId => $activity) {
+            $name = $devices[$deviceId]->name ?? null;
+            if (! $name) {
+                continue;
+            }
+            foreach ([...$activity['sources'], ...$activity['reported_nas_ips']] as $ip) {
+                $map[$ip] = $name;
+            }
+        }
+
+        // Fallback for devices with no accounting history to derive a mapping
+        // from yet — still let an exact match on the registered address work.
+        foreach ($devices as $device) {
+            if ($device->nasname && ! isset($map[$device->nasname])) {
+                $map[$device->nasname] = $device->name;
+            }
+        }
+
+        return $map;
+    }
+
+    /**
      * Source addresses that have ever sent accounting, with what they reported.
      *
      * @return array<int, array{source_ip:string, last_seen:?Carbon, reported:array<int,string>, packets_today:int}>

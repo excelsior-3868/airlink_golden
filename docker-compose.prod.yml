@@ -142,12 +142,16 @@ services:
       context: ./docker/freeradius
     container_name: airlink-mera-prod-freeradius
     restart: unless-stopped
+    environment:
+      TZ: Asia/Kathmandu
     ports:
       - "${PROD_RADIUS_AUTH_PORT:-1812}:1812/udp"
       - "${PROD_RADIUS_ACCT_PORT:-1813}:1813/udp"
     volumes:
       - radius_shared:/var/lib/airlink-radius
       - radius_logs:/var/log/freeradius
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
     healthcheck:
       test: ["CMD", "pgrep", "-x", "freeradius"]
       interval: 15s
