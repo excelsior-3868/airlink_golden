@@ -599,8 +599,8 @@ export default function PppoeCustomers() {
                           </td>
                           <td className="py-3 px-4 text-right">
                             <div className="flex items-center justify-end gap-1.5">
-                              {/* Recharge Button */}
-                              {can('recharge_pppoe_customer') && (
+                              {/* Recharge Button — only rendered when subscriber is expired */}
+                              {can('recharge_pppoe_customer') && (c.status === 'expired' || (c.expires_at && new Date(c.expires_at) < new Date())) && (
                                 <button
                                   type="button"
                                   onClick={() => { setSelectedForRecharge(c); setRechargeModalOpen(true) }}

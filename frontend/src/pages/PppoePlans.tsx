@@ -25,8 +25,11 @@ const blank = {
 }
 
 export default function PppoePlans() {
-  const { user } = useAuth()
+  const { user, can } = useAuth()
   const isAdmin = user?.role === 'admin'
+  // PPPoE plans are defined by whoever holds create_pppoe_plan (admin only by
+  // default) — every other role sees this page read-only.
+  const canManage = can('create_pppoe_plan')
   const isReseller = user?.role === 'reseller'
 
   const [open, setOpen] = useState(false)
@@ -263,13 +266,15 @@ export default function PppoePlans() {
         subtitle="Manage dedicated PPPoE broadband internet subscription packages"
         icon={<Router size={22} className="text-indigo-500" />}
         action={
-          <motion.button
-            whileTap={{ scale: 0.95 }}
-            className="btn-primary flex items-center gap-2"
-            onClick={openNew}
-          >
-            <Plus size={16} /> Create Plan
-          </motion.button>
+          canManage ? (
+            <motion.button
+              whileTap={{ scale: 0.95 }}
+              className="btn-primary flex items-center gap-2"
+              onClick={openNew}
+            >
+              <Plus size={16} /> Create Plan
+            </motion.button>
+          ) : undefined
         }
       />
 
@@ -392,13 +397,19 @@ export default function PppoePlans() {
         ) : paginatedPlans.length === 0 ? (
           <EmptyState
             title="No PPPoE Plans Found"
-            subtitle="No plans match your selected criteria or search term. Click Create Plan to build one."
+            subtitle={
+              canManage
+                ? 'No plans match your selected criteria or search term. Click Create Plan to build one.'
+                : 'No plans match your selected criteria or search term. PPPoE plans are defined by the system administrator.'
+            }
           >
-            <div className="pt-4">
-              <button onClick={openNew} className="btn-primary inline-flex items-center gap-2">
-                <Plus size={16} /> Create Plan
-              </button>
-            </div>
+            {canManage && (
+              <div className="pt-4">
+                <button onClick={openNew} className="btn-primary inline-flex items-center gap-2">
+                  <Plus size={16} /> Create Plan
+                </button>
+              </div>
+            )}
           </EmptyState>
         ) : (
           <div className="overflow-x-auto">
@@ -417,7 +428,10 @@ export default function PppoePlans() {
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {paginatedPlans.map((p) => {
-                  const canEdit = isAdmin || (isReseller && p.created_by === user?.id)
+                  // A grantee may edit any PPPoE plan; the wallet-ownership
+                  // clause that would otherwise stop a non-admin is bypassed
+                  // for PPPoE plans server-side (PlanController::update).
+                  const canEdit = canManage
                   return (
                     <tr key={p.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition">
                       <td className="py-3 px-4">

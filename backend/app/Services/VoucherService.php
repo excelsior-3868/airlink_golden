@@ -109,7 +109,7 @@ class VoucherService
         return DB::transaction(function () use ($owner, $plan, $quantity, $validity, $gbPer, $pricePer, $totalGb, $totalCost, $resellerId, $sellerId, $note, $purchaseSource, $customBatchCode, $isGbPackage) {
             $bCode = $customBatchCode ?: $this->uniqueBatchCode();
             if (Batch::where('batch_code', $bCode)->exists()) {
-                $bCode = $bCode . '-' . strtoupper(Str::random(4));
+                $bCode = $bCode . '-' . $this->randomCode(4);
             }
             $batch = Batch::create([
                 'batch_code' => $bCode,
@@ -188,28 +188,35 @@ class VoucherService
     private function uniqueBatchCode(): string
     {
         do {
-            $code = 'BAT'.now()->format('ymd').strtoupper(Str::random(4));
+            $code = 'BAT'.now()->format('ymd').$this->randomCode(4);
         } while (Batch::where('batch_code', $code)->exists());
 
         return $code;
     }
 
-    /** Code length: 6 uppercase alphanumerics, matching the legacy voucher format. Excludes 0 and O to prevent user confusion. */
+    /** Code length: 6 uppercase alphanumerics, matching the legacy voucher format. Excludes 0, O, and I to prevent user confusion. */
     private const CODE_LENGTH = 6;
     private const CODE_CHARSET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+
+    private function randomCode(int $length = self::CODE_LENGTH): string
+    {
+        $code = '';
+        $charsetLen = strlen(self::CODE_CHARSET);
+        for ($j = 0; $j < $length; $j++) {
+            $code .= self::CODE_CHARSET[random_int(0, $charsetLen - 1)];
+        }
+
+        return $code;
+    }
 
     /** @return string[] $count unique voucher codes not already in the DB. */
     private function uniqueCodes(int $count): array
     {
         $codes = []; // set of code => true
-        $charsetLen = strlen(self::CODE_CHARSET);
         while (count($codes) < $count) {
             $candidates = [];
             for ($i = 0, $need = $count - count($codes); $i < $need; $i++) {
-                $code = '';
-                for ($j = 0; $j < self::CODE_LENGTH; $j++) {
-                    $code .= self::CODE_CHARSET[random_int(0, $charsetLen - 1)];
-                }
+                $code = $this->randomCode(self::CODE_LENGTH);
                 $candidates[$code] = true;
             }
             $list = array_keys($candidates);

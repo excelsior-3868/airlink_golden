@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Zap, Calendar, Wallet as WalletIcon, ArrowRight, AlertTriangle } from 'lucide-react'
+import { Zap, Calendar, Wallet as WalletIcon, ArrowRight, AlertTriangle, Package, UserCheck, FileText } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useQuery, invalidateCache } from '../lib/cache'
 import { useAuth } from '../lib/auth'
@@ -17,6 +17,7 @@ export default function PppoeRechargeModal({ open, onClose, customer, onSuccess 
   const { user, refresh } = useAuth()
   const isReseller = user?.role === 'reseller'
   const [planId, setPlanId] = useState<string>('')
+  const [showPlanPicker, setShowPlanPicker] = useState<boolean>(false)
   const [periods, setPeriods] = useState<number>(1)
   const [paymentMethod, setPaymentMethod] = useState<string>('wallet')
   const [note, setNote] = useState<string>('')
@@ -34,6 +35,7 @@ export default function PppoeRechargeModal({ open, onClose, customer, onSuccess 
   useEffect(() => {
     if (customer && open) {
       setPlanId(String(customer.plan_id || ''))
+      setShowPlanPicker(false)
       setPeriods(1)
       setPaymentMethod('wallet')
       setNote('')
@@ -58,8 +60,6 @@ export default function PppoeRechargeModal({ open, onClose, customer, onSuccess 
       { value: 'wallet', label: 'Wallet Balance' },
       { value: 'cash', label: 'Cash Payment' },
     ]
-    // payment_methods columns are `code`/`label`/`icon` — there is no `name`.
-    // Wallet and Cash are already offered above, so skip them here.
     const list = Array.isArray(paymentMethods) ? paymentMethods : []
     list.forEach((m: any) => {
       const code = String(m?.code ?? '').toLowerCase()
@@ -73,7 +73,6 @@ export default function PppoeRechargeModal({ open, onClose, customer, onSuccess 
     return opts
   }, [paymentMethods])
 
-  // Computed preview calculations matching server arithmetic exactly
   const unitPrice = customer?.contract_price !== null && customer?.contract_price !== undefined
     ? Number(customer.contract_price)
     : (selectedPlan ? Number(selectedPlan.selling_price) : 0)
@@ -145,27 +144,45 @@ export default function PppoeRechargeModal({ open, onClose, customer, onSuccess 
   if (!customer) return null
 
   return (
-    <Modal open={open} onClose={onClose} title="Recharge PPPoE Subscriber" widthClassName="max-w-xl">
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Recharge PPPoE Subscriber"
+      icon={<Zap size={20} className="text-indigo-600 dark:text-indigo-400" />}
+      widthClassName="max-w-xl"
+    >
       <div className="space-y-4">
         {/* Subscriber Overview */}
         <div className="p-3.5 bg-slate-50/80 dark:bg-slate-800/40 rounded-xl border border-slate-200/60 dark:border-slate-700/60 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
           <div>
-            <div className="text-slate-500 dark:text-slate-400 font-medium">Subscriber</div>
+            <div className="text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1">
+              <UserCheck size={13} className="text-indigo-500" />
+              Subscriber
+            </div>
             <div className="font-semibold text-slate-800 dark:text-slate-100 truncate mt-0.5">{customer.username}</div>
             <div className="text-[11px] text-slate-500 truncate">{customer.full_name}</div>
           </div>
           <div>
-            <div className="text-slate-500 dark:text-slate-400 font-medium">Current Plan</div>
+            <div className="text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1">
+              <Package size={13} className="text-indigo-500" />
+              Current Plan
+            </div>
             <div className="font-semibold text-slate-800 dark:text-slate-100 truncate mt-0.5">{customer.plan?.name || '—'}</div>
             <div className="text-[11px] text-slate-500">{customer.plan?.bandwidth || 'Unlimited'}</div>
           </div>
           <div>
-            <div className="text-slate-500 dark:text-slate-400 font-medium">Current Expiry</div>
+            <div className="text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1">
+              <Calendar size={13} className="text-indigo-500" />
+              Current Expiry
+            </div>
             <div className="font-semibold text-slate-800 dark:text-slate-100 mt-0.5">{customer.expires_at ? date(customer.expires_at) : 'Not Activated'}</div>
             <div className="text-[11px] text-slate-500">{customer.expires_at ? bsDate(customer.expires_at) : '—'}</div>
           </div>
           <div>
-            <div className="text-slate-500 dark:text-slate-400 font-medium">Status</div>
+            <div className="text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1">
+              <Zap size={13} className="text-indigo-500" />
+              Status
+            </div>
             <div className="mt-1">
               <Pill tone={(statusPill[customer.status] as any) || 'info'} className="capitalize">
                 {customer.status}
@@ -174,23 +191,71 @@ export default function PppoeRechargeModal({ open, onClose, customer, onSuccess 
           </div>
         </div>
 
-        {/* Plan Picker */}
+        {/* Plan Picker / Default Summary Card */}
         <div>
-          <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5">
-            Select Internet Plan <span className="text-rose-500">*</span>
-          </label>
-          <Combobox
-            value={planId}
-            onChange={(val) => setPlanId(val)}
-            options={planOptions}
-            placeholder="Search and select plan..."
-          />
+          {!showPlanPicker && selectedPlan ? (
+            <div className="p-3.5 bg-indigo-50/60 dark:bg-indigo-950/40 rounded-2xl border border-indigo-100 dark:border-indigo-900/50 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                  <Package size={20} />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-extrabold text-sm text-slate-900 dark:text-white truncate">
+                      {selectedPlan.name}
+                    </span>
+                    <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300">
+                      {selectedPlan.validity_days || 30} Days
+                    </span>
+                  </div>
+                  <div className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
+                    {selectedPlan.bandwidth || 'Unlimited Speed'} • {rs(customer?.contract_price !== null && customer?.contract_price !== undefined ? customer.contract_price : selectedPlan.selling_price)} / period
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPlanPicker(true)}
+                className="px-3.5 py-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-white dark:bg-slate-800 hover:bg-indigo-50 border border-indigo-200 dark:border-indigo-800 rounded-xl transition shrink-0 shadow-2xs"
+              >
+                Change Plan
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                  <Package size={14} className="text-indigo-500" />
+                  Select Internet Plan <span className="text-rose-500">*</span>
+                </label>
+                {customer?.plan_id && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPlanId(String(customer.plan_id))
+                      setShowPlanPicker(false)
+                    }}
+                    className="text-[11px] font-bold text-indigo-600 hover:underline"
+                  >
+                    Use Current Plan
+                  </button>
+                )}
+              </div>
+              <Combobox
+                value={planId}
+                onChange={(val) => setPlanId(val)}
+                options={planOptions}
+                placeholder="Search and select plan..."
+              />
+            </div>
+          )}
         </div>
 
         {/* Periods & Payment Method */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5">
+            <label className="text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5 flex items-center gap-1.5">
+              <Calendar size={14} className="text-indigo-500" />
               Validity Periods (Multiples)
             </label>
             <div className="flex items-center gap-2">
@@ -209,7 +274,8 @@ export default function PppoeRechargeModal({ open, onClose, customer, onSuccess 
           </div>
 
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5">
+            <label className="text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5 flex items-center gap-1.5">
+              <WalletIcon size={14} className="text-indigo-500" />
               Payment Method
             </label>
             <CustomSelect
@@ -222,7 +288,8 @@ export default function PppoeRechargeModal({ open, onClose, customer, onSuccess 
 
         {/* Note / Reference */}
         <div>
-          <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5">
+          <label className="text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5 flex items-center gap-1.5">
+            <FileText size={14} className="text-indigo-500" />
             Notes / Reference
           </label>
           <input

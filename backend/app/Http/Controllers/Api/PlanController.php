@@ -117,7 +117,13 @@ class PlanController extends Controller
         // below), so a non-admin is creating a GB Package by definition and is gated
         // on create_gb_package rather than create_plan.
         $role = $request->user()->role;
-        if ($request->boolean('via_voucher')) {
+        if (($request->input('type') ?? 'hotspot') === 'pppoe') {
+            // A PPPoE plan is always an admin-owned Wallet package that PPPoE
+            // recharges bill against, so it is gated on its own feature rather
+            // than on the hotspot/GB plan features below.
+            $feature = 'create_pppoe_plan';
+            $permitted = $this->canManagePppoePlans($request->user());
+        } elseif ($request->boolean('via_voucher')) {
             $feature = 'create_voucher_plan';
             $permitted = \App\Models\SystemPermission::isAllowed($feature, $role);
         } elseif ($request->user()->isAdmin()) {
@@ -201,6 +207,27 @@ class PlanController extends Controller
             return $this->fail("This API token does not have the 'plans.write' ability.", 403);
         }
 
+        // PPPoE plans are gated on create_pppoe_plan in both directions: a role
+        // without it can neither touch an existing PPPoE plan nor convert one of
+        // its own hotspot plans into a PPPoE plan.
+        //
+        // This runs *ahead* of the ownership clause below on purpose. PPPoE
+        // plans are always package_type = 'wallet', which that clause refuses to
+        // any non-admin — so a role granted create_pppoe_plan could create a
+        // PPPoE plan and then never edit it.
+        $touchesPppoe = $plan->type === 'pppoe' || $request->input('type') === 'pppoe';
+
+        if ($touchesPppoe) {
+            if (! $this->canManagePppoePlans($request->user())) {
+                return $this->fail("This action is not permitted for your role: access to 'create_pppoe_plan' is restricted by system policy.", 403);
+            }
+        } elseif (! \App\Models\SystemPermission::isAllowed('create_plan', $request->user()->role)) {
+            // The route gate is `create_plan OR create_pppoe_plan`, so a
+            // PPPoE-only grant now reaches this method. Re-assert create_plan
+            // here or it would reach hotspot plans through the widened route.
+            return $this->fail("This action is not permitted for your role: access to 'create_plan' is restricted by system policy.", 403);
+        }
+
         $isPppoeCreator = $plan->type === 'pppoe' && $plan->created_by === $request->user()->id;
         if (!$request->user()->isAdmin() && !$isPppoeCreator && ($plan->package_type === 'wallet' || $plan->created_by !== $request->user()->id)) {
             return $this->fail('You do not have permission to modify this plan.', 403);
@@ -272,6 +299,17 @@ class PlanController extends Controller
             return $this->fail("This API token does not have the 'plans.write' ability.", 403);
         }
 
+        // Mirrors update(): the PPPoE feature ahead of the wallet-ownership
+        // clause, and create_plan re-asserted for everything else because the
+        // route gate accepts either feature.
+        if ($plan->type === 'pppoe') {
+            if (! $this->canManagePppoePlans(request()->user())) {
+                return $this->fail("This action is not permitted for your role: access to 'create_pppoe_plan' is restricted by system policy.", 403);
+            }
+        } elseif (! \App\Models\SystemPermission::isAllowed('create_plan', request()->user()->role)) {
+            return $this->fail("This action is not permitted for your role: access to 'create_plan' is restricted by system policy.", 403);
+        }
+
         $isPppoeCreator = $plan->type === 'pppoe' && $plan->created_by === request()->user()->id;
         if (!request()->user()->isAdmin() && !$isPppoeCreator && ($plan->package_type === 'wallet' || $plan->created_by !== request()->user()->id)) {
             return $this->fail('You do not have permission to delete this plan.', 403);
@@ -288,6 +326,24 @@ class PlanController extends Controller
         $plan->delete();
 
         return $this->ok(null, 'Plan deleted.');
+    }
+
+    /**
+     * May this user author PPPoE plans?
+     *
+     * The seller tier is refused before the matrix is consulted. There is no
+     * PPPoE concept for sellers anywhere in the app — no menu, no subscriber
+     * list, no recharge — so a seller tick on this row is a misconfiguration
+     * rather than a decision, and PermissionController strips it on save. This
+     * check is the backstop for a row edited directly in the database.
+     */
+    private function canManagePppoePlans(?\App\Models\User $user): bool
+    {
+        if (! $user || $user->isSeller()) {
+            return false;
+        }
+
+        return \App\Models\SystemPermission::isAllowed('create_pppoe_plan', $user->role);
     }
 
     private function validateData(Request $request, ?InternetPlan $plan = null): array

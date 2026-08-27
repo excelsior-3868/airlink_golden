@@ -4,55 +4,91 @@ import { ArrowLeft, Ticket, CreditCard, Archive, Database, TrendingUp, Users, Us
 import { api } from '../lib/api'
 import { useQuery } from '../lib/cache'
 import { rs, gb, num } from '../lib/format'
-import { GlassCard, EmptyState, Spinner, StatCard, CustomSelect } from '../components/ui'
+import { GlassCard, EmptyState, Spinner, StatCard, Combobox, SelectOption } from '../components/ui'
 
 export default function VoucherSalesSummaryTab() {
   const [selected, setSelected] = useState<any>(null)
-  // Reseller-level totals are the default view; 'seller' lists the individual
-  // seller accounts instead (all sellers for an admin, own sellers for a reseller).
-  const [group, setGroup] = useState<'reseller' | 'seller'>('reseller')
 
   return selected ? (
     <ResellerDetail account={selected} onBack={() => setSelected(null)} />
   ) : (
-    <ResellerList group={group} onGroupChange={setGroup} onSelect={setSelected} />
+    <AccountList onSelect={setSelected} />
   )
 }
 
-function ResellerList({
-  group,
-  onGroupChange,
-  onSelect,
-}: {
-  group: 'reseller' | 'seller'
-  onGroupChange: (g: 'reseller' | 'seller') => void
-  onSelect: (account: any) => void
-}) {
-  const { data, loading } = useQuery<any>(`reports/reseller-summary?group=${group}`, () =>
-    api.get('/reports/reseller-summary', { params: { group } }).then((r) => r.data.data),
+/** Which tier a row belongs to. Both tiers share one table, so every row says so. */
+function RoleTag({ role }: { role: string }) {
+  const isSeller = role === 'seller'
+  return (
+    <span
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold border ${
+        isSeller
+          ? 'bg-emerald-50 text-emerald-600 border-emerald-100'
+          : 'bg-indigo-50 text-indigo-600 border-indigo-100'
+      }`}
+    >
+      {isSeller ? <UserRound size={10} /> : <Users size={10} />}
+      {isSeller ? 'Seller' : 'Reseller'}
+    </span>
+  )
+}
+
+// A reseller and a seller can hold the same id, so an account is addressed by
+// the pair. '' means no account selected — show every row.
+const accountKey = (a: any) => `${a.role}:${a.id}`
+
+function AccountList({ onSelect }: { onSelect: (account: any) => void }) {
+  // One request covers both tiers; the endpoint returns every account the actor
+  // may see in a single unpaginated payload, so filtering is client-side.
+  const { data, loading } = useQuery<any>('reports/reseller-summary?group=all', () =>
+    api.get('/reports/reseller-summary', { params: { group: 'all' } }).then((r) => r.data.data),
   )
 
-  const accounts = data?.accounts || []
-  const totals = data?.totals
-  // Label follows the selected grouping, not the response, so it doesn't lag a refetch.
-  const roleLabel = group === 'seller' ? 'Seller' : 'Reseller'
+  const [account, setAccount] = useState<string>('')
+
+  const accounts: any[] = data?.accounts || []
+  const visible = account ? accounts.filter((a) => accountKey(a) === account) : accounts
+
+  const options: SelectOption[] = [
+    { value: '', label: 'All Accounts' },
+    ...accounts.map((a) => ({
+      value: accountKey(a),
+      label: a.name,
+      // The label is the account name, so username would otherwise be
+      // unsearchable — it is the thing operators actually remember.
+      keywords: a.username,
+      group: a.role === 'seller' ? 'Sellers' : 'Resellers',
+      badge: <RoleTag role={a.role} />,
+    })),
+  ]
+
+  // Totals follow what is on screen rather than the payload's own totals, so a
+  // selected account's figures are not read against a system-wide sum.
+  const totals = {
+    cards_generated: visible.reduce((n, a) => n + (a.cards_generated || 0), 0),
+    cards_sold: visible.reduce((n, a) => n + (a.cards_sold || 0), 0),
+    gb_sold: visible.reduce((n, a) => n + (a.gb_sold || 0), 0),
+    sales_amount: visible.reduce((n, a) => n + (a.sales_amount || 0), 0),
+  }
 
   return (
     <GlassCard className="!p-0 overflow-hidden">
       <div className="p-4 border-b border-slate-100 flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h3 className="font-extrabold text-slate-800 text-sm">{roleLabel} Account Summary</h3>
-          <p className="text-xs text-slate-400">Card generation and sales totals per {roleLabel.toLowerCase()}</p>
+          <h3 className="font-extrabold text-slate-800 text-sm">Account Summary</h3>
+          <p className="text-xs text-slate-400">
+            Card generation and sales totals per account. A reseller row counts the cards it holds
+            itself; cards handed to a seller are counted on that seller's row.
+          </p>
         </div>
         <div className="flex items-center gap-3">
           {loading && <Spinner />}
-          <CustomSelect
-            value={group}
-            onChange={(val) => onGroupChange(val)}
-            options={[
-              { value: 'reseller', label: 'By Reseller', icon: <Users size={14} className="text-indigo-500" /> },
-              { value: 'seller', label: 'By Seller', icon: <UserRound size={14} className="text-emerald-500" /> },
-            ]}
+          <Combobox
+            value={account}
+            onChange={(val) => setAccount(val)}
+            options={options}
+            placeholder="All Accounts"
+            className="w-full sm:w-72"
           />
         </div>
       </div>
@@ -61,7 +97,7 @@ function ResellerList({
         <table className="w-full">
           <thead>
             <tr>
-              <th>{roleLabel}</th>
+              <th>Account</th>
               <th>Cards Generated</th>
               <th>Cards Sold</th>
               <th>Cards in Stock</th>
@@ -70,9 +106,9 @@ function ResellerList({
             </tr>
           </thead>
           <tbody>
-            {accounts.map((a: any, idx: number) => (
+            {visible.map((a: any, idx: number) => (
               <motion.tr
-                key={a.id}
+                key={accountKey(a)}
                 initial={{ opacity: 0, x: -10 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: idx * 0.02 }}
@@ -80,7 +116,10 @@ function ResellerList({
                 onClick={() => onSelect(a)}
               >
                 <td className="font-semibold text-slate-800">
-                  <div>{a.name}</div>
+                  <div className="flex items-center gap-2">
+                    <span>{a.name}</span>
+                    <RoleTag role={a.role} />
+                  </div>
                   <div className="text-xs font-mono text-slate-400">{a.username}</div>
                 </td>
                 <td>{num(a.cards_generated)}</td>
@@ -92,10 +131,12 @@ function ResellerList({
             ))}
           </tbody>
         </table>
-        {!loading && accounts.length === 0 && <EmptyState>No {roleLabel.toLowerCase()} accounts found.</EmptyState>}
+        {!loading && visible.length === 0 && (
+          <EmptyState>{account ? 'That account has no rows.' : 'No reseller or seller accounts found.'}</EmptyState>
+        )}
       </div>
 
-      {totals && accounts.length > 0 && (
+      {visible.length > 0 && (
         <div className="p-4 border-t border-slate-100 flex flex-wrap gap-x-8 gap-y-1 text-xs">
           <span className="font-bold text-slate-500">Totals:</span>
           <span>Generated <b className="text-slate-700">{num(totals.cards_generated)}</b></span>

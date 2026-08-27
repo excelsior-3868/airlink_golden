@@ -161,11 +161,14 @@ class PppoeCustomerService
 
     /**
      * Suspend a customer.
-     * Note: radcheck rows are KEPT, state machine in authorize yields 'suspended' Reply-Message.
+     * radcheck/radreply are deleted so the account can't re-authenticate —
+     * no FreeRADIUS-side gate exists to reject on status alone. resume()
+     * rebuilds these rows via rebuildRadiusRows().
      */
     public function suspend(User $actor, PppoeCustomer $customer): PppoeCustomer
     {
         $customer->update(['status' => 'suspended']);
+        $this->deleteRadiusRows($customer->username);
 
         try {
             $this->coaService->disconnectUsername($customer->username);

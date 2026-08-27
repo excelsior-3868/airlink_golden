@@ -12,7 +12,7 @@ use Illuminate\Validation\Rule;
 
 class UserController extends Controller
 {
-    /** List users within the actor's subtree; optional ?role= filter. */
+    /** List users within the actor's subtree; optional ?role= filter, search, status, parent_id. */
     public function index(Request $request): JsonResponse
     {
         $actor = $request->user();
@@ -21,11 +21,40 @@ class UserController extends Controller
         if ($role = $request->query('role')) {
             $query->where('role', $role);
         }
-        if ($search = $request->query('search')) {
-            $query->where(fn ($q) => $q->where('username', 'like', "%$search%")->orWhere('name', 'like', "%$search%"));
+
+        if ($status = $request->query('status')) {
+            if (in_array($status, ['active', 'disabled'], true)) {
+                $query->where('status', $status);
+            }
         }
 
-        $users = $query->with('parent:id,name,username')->withCount(['children', 'vouchers'])->orderByDesc('id')->paginate($request->integer('per_page', 20));
+        if ($parentId = $request->query('reseller_id') ?? $request->query('parent_id')) {
+            $query->where('parent_id', $parentId);
+        }
+
+        if ($userId = $request->query('id') ?? $request->query('user_id')) {
+            $query->where('id', $userId);
+        }
+
+        if ($search = $request->query('search')) {
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                  ->orWhere('username', 'like', "%{$search}%")
+                  ->orWhere('email', 'like', "%{$search}%")
+                  ->orWhere('phone', 'like', "%{$search}%")
+                  ->orWhereHas('parent', function ($pq) use ($search) {
+                      $pq->where('name', 'like', "%{$search}%")
+                         ->orWhere('username', 'like', "%{$search}%");
+                  });
+            });
+        }
+
+        $perPage = $request->integer('per_page', 15);
+
+        $users = $query->with('parent:id,name,username')
+            ->withCount(['children', 'vouchers'])
+            ->orderByDesc('id')
+            ->paginate($perPage);
 
         return $this->ok($users);
     }

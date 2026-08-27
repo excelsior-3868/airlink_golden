@@ -71,6 +71,7 @@ class DatabaseSeeder extends Seeder
             ['feature' => 'manage_api_tokens', 'display_name' => 'Manage API Tokens', 'category' => 'Integrations', 'description' => 'Create and revoke API tokens for third-party integrations (e.g. a PMS selling vouchers)', 'admin' => 1, 'reseller' => 0, 'seller' => 0],
 
             ['feature' => 'view_pppoe', 'display_name' => 'PPPoE Menu', 'category' => 'Navigation', 'description' => 'Show the PPPoE management menu (Subscribers, Sessions, Plans)', 'admin' => 1, 'reseller' => 1, 'seller' => 0],
+            ['feature' => 'create_pppoe_plan', 'display_name' => 'Create PPPoE Plan', 'category' => 'PPPoE', 'description' => 'Define PPPoE broadband subscription packages on the PPPoE Plans page', 'admin' => 1, 'reseller' => 0, 'seller' => 0],
             ['feature' => 'create_pppoe_customer', 'display_name' => 'Create PPPoE Subscriber', 'category' => 'PPPoE', 'description' => 'Register and configure new PPPoE subscribers', 'admin' => 1, 'reseller' => 1, 'seller' => 0],
             ['feature' => 'recharge_pppoe_customer', 'display_name' => 'Recharge PPPoE Subscriber', 'category' => 'PPPoE', 'description' => 'Process prepaid recharges for PPPoE subscribers', 'admin' => 1, 'reseller' => 1, 'seller' => 0],
             ['feature' => 'suspend_pppoe_customer', 'display_name' => 'Suspend/Resume PPPoE Subscriber', 'category' => 'PPPoE', 'description' => 'Suspend, resume, or disconnect active PPPoE subscribers', 'admin' => 1, 'reseller' => 1, 'seller' => 0],

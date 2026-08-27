@@ -74,7 +74,10 @@ class ReportController extends Controller
         }
         $totalsByStatus = ['ready' => 0, 'active' => 0, 'used' => 0, 'disabled' => 0];
         foreach ($summary as &$s) {
-            $s['remaining'] = max(0, $s['generated'] - $s['used']);
+            // Unsold stock is the 'ready' count. 'generated' - 'used' would call
+            // every card the customer is still using (status 'active') remaining
+            // stock, since 'used' only covers the terminal stage.
+            $s['remaining'] = (int) ($s['by_status']['ready'] ?? 0);
             // "Sold" = actually handed off to a customer — 'ready' is printed
             // but still sitting in stock (mirrors reseller-summary's stock math).
             $s['sold'] = ($s['by_status']['active'] ?? 0) + ($s['by_status']['used'] ?? 0);
@@ -102,63 +105,81 @@ class ReportController extends Controller
     }
 
     /**
-     * Sales Summary Report: per-account (reseller, or seller under a reseller)
-     * rollup of wallet balance, card generation/sales, GB sold, and dues —
-     * feeds the "Sales Summary" tab on the Voucher Sales page. Admin sees
-     * their resellers; a reseller sees their own sellers.
+     * Sales Summary Report: per-account rollup of card generation, cards sold,
+     * GB sold and sales amount — feeds the "Sales Summary" tab on Voucher Sales.
+     *
+     * `group` selects the tier: 'reseller' (default), 'seller', or 'all' for a
+     * single list containing both. Scope is unchanged in every mode — an admin
+     * sees every account, a reseller sees itself plus its own sellers.
      */
     public function resellerSummary(Request $request): JsonResponse
     {
         $actor = $request->user();
 
-        // The summary groups either by reseller account (default) or by seller
-        // account. An admin sees every reseller / every seller; a reseller sees
-        // itself at the reseller level and its own sellers at the seller level.
-        $group = $request->query('group') === 'seller' ? 'seller' : 'reseller';
+        $requested = $request->query('group');
+        $group = in_array($requested, ['seller', 'all'], true) ? $requested : 'reseller';
+
+        $roles = match ($group) {
+            'seller' => ['seller'],
+            'all' => ['reseller', 'seller'],
+            default => ['reseller'],
+        };
 
         if ($actor->isAdmin()) {
-            $userQuery = $group === 'seller'
-                ? User::query()->where('role', 'seller')
-                : User::query()->where('role', 'reseller');
+            $userQuery = User::query()->whereIn('role', $roles);
         } elseif ($actor->isReseller()) {
-            $userQuery = $group === 'seller'
-                ? User::query()->where('role', 'seller')->where('parent_id', $actor->id)
-                : User::query()->whereKey($actor->id);
+            // A reseller is its own reseller-tier row and the parent of its
+            // seller-tier rows; it may never see a sibling reseller.
+            $userQuery = User::query()->where(function ($q) use ($actor, $roles) {
+                if (in_array('reseller', $roles, true)) {
+                    $q->orWhere(fn ($x) => $x->whereKey($actor->id));
+                }
+                if (in_array('seller', $roles, true)) {
+                    $q->orWhere(fn ($x) => $x->where('role', 'seller')->where('parent_id', $actor->id));
+                }
+            });
         } else {
             return $this->ok(['role_label' => null, 'accounts' => [], 'totals' => $this->emptyResellerSummaryTotals()]);
         }
-
-        $groupColumn = $group === 'seller' ? 'seller_id' : 'reseller_id';
-        $roleLabel = $group;
 
         if ($search = $request->query('search')) {
             $userQuery->where(fn ($q) => $q->where('name', 'like', "%{$search}%")->orWhere('username', 'like', "%{$search}%"));
         }
 
-        $users = $userQuery->orderBy('name')->get();
-        $userIds = $users->pluck('id')->all();
+        // Resellers first, then sellers, each alphabetical — so a combined list
+        // reads as two sections rather than interleaving the two tiers.
+        $users = $userQuery->get()
+            ->sortBy(fn ($u) => ($u->role === 'seller' ? '1' : '0') . mb_strtolower((string) $u->name))
+            ->values();
 
-        // Voucher sales tracking is purely card-based: a card only counts as
-        // "sold" (and its GB/price counted toward sales) once it's actually
-        // been handed off to a customer — 'ready' cards are printed but
-        // still sitting in stock.
-        $cardsSoldSet = "'active', 'used'";
-        $voucherStats = Voucher::query()
-            ->whereNull('vouchers.void_reason')
-            ->whereIn($groupColumn, $userIds)
-            ->select(
-                "{$groupColumn} as uid",
-                DB::raw('count(*) as generated'),
-                DB::raw("sum(case when status in ({$cardsSoldSet}) or activated_at is not null then 1 else 0 end) as sold"),
-                DB::raw("sum(case when status in ({$cardsSoldSet}) or activated_at is not null then data_gb else 0 end) as gb_sold"),
-                DB::raw("sum(case when status in ({$cardsSoldSet}) or activated_at is not null then price else 0 end) as sales_amount")
-            )
-            ->groupBy($groupColumn)
-            ->get()
-            ->keyBy('uid');
+        // The load-bearing detail of the combined list: a reseller's cards hang
+        // off vouchers.reseller_id and a seller's off vouchers.seller_id. Keying
+        // both tiers off one column would silently report zeros for half the
+        // rows, so each tier is aggregated on its own column and matched back to
+        // an account by that account's role.
+        //
+        // In 'all' mode the reseller tier is narrowed to cards it holds directly
+        // (seller_id IS NULL). A seller's card carries its parent's reseller_id
+        // too, so without this the reseller row would be a rollup *containing*
+        // the seller rows listed beneath it and any sum over the list would
+        // double-count. The single-tier modes keep their existing meaning: a
+        // reseller row there is the whole downline.
+        $directResellerCardsOnly = $group === 'all';
 
-        $accounts = $users->map(function ($u) use ($voucherStats) {
-            $s = $voucherStats->get($u->id);
+        $statsByRole = [
+            'reseller' => $this->voucherStatsByAccount(
+                'reseller_id',
+                $users->where('role', 'reseller')->pluck('id')->all(),
+                $directResellerCardsOnly
+            ),
+            'seller' => $this->voucherStatsByAccount(
+                'seller_id',
+                $users->where('role', 'seller')->pluck('id')->all()
+            ),
+        ];
+
+        $accounts = $users->map(function ($u) use ($statsByRole) {
+            $s = ($statsByRole[$u->role] ?? collect())->get($u->id);
             $generated = (int) ($s->generated ?? 0);
             $sold = (int) ($s->sold ?? 0);
 
@@ -183,7 +204,48 @@ class ReportController extends Controller
             'sales_amount' => round((float) $accounts->sum('sales_amount'), 2),
         ];
 
-        return $this->ok(['role_label' => $roleLabel, 'accounts' => $accounts, 'totals' => $totals]);
+        return $this->ok(['role_label' => $group, 'accounts' => $accounts, 'totals' => $totals]);
+    }
+
+    /**
+     * Card generation / sales aggregates for a set of accounts, grouped on one
+     * ownership column (`reseller_id` or `seller_id`), keyed by account id.
+     *
+     * Voucher sales tracking is purely card-based: a card only counts as "sold"
+     * (and its GB/price counted toward sales) once it has actually been handed
+     * off to a customer — 'ready' cards are printed but still sitting in stock.
+     *
+     * `$directOnly` excludes cards delegated to a seller, so a reseller row
+     * counts only what it holds itself. See the caller for why that matters
+     * only when both tiers share one list.
+     */
+    private function voucherStatsByAccount(string $groupColumn, array $userIds, bool $directOnly = false)
+    {
+        if (! $userIds) {
+            return collect();
+        }
+
+        $cardsSoldSet = "'active', 'used'";
+
+        $query = Voucher::query()
+            ->whereNull('vouchers.void_reason')
+            ->whereIn("vouchers.{$groupColumn}", $userIds);
+
+        if ($directOnly) {
+            $query->whereNull('vouchers.seller_id');
+        }
+
+        return $query
+            ->select(
+                "vouchers.{$groupColumn} as uid",
+                DB::raw('count(*) as generated'),
+                DB::raw("sum(case when vouchers.status in ({$cardsSoldSet}) or vouchers.activated_at is not null then 1 else 0 end) as sold"),
+                DB::raw("sum(case when vouchers.status in ({$cardsSoldSet}) or vouchers.activated_at is not null then vouchers.data_gb else 0 end) as gb_sold"),
+                DB::raw("sum(case when vouchers.status in ({$cardsSoldSet}) or vouchers.activated_at is not null then vouchers.price else 0 end) as sales_amount")
+            )
+            ->groupBy("vouchers.{$groupColumn}")
+            ->get()
+            ->keyBy('uid');
     }
 
     private function emptyResellerSummaryTotals(): array
@@ -283,217 +345,306 @@ class ReportController extends Controller
     }
 
     /**
-     * Comprehensive Sales Summary Report:
-     * Revenue, Hotspot Voucher sales split (Wallet vs GB), PPPoE New Subscribers & Recharges.
+     * PPPoE Sales Summary: new subscriber registrations and prepaid recharges
+     * over a date range, with a per-plan breakdown of each.
+     *
+     * Vouchers are deliberately absent. This report used to combine both sides
+     * of the business, but the voucher half is covered in full by the Sales
+     * Summary tab on Voucher Sales (resellerSummary / packageSummary), and
+     * building it here meant loading every matching voucher row to produce a
+     * breakdown the page no longer rendered — against a table that is six
+     * figures deep in production.
+     *
+     * The route sits inside the role:admin,reseller PPPoE group, so a seller
+     * never reaches this method.
      */
-    public function salesSummary(Request $request): JsonResponse
+    public function pppoeSalesSummary(Request $request): JsonResponse
     {
         $actor = $request->user();
         $from = $request->query('from');
         $to = $request->query('to');
         $resellerId = $request->query('reseller_id');
-        $sellerId = $request->query('seller_id');
 
-        // Scoping vouchers
-        $voucherQuery = Voucher::query()
-            ->whereNull('vouchers.void_reason')
-            ->join('internet_plans as p', 'p.id', '=', 'vouchers.plan_id')
-            ->where(function ($q) {
-                $q->whereIn('vouchers.status', ['active', 'used'])
-                  ->orWhereNotNull('vouchers.activated_at');
-            });
+        // A reseller sees only its own subscribers — matched on either column
+        // because a subscriber registered *by* a reseller and one *assigned* to
+        // it are both theirs. An admin may narrow to one reseller.
+        $scope = function ($query) use ($actor, $resellerId) {
+            if ($actor->isReseller()) {
+                $query->where(function ($q) use ($actor) {
+                    $q->where('pc.reseller_id', $actor->id)
+                      ->orWhere('pc.owner_id', $actor->id);
+                });
+            } elseif ($resellerId) {
+                $query->where('pc.reseller_id', $resellerId);
+            }
 
-        if ($actor->isReseller()) {
-            $voucherQuery->where('vouchers.reseller_id', $actor->id);
-            if ($sellerId) {
-                $voucherQuery->where('vouchers.seller_id', $sellerId);
-            }
-        } elseif ($actor->isSeller()) {
-            $voucherQuery->where('vouchers.seller_id', $actor->id);
-        } else { // Admin
-            if ($resellerId) {
-                $voucherQuery->where('vouchers.reseller_id', $resellerId);
-            }
-            if ($sellerId) {
-                $voucherQuery->where('vouchers.seller_id', $sellerId);
-            }
-        }
+            return $query;
+        };
 
+        // New subscribers query for per-plan summary
+        $newSubQuery = $scope(
+            DB::table('pppoe_customers as pc')->join('internet_plans as p', 'p.id', '=', 'pc.plan_id')
+        );
         if ($from) {
-            $voucherQuery->whereDate('vouchers.created_at', '>=', $from);
+            $newSubQuery->whereDate('pc.created_at', '>=', $from);
         }
         if ($to) {
-            $voucherQuery->whereDate('vouchers.created_at', '<=', $to);
+            $newSubQuery->whereDate('pc.created_at', '<=', $to);
         }
 
-        // Aggregate vouchers by plan
-        $voucherRows = (clone $voucherQuery)
+        $newSubRows = $newSubQuery
             ->select(
                 'p.id as plan_id',
                 'p.name as plan_name',
-                'p.package_type',
                 DB::raw('count(*) as count'),
-                DB::raw('sum(vouchers.price) as revenue'),
-                DB::raw('sum(vouchers.data_gb) as data_gb')
+                DB::raw('sum(COALESCE(pc.contract_price, p.selling_price, 0)) as revenue')
             )
-            ->groupBy('p.id', 'p.name', 'p.package_type')
+            ->groupBy('p.id', 'p.name')
+            ->orderBy('p.name')
             ->get();
 
-        $walletVoucherCount = 0;
-        $walletVoucherRevenue = 0.0;
-        $gbVoucherCount = 0;
-        $gbVoucherRevenue = 0.0;
-        $gbVoucherGb = 0.0;
-
-        $voucherPlans = [];
-
-        foreach ($voucherRows as $vr) {
-            $count = (int) $vr->count;
-            $revenue = (float) $vr->revenue;
-            $gb = (float) $vr->data_gb;
-
-            if ($vr->package_type === 'wallet') {
-                $walletVoucherCount += $count;
-                $walletVoucherRevenue += $revenue;
-            } else {
-                $gbVoucherCount += $count;
-                $gbVoucherRevenue += $revenue;
-                $gbVoucherGb += $gb;
-            }
-
-            $voucherPlans[] = [
-                'plan_id' => $vr->plan_id,
-                'plan_name' => $vr->plan_name,
-                'package_type' => $vr->package_type,
-                'count' => $count,
-                'revenue' => round($revenue, 2),
-                'data_gb' => round($gb, 3),
-            ];
-        }
-
-        // PPPoE Subscribers & Recharges
-        $pppoeNewSubscribersCount = 0;
-        $pppoeNewSubscribersRevenue = 0.0;
-        $pppoeRechargesCount = 0;
-        $pppoeRechargesRevenue = 0.0;
-        $pppoeNewPlans = [];
-        $pppoeRechargePlans = [];
-
-        if (!$actor->isSeller()) {
-            // New PPPoE Subscribers
-            $pppoeCustQuery = DB::table('pppoe_customers as pc')
-                ->join('internet_plans as p', 'p.id', '=', 'pc.plan_id');
-
-            if ($actor->isReseller()) {
-                $pppoeCustQuery->where(function ($q) use ($actor) {
-                    $q->where('pc.reseller_id', $actor->id)
-                      ->orWhere('pc.owner_id', $actor->id);
-                });
-            } elseif ($resellerId) {
-                $pppoeCustQuery->where('pc.reseller_id', $resellerId);
-            }
-
-            if ($from) {
-                $pppoeCustQuery->whereDate('pc.created_at', '>=', $from);
-            }
-            if ($to) {
-                $pppoeCustQuery->whereDate('pc.created_at', '<=', $to);
-            }
-
-            $newSubRows = (clone $pppoeCustQuery)
-                ->select(
-                    'p.id as plan_id',
-                    'p.name as plan_name',
-                    DB::raw('count(*) as count'),
-                    DB::raw('sum(COALESCE(pc.contract_price, p.selling_price, 0)) as revenue')
-                )
-                ->groupBy('p.id', 'p.name')
-                ->get();
-
-            foreach ($newSubRows as $r) {
-                $c = (int) $r->count;
-                $rev = (float) $r->revenue;
-                $pppoeNewSubscribersCount += $c;
-                $pppoeNewSubscribersRevenue += $rev;
-                $pppoeNewPlans[] = [
-                    'plan_id' => $r->plan_id,
-                    'plan_name' => $r->plan_name,
-                    'count' => $c,
-                    'revenue' => round($rev, 2),
-                ];
-            }
-
-            // PPPoE Recharges
-            $pppoeRechargeQuery = DB::table('pppoe_recharges as pr')
+        // Recharges query for per-plan summary
+        $rechargeQuery = $scope(
+            DB::table('pppoe_recharges as pr')
                 ->join('pppoe_customers as pc', 'pc.id', '=', 'pr.customer_id')
-                ->join('internet_plans as p', 'p.id', '=', 'pr.plan_id');
+                ->join('internet_plans as p', 'p.id', '=', 'pr.plan_id')
+        );
+        if ($from) {
+            $rechargeQuery->whereDate('pr.created_at', '>=', $from);
+        }
+        if ($to) {
+            $rechargeQuery->whereDate('pr.created_at', '<=', $to);
+        }
 
-            if ($actor->isReseller()) {
-                $pppoeRechargeQuery->where(function ($q) use ($actor) {
-                    $q->where('pc.reseller_id', $actor->id)
-                      ->orWhere('pc.owner_id', $actor->id);
-                });
-            } elseif ($resellerId) {
-                $pppoeRechargeQuery->where('pc.reseller_id', $resellerId);
-            }
+        $rechargeRows = $rechargeQuery
+            ->select(
+                'p.id as plan_id',
+                'p.name as plan_name',
+                DB::raw('count(*) as count'),
+                DB::raw('sum(pr.price) as revenue')
+            )
+            ->groupBy('p.id', 'p.name')
+            ->orderBy('p.name')
+            ->get();
 
-            if ($from) {
-                $pppoeRechargeQuery->whereDate('pr.created_at', '>=', $from);
-            }
-            if ($to) {
-                $pppoeRechargeQuery->whereDate('pr.created_at', '<=', $to);
-            }
+        // Detailed new subscribers with created_by
+        $newSubDetailQuery = $scope(
+            DB::table('pppoe_customers as pc')
+                ->join('internet_plans as p', 'p.id', '=', 'pc.plan_id')
+                ->join('users as u_owner', 'u_owner.id', '=', 'pc.owner_id')
+                ->leftJoin('users as u_reseller', 'u_reseller.id', '=', 'pc.reseller_id')
+        );
+        if ($from) {
+            $newSubDetailQuery->whereDate('pc.created_at', '>=', $from);
+        }
+        if ($to) {
+            $newSubDetailQuery->whereDate('pc.created_at', '<=', $to);
+        }
 
-            $rechargeRows = (clone $pppoeRechargeQuery)
-                ->select(
-                    'p.id as plan_id',
-                    'p.name as plan_name',
-                    DB::raw('count(*) as count'),
-                    DB::raw('sum(pr.amount) as revenue')
-                )
-                ->groupBy('p.id', 'p.name')
-                ->get();
+        $newSubscribersList = $newSubDetailQuery
+            ->select(
+                'pc.id',
+                'pc.full_name as subscriber_name',
+                'pc.username',
+                'pc.customer_code',
+                'p.name as plan_name',
+                DB::raw('COALESCE(pc.contract_price, p.selling_price, 0) as revenue'),
+                DB::raw("COALESCE(NULLIF(u_reseller.name, ''), u_reseller.username, NULLIF(u_owner.name, ''), u_owner.username, 'System') as created_by"),
+                'pc.created_at'
+            )
+            ->orderByDesc('pc.created_at')
+            ->get()
+            ->map(fn ($r) => [
+                'id' => $r->id,
+                'subscriber_name' => $r->subscriber_name ?: $r->username,
+                'username' => $r->username,
+                'customer_code' => $r->customer_code,
+                'plan_name' => $r->plan_name,
+                'revenue' => round((float) $r->revenue, 2),
+                'created_by' => $r->created_by,
+                'created_at' => (string) $r->created_at,
+            ])
+            ->values();
 
-            foreach ($rechargeRows as $r) {
-                $c = (int) $r->count;
-                $rev = (float) $r->revenue;
-                $pppoeRechargesCount += $c;
-                $pppoeRechargesRevenue += $rev;
-                $pppoeRechargePlans[] = [
-                    'plan_id' => $r->plan_id,
-                    'plan_name' => $r->plan_name,
-                    'count' => $c,
-                    'revenue' => round($rev, 2),
-                ];
+        // Detailed recharges with recharged_by
+        $rechargeDetailQuery = $scope(
+            DB::table('pppoe_recharges as pr')
+                ->join('pppoe_customers as pc', 'pc.id', '=', 'pr.customer_id')
+                ->join('internet_plans as p', 'p.id', '=', 'pr.plan_id')
+                ->leftJoin('users as u_collector', 'u_collector.id', '=', 'pr.collected_by')
+                ->leftJoin('users as u_reseller', 'u_reseller.id', '=', 'pr.reseller_id')
+                ->leftJoin('users as u_owner', 'u_owner.id', '=', 'pr.owner_id')
+        );
+        if ($from) {
+            $rechargeDetailQuery->whereDate('pr.created_at', '>=', $from);
+        }
+        if ($to) {
+            $rechargeDetailQuery->whereDate('pr.created_at', '<=', $to);
+        }
+
+        $rechargesList = $rechargeDetailQuery
+            ->select(
+                'pr.id',
+                'pc.full_name as subscriber_name',
+                'pc.username',
+                'pc.customer_code',
+                'p.name as plan_name',
+                'pr.price as revenue',
+                DB::raw("COALESCE(NULLIF(u_collector.name, ''), u_collector.username, NULLIF(u_reseller.name, ''), u_reseller.username, NULLIF(u_owner.name, ''), u_owner.username, 'System') as recharged_by"),
+                'pr.created_at'
+            )
+            ->orderByDesc('pr.created_at')
+            ->get()
+            ->map(fn ($r) => [
+                'id' => $r->id,
+                'subscriber_name' => $r->subscriber_name ?: $r->username,
+                'username' => $r->username,
+                'customer_code' => $r->customer_code,
+                'plan_name' => $r->plan_name,
+                'revenue' => round((float) $r->revenue, 2),
+                'recharged_by' => $r->recharged_by,
+                'created_at' => (string) $r->created_at,
+            ])
+            ->values();
+
+        // Calculate Daily Trend
+        $trendMap = [];
+
+        if ($from && $to) {
+            try {
+                $current = \Carbon\Carbon::parse($from);
+                $end = \Carbon\Carbon::parse($to);
+                while ($current->lte($end)) {
+                    $d = $current->toDateString();
+                    $trendMap[$d] = [
+                        'date' => $d,
+                        'new_subscribers_count' => 0,
+                        'new_subscribers_revenue' => 0.0,
+                        'recharges_count' => 0,
+                        'recharges_revenue' => 0.0,
+                    ];
+                    $current->addDay();
+                }
+            } catch (\Throwable $e) {
+                $trendMap = [];
             }
         }
 
-        $totalSalesRevenue = $walletVoucherRevenue + $gbVoucherRevenue + $pppoeNewSubscribersRevenue + $pppoeRechargesRevenue;
+        foreach ($newSubscribersList as $item) {
+            $d = substr($item['created_at'], 0, 10);
+            if (!isset($trendMap[$d])) {
+                $trendMap[$d] = [
+                    'date' => $d,
+                    'new_subscribers_count' => 0,
+                    'new_subscribers_revenue' => 0.0,
+                    'recharges_count' => 0,
+                    'recharges_revenue' => 0.0,
+                ];
+            }
+            $trendMap[$d]['new_subscribers_count']++;
+            $trendMap[$d]['new_subscribers_revenue'] += $item['revenue'];
+        }
+
+        foreach ($rechargesList as $item) {
+            $d = substr($item['created_at'], 0, 10);
+            if (!isset($trendMap[$d])) {
+                $trendMap[$d] = [
+                    'date' => $d,
+                    'new_subscribers_count' => 0,
+                    'new_subscribers_revenue' => 0.0,
+                    'recharges_count' => 0,
+                    'recharges_revenue' => 0.0,
+                ];
+            }
+            $trendMap[$d]['recharges_count']++;
+            $trendMap[$d]['recharges_revenue'] += $item['revenue'];
+        }
+
+        ksort($trendMap);
+
+        $dailyTrend = array_values(array_map(function ($item) {
+            $item['new_subscribers_revenue'] = round($item['new_subscribers_revenue'], 2);
+            $item['recharges_revenue'] = round($item['recharges_revenue'], 2);
+            return $item;
+        }, $trendMap));
+
+        // Calculate Performer Breakdown
+        $performerMap = [];
+
+        foreach ($newSubscribersList as $item) {
+            $p = $item['created_by'];
+            if (!isset($performerMap[$p])) {
+                $performerMap[$p] = [
+                    'performer' => $p,
+                    'created_count' => 0,
+                    'created_revenue' => 0.0,
+                    'recharged_count' => 0,
+                    'recharged_revenue' => 0.0,
+                    'total_revenue' => 0.0,
+                ];
+            }
+            $performerMap[$p]['created_count']++;
+            $performerMap[$p]['created_revenue'] += $item['revenue'];
+            $performerMap[$p]['total_revenue'] += $item['revenue'];
+        }
+
+        foreach ($rechargesList as $item) {
+            $p = $item['recharged_by'];
+            if (!isset($performerMap[$p])) {
+                $performerMap[$p] = [
+                    'performer' => $p,
+                    'created_count' => 0,
+                    'created_revenue' => 0.0,
+                    'recharged_count' => 0,
+                    'recharged_revenue' => 0.0,
+                    'total_revenue' => 0.0,
+                ];
+            }
+            $performerMap[$p]['recharged_count']++;
+            $performerMap[$p]['recharged_revenue'] += $item['revenue'];
+            $performerMap[$p]['total_revenue'] += $item['revenue'];
+        }
+
+        usort($performerMap, fn ($a, $b) => $b['total_revenue'] <=> $a['total_revenue']);
+
+        $performerBreakdown = array_values(array_map(function ($item) {
+            $item['created_revenue'] = round($item['created_revenue'], 2);
+            $item['recharged_revenue'] = round($item['recharged_revenue'], 2);
+            $item['total_revenue'] = round($item['total_revenue'], 2);
+            return $item;
+        }, $performerMap));
+
+        $shape = fn ($rows) => $rows->map(fn ($r) => [
+            'plan_id' => $r->plan_id,
+            'plan_name' => $r->plan_name,
+            'count' => (int) $r->count,
+            'revenue' => round((float) $r->revenue, 2),
+        ])->values();
+
+        $newSubPlans = $shape($newSubRows);
+        $rechargePlans = $shape($rechargeRows);
+
+        $newSubRevenue = (float) $newSubPlans->sum('revenue');
+        $rechargeRevenue = (float) $rechargePlans->sum('revenue');
 
         return $this->ok([
             'summary' => [
-                'total_sales_revenue' => round($totalSalesRevenue, 2),
-                'wallet_voucher_sales' => [
-                    'count' => $walletVoucherCount,
-                    'revenue' => round($walletVoucherRevenue, 2),
+                'total_revenue' => round($newSubRevenue + $rechargeRevenue, 2),
+                'new_subscribers' => [
+                    'count' => (int) $newSubPlans->sum('count'),
+                    'revenue' => round($newSubRevenue, 2),
                 ],
-                'gb_voucher_sales' => [
-                    'count' => $gbVoucherCount,
-                    'revenue' => round($gbVoucherRevenue, 2),
-                    'total_gb' => round($gbVoucherGb, 3),
-                ],
-                'pppoe_new_subscribers' => [
-                    'count' => $pppoeNewSubscribersCount,
-                    'revenue' => round($pppoeNewSubscribersRevenue, 2),
-                ],
-                'pppoe_active_recharges' => [
-                    'count' => $pppoeRechargesCount,
-                    'revenue' => round($pppoeRechargesRevenue, 2),
+                'recharges' => [
+                    'count' => (int) $rechargePlans->sum('count'),
+                    'revenue' => round($rechargeRevenue, 2),
                 ],
             ],
-            'voucher_plans' => $voucherPlans,
-            'pppoe_new_plans' => $pppoeNewPlans,
-            'pppoe_recharge_plans' => $pppoeRechargePlans,
+            'new_subscriber_plans' => $newSubPlans,
+            'recharge_plans' => $rechargePlans,
+            'new_subscribers' => $newSubscribersList,
+            'recharges' => $rechargesList,
+            'daily_trend' => $dailyTrend,
+            'performer_breakdown' => $performerBreakdown,
         ]);
     }
 }

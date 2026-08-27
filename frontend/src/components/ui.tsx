@@ -3,7 +3,7 @@ import { ReactNode, useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useAuth } from '../lib/auth'
 import { rs, gb } from '../lib/format'
-import { Check, ChevronDown, Tag, Zap, Clock, Ban, Ticket, PlusCircle, Search, Sparkles, Wallet, Database } from 'lucide-react'
+import { Check, ChevronDown, Tag, Zap, Clock, Ban, Ticket, PlusCircle, Search, Sparkles, Wallet, Database, User, Users } from 'lucide-react'
 import { ComposedChart, Bar, Cell, Line, XAxis, Tooltip, ResponsiveContainer } from 'recharts'
 export { DualDatePicker } from './DualDatePicker'
 export { ConfirmModal } from './ConfirmModal'
@@ -268,7 +268,6 @@ export function Pagination({ meta, onPage }: { meta: any; onPage: (p: number) =>
         <span className="w-8 h-8 flex items-center justify-center text-xs font-bold rounded-lg border bg-primary border-primary text-white shadow-md shadow-primary/20 scale-105">
           {current_page}
         </span>
-        <span className="text-xs text-slate-400 px-1">/ {last_page}</span>
         <button
           onClick={() => onPage(current_page + 1)}
           disabled={current_page >= last_page}
@@ -280,7 +279,6 @@ export function Pagination({ meta, onPage }: { meta: any; onPage: (p: number) =>
     </div>
   )
 }
-
 export function Modal({
   open,
   onClose,
@@ -325,7 +323,6 @@ export function Modal({
             className={`bg-white w-full ${widthClassName} rounded-[28px] relative shadow-2xl border border-slate-100 flex flex-col overflow-visible`}
             onMouseDown={(e) => e.stopPropagation()}
           >
-            {/* Modal Header */}
             <div className={`flex items-center justify-between p-5 sm:p-6 border-b rounded-t-[28px] select-none ${isBrand ? 'bg-[#003164] border-[#003164]' : 'bg-white border-slate-100'}`}>
               <div className="flex items-center gap-3.5 min-w-0">
                 {icon && (
@@ -343,12 +340,11 @@ export function Modal({
                 onClick={onClose}
                 className={`w-8 h-8 flex items-center justify-center rounded-full border transition-all cursor-pointer shrink-0 ml-4 ${isBrand ? 'border-white/20 text-white/70 hover:text-white hover:bg-white/10' : 'border-slate-100 text-slate-400 hover:text-slate-700 hover:bg-slate-50'}`}
               >
-                <span className="text-lg font-light leading-none">&times;</span>
+                ✕
               </button>
             </div>
 
-            {/* Modal Body */}
-            <div className={`p-6 sm:p-8 ${bodyClassName}`}>
+            <div className={`p-5 sm:p-6 ${bodyClassName}`}>
               {children}
             </div>
           </motion.div>
@@ -359,25 +355,23 @@ export function Modal({
   )
 }
 
-export function EmptyState({ title, subtitle, children }: { title?: string; subtitle?: string; children?: ReactNode }) {
+export function Spinner({ className = '' }: { className?: string }) {
   return (
-    <div className="text-center text-slate-500 py-12 px-4">
-      {children ? (
-        children
-      ) : (
-        <>
-          <p className="text-sm font-bold text-slate-700">{title || 'No Records Found'}</p>
-          {subtitle && <p className="text-xs text-slate-400 mt-1">{subtitle}</p>}
-        </>
-      )}
+    <div className={`flex justify-center p-8 ${className}`}>
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
     </div>
   )
 }
 
-export function Spinner({ className = '' }: { className?: string }) {
+export function EmptyState({ title = 'No Data Available', subtitle = 'There are no records to display at this time.', children }: { title?: string; subtitle?: string; children?: ReactNode }) {
   return (
-    <div className={`flex items-center justify-center py-16 ${className}`}>
-      <div className="h-9 w-9 rounded-full border-2 border-primary/20 border-t-primary animate-spin" />
+    <div className="py-12 px-4 text-center">
+      <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800/80 text-slate-400 flex items-center justify-center mx-auto mb-3">
+        <Ticket size={24} />
+      </div>
+      <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200">{title}</h3>
+      <p className="text-xs text-slate-400 max-w-sm mx-auto mt-1">{subtitle}</p>
+      {children}
     </div>
   )
 }
@@ -387,8 +381,12 @@ export interface SelectOption {
   label: string;
   icon?: ReactNode;
   badge?: ReactNode;
-  group?: string;  // Optional group label for rendering section headers.
+  group?: string;
+  keywords?: string;
 }
+
+const DROPDOWN_MIN_WIDTH = 320
+const VIEWPORT_GUTTER = 8
 
 export function CustomSelect({
   value,
@@ -397,7 +395,8 @@ export function CustomSelect({
   placeholder = 'Select option...',
   className = '',
   disabled = false,
-  searchable = false
+  searchable = false,
+  borderless = false
 }: {
   value: any;
   onChange: (val: any) => void;
@@ -406,6 +405,7 @@ export function CustomSelect({
   className?: string;
   disabled?: boolean;
   searchable?: boolean;
+  borderless?: boolean;
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -414,20 +414,23 @@ export function CustomSelect({
   const [searchQuery, setSearchQuery] = useState('')
   const [coords, setCoords] = useState({ top: 0, left: 0, width: 0, up: false })
 
+  const isSearchable = searchable || options.length >= 5
+
   const updateCoords = () => {
     if (!ref.current) return
     const rect = ref.current.getBoundingClientRect()
-    // Flip above the trigger when the list would run past the viewport bottom
-    // (common inside modals, where the field sits near the lower edge).
     const height = dropdownRef.current?.offsetHeight || 280
     const spaceBelow = window.innerHeight - rect.bottom - 12
     const spaceAbove = rect.top - 12
     const up = spaceBelow < height && spaceAbove > spaceBelow
+    const panelWidth = Math.max(rect.width, DROPDOWN_MIN_WIDTH)
+    const maxLeft = window.innerWidth - panelWidth - VIEWPORT_GUTTER
+    const left = Math.max(VIEWPORT_GUTTER, Math.min(rect.left, maxLeft))
     setCoords({
       top: up
         ? rect.top + window.scrollY - height - 6
         : rect.bottom + window.scrollY + 6,
-      left: rect.left + window.scrollX,
+      left: left + window.scrollX,
       width: rect.width,
       up
     })
@@ -445,8 +448,6 @@ export function CustomSelect({
     }
   }, [open])
 
-  // Re-measure once the list is mounted (and whenever filtering changes its
-  // height) so a flipped dropdown sits flush above the trigger.
   useLayoutEffect(() => {
     if (open) updateCoords()
   }, [open, searchQuery, options.length])
@@ -469,18 +470,19 @@ export function CustomSelect({
   useEffect(() => {
     if (!open) {
       setSearchQuery('')
-    } else if (searchable) {
+    } else if (isSearchable) {
       setTimeout(() => inputRef.current?.focus(), 50)
     }
-  }, [open, searchable])
+  }, [open, isSearchable])
 
   const getStatusDetails = (val: any, originalLabel: string) => {
     const s = String(val).toLowerCase();
-    
+    const orig = originalLabel.toLowerCase();
+
     let label = originalLabel;
     if (['new', 'used', 'sold', 'active', 'expired', 'disabled'].includes(s)) {
       label = s.charAt(0).toUpperCase() + s.slice(1);
-    } else if (val === '' && (originalLabel.toLowerCase() === 'all statuses' || originalLabel.toLowerCase() === 'all status')) {
+    } else if (val === '' && (orig === 'all statuses' || orig === 'all status')) {
       label = 'All Statuses';
     }
 
@@ -497,8 +499,10 @@ export function CustomSelect({
       icon = <Clock size={14} className="text-rose-500" />;
     } else if (s === 'disabled') {
       icon = <Ban size={14} className="text-slate-400" />;
-    } else if (val === '' && (originalLabel.toLowerCase() === 'all statuses' || originalLabel.toLowerCase() === 'all status')) {
+    } else if (val === '' && (orig === 'all statuses' || orig === 'all status')) {
       icon = <Ticket size={14} className="text-slate-400" />;
+    } else if (orig.includes('all reseller') || orig === 'all resellers' || orig === 'all resellers / owners') {
+      icon = <Users size={16} className="text-slate-400" />;
     }
 
     return { label, icon };
@@ -516,26 +520,23 @@ export function CustomSelect({
   const filteredOptions = resolvedOptions.filter((o) => {
     if (!searchQuery) return true
     const q = searchQuery.toLowerCase()
-    return String(o.label).toLowerCase().includes(q) || String(o.value).toLowerCase().includes(q)
+    return String(o.label).toLowerCase().includes(q)
+      || String(o.value).toLowerCase().includes(q)
+      || String(o.keywords ?? '').toLowerCase().includes(q)
   })
 
   const selected = resolvedOptions.find((o) => String(o.value).toUpperCase() === String(value).toUpperCase())
 
   return (
-    <div ref={ref} className={`relative text-left ${className.includes('w-full') ? 'w-full block' : 'inline-block min-w-[180px]'} ${open ? 'z-30' : 'z-0'} ${className}`}>
-      {/* Trigger Button */}
+    <div ref={ref} className={`relative text-left w-full ${open ? 'z-30' : 'z-0'} ${className}`}>
       <button
         type="button"
         disabled={disabled}
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between gap-3 px-4 py-2.5 bg-white border border-slate-200 rounded-2xl hover:border-slate-300 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm font-semibold text-slate-700 shadow-sm"
+        className={`w-full flex items-center justify-between gap-3 px-4 py-2.5 bg-white disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm font-semibold text-slate-700 ${borderless ? 'border-0 rounded-none shadow-none hover:bg-slate-50' : 'border border-slate-200 rounded-2xl hover:border-slate-300 shadow-sm'}`}
       >
-        <div className="flex items-center gap-2 min-w-0">
-          {selected?.icon && (
-            <div className="shrink-0 flex items-center justify-center">
-              {selected.icon}
-            </div>
-          )}
+        <div className="flex flex-1 items-center gap-2 min-w-0">
+          {selected?.icon && <div className="shrink-0 flex items-center justify-center">{selected.icon}</div>}
           <span className="truncate">{selected ? selected.label : placeholder}</span>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
@@ -544,7 +545,6 @@ export function CustomSelect({
         </div>
       </button>
 
-      {/* Options Dropdown list */}
       {open && createPortal(
         <div 
           ref={dropdownRef}
@@ -552,11 +552,11 @@ export function CustomSelect({
             position: 'absolute',
             top: coords.top,
             left: coords.left,
-            minWidth: Math.max(coords.width, 320)
+            minWidth: Math.max(coords.width, DROPDOWN_MIN_WIDTH)
           }}
           className="bg-white border border-slate-200/80 rounded-2xl shadow-xl z-[9999] flex flex-col overflow-hidden"
         >
-          {searchable && (
+          {isSearchable && (
             <div className="p-2.5 border-b border-slate-100 bg-white z-10 flex items-center gap-1.5 shrink-0">
               <Search size={14} className="text-slate-400 shrink-0 ml-1.5" />
               <input
@@ -574,7 +574,7 @@ export function CustomSelect({
             {(() => {
               let lastGroup: string | undefined = undefined
               return filteredOptions.map((opt) => {
-                const isSelected = opt.value === value
+                const isSelected = String(opt.value).toUpperCase() === String(value).toUpperCase()
                 const showGroupHeader = opt.group !== undefined && opt.group !== lastGroup
                 if (opt.group !== undefined) lastGroup = opt.group
                 return (
@@ -595,11 +595,7 @@ export function CustomSelect({
                       }`}
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
-                        {opt.icon && (
-                          <div className="shrink-0 flex items-center justify-center">
-                            {opt.icon}
-                          </div>
-                        )}
+                        {opt.icon && <div className="shrink-0 flex items-center justify-center">{opt.icon}</div>}
                         <span className="whitespace-nowrap pr-2">{opt.label}</span>
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
@@ -636,6 +632,102 @@ export function Combobox(props: {
   searchable?: boolean;
 }) {
   return <CustomSelect searchable={props.searchable !== false} {...props} />
+}
+
+export type ActionMenuItem = {
+  label: string;
+  onClick: () => void;
+  className?: string;
+  icon?: ReactNode;
+  hidden?: boolean;
+};
+
+/**
+ * Compact per-row "Actions ▾" button + dropdown, for tables whose row
+ * actions have grown past a few always-visible text links. Mirrors
+ * CustomSelect's portal/fixed-position/outside-click pattern.
+ */
+export function ActionsMenu({ items, buttonLabel = 'Actions' }: { items: ActionMenuItem[]; buttonLabel?: string }) {
+  const visible = items.filter((i) => !i.hidden)
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+  const [coords, setCoords] = useState({ top: 0, left: 0 })
+
+  const updateCoords = () => {
+    if (ref.current) {
+      const rect = ref.current.getBoundingClientRect()
+      const panelWidth = 176
+      const gutter = 8
+      const minLeft = window.scrollX + gutter
+      const maxLeft = window.scrollX + window.innerWidth - panelWidth - gutter
+      const left = Math.max(minLeft, Math.min(rect.right + window.scrollX - panelWidth, maxLeft))
+      setCoords({ top: rect.bottom + window.scrollY, left })
+    }
+  }
+
+  useEffect(() => {
+    if (open) {
+      updateCoords()
+      window.addEventListener('resize', updateCoords)
+      window.addEventListener('scroll', updateCoords, true)
+    }
+    return () => {
+      window.removeEventListener('resize', updateCoords)
+      window.removeEventListener('scroll', updateCoords, true)
+    }
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        ref.current &&
+        !ref.current.contains(event.target as Node) &&
+        (!dropdownRef.current || !dropdownRef.current.contains(event.target as Node))
+      ) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside, true)
+    return () => document.removeEventListener('mousedown', handleClickOutside, true)
+  }, [open])
+
+  if (visible.length === 0) return null
+
+  return (
+    <div ref={ref} className="relative inline-block text-left">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-slate-600 bg-white border border-slate-200 rounded-xl hover:border-slate-300 hover:text-slate-900 transition-all"
+      >
+        {buttonLabel}
+        <ChevronDown size={13} className={`text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && createPortal(
+        <div
+          ref={dropdownRef}
+          style={{ position: 'absolute', top: coords.top + 6, left: coords.left, width: 176 }}
+          className="bg-white border border-slate-200/80 rounded-2xl shadow-xl z-[9999] p-1.5 flex flex-col gap-0.5"
+        >
+          {visible.map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              onClick={() => { setOpen(false); item.onClick() }}
+              className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-sm font-semibold hover:bg-slate-50 transition-all ${item.className || 'text-slate-600 hover:text-slate-900'}`}
+            >
+              {item.icon}
+              {item.label}
+            </button>
+          ))}
+        </div>,
+        document.body
+      )}
+    </div>
+  )
 }
 
 export function renderPaymentMethodIcon(iconVal?: string | null, codeVal?: string) {

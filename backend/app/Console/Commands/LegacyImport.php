@@ -529,11 +529,15 @@ class LegacyImport extends Command
                     'simultaneous_use' => (int) ($plan->simultaneous_use ?: 1),
                     'price' => $plan->selling_price,
                     'base_price' => $plan->base_price,
-                    // 'active', not 'new': the FreeRADIUS post-auth hook stamps
-                    // activated_at/expires_at only WHERE status IN
-                    // ('active','sold','used'), so a card left on 'new' never
-                    // starts its clock and can never expire on time.
-                    'status' => strtolower((string) $c->status) === 'deactivate' ? 'disabled' : 'active',
+                    // 'ready': imported stock has not been logged into yet, and
+                    // 'active' means "customer has logged in". The old reason for
+                    // importing as 'active' — post-auth stamping only WHERE
+                    // status IN ('active','sold','used'), so a card left on 'new'
+                    // never started its clock — no longer holds: post-auth now
+                    // matches ('ready','active') and promotes ready → active
+                    // itself. stampVoucherLifecycle() below still corrects any
+                    // card that was already in use before the cutover.
+                    'status' => strtolower((string) $c->status) === 'deactivate' ? 'disabled' : 'ready',
                     'customer_username' => $c->fullname ?: null,
                     'legacy_id' => $c->id,
                     'created_at' => $createdAt,
@@ -583,8 +587,8 @@ class LegacyImport extends Command
                 'simultaneous_use' => (int) ($plan->simultaneous_use ?: 1),
                 'price' => $plan->selling_price,
                 'base_price' => $plan->base_price,
-                // 'active' for the same reason as the customer branch above.
-                'status' => strtolower((string) $v->user_status) === 'deactivate' ? 'disabled' : 'active',
+                // 'ready' for the same reason as the customer branch above.
+                'status' => strtolower((string) $v->user_status) === 'deactivate' ? 'disabled' : 'ready',
                 'legacy_id' => $voucherIdOffset + $v->id,
                 'created_at' => $now,
                 'updated_at' => $now,
@@ -1119,11 +1123,11 @@ class LegacyImport extends Command
      * would have stamped, derived from real accounting history.
      *
      * Post-auth only stamps on a login, and only for status IN
-     * ('active','sold','used'). Left to it, a card already in use before the
+     * ('ready','active'). Left to it, a card already in use before the
      * cutover would take a fresh full validity window from its next login
      * instead of expiring on the schedule it was sold under. Cards with no
-     * history are left alone on 'active' — post-auth starts their clock
-     * correctly on first use.
+     * history are left alone on 'ready' — post-auth promotes them to
+     * 'active' and starts their clock correctly on first use.
      *
      * Idempotent: rows that already carry an activation date are skipped.
      *

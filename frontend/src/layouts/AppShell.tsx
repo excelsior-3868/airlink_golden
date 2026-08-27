@@ -33,7 +33,6 @@ interface NavItem {
 const NAV: NavItem[] = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'reseller', 'seller'], color: 'text-blue-500', perm: 'dashboard' },
   { to: '/financial-dashboard', label: 'Financial Dashboard', icon: Scale, roles: ['admin', 'reseller', 'seller'], color: 'text-blue-600' },
-  { to: '/sales-summary', label: 'Sales Summary', icon: TrendingUp, roles: ['admin', 'reseller', 'seller'], color: 'text-emerald-500' },
   { to: '/online-users', label: 'Online Users', icon: UsersRound, roles: ['admin', 'reseller', 'seller'], color: 'text-cyan-500' },
   {
     label: 'Plan',
@@ -55,6 +54,7 @@ const NAV: NavItem[] = [
     perm: ['view_pppoe', 'view_plans'],
     children: [
       { to: '/pppoe/customers', label: 'Subscribers', roles: ['admin', 'reseller'], icon: Users2, color: 'text-indigo-500', perm: 'view_pppoe' },
+      { to: '/pppoe/sales-summary', label: 'PPPoE Sales Summary', roles: ['admin', 'reseller'], icon: TrendingUp, color: 'text-emerald-500', perm: 'view_pppoe' },
       { to: '/plans/pppoe', label: 'PPPoE Plans', roles: ['admin', 'reseller'], icon: Package, color: 'text-violet-500', perm: 'view_plans' },
     ]
   },

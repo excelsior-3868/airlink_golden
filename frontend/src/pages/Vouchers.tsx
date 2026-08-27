@@ -8,11 +8,12 @@ import { useQuery } from '../lib/cache'
 import { useAuth } from '../lib/auth'
 import { rs, gb, date, datet, num } from '../lib/format'
 import { statusPill } from '../lib/format'
-import { GlassCard, PageTitle, Pagination, Pill, Modal, EmptyState, CustomSelect, Spinner, StatCard } from '../components/ui'
+import { GlassCard, PageTitle, Pagination, Pill, Modal, EmptyState, CustomSelect, Spinner, StatCard, ActionsMenu } from '../components/ui'
 import { DualDatePicker } from '../components/DualDatePicker'
 import { VoucherCard } from '../components/VoucherCard'
 import VoucherGenerateTab from './VoucherGenerateTab'
 import VoucherSalesSummaryTab from './VoucherSalesSummaryTab'
+import VoucherUsageModal from '../components/VoucherUsageModal'
 
 // The six summary tiles above the vouchers table. `pick` reads the same shape
 // whether it's handed the overall totals or one package type's rollup, so the
@@ -115,6 +116,7 @@ export default function Vouchers() {
 
   // Sell state
   const [sellVoucher, setSellVoucher] = useState<any>(null)
+  const [usageVoucher, setUsageVoucher] = useState<any>(null)
   const [customerUsername, setCustomerUsername] = useState('')
   const [selling, setSelling] = useState(false)
 
@@ -266,6 +268,16 @@ export default function Vouchers() {
     try {
       const endpoint = v.status === 'disabled' ? `/vouchers/${v.id}/enable` : `/vouchers/${v.id}/disable`
       await api.patch(endpoint)
+      load()
+    } catch (e) {
+      alert(apiError(e))
+    }
+  }
+
+  const resetMac = async (v: any) => {
+    if (!confirm(`Clear the locked device for ${v.username}? The next device to log in will be bound instead.`)) return
+    try {
+      await api.patch(`/vouchers/${v.id}/reset-mac`)
       load()
     } catch (e) {
       alert(apiError(e))
@@ -525,16 +537,41 @@ export default function Vouchers() {
                       {canSeeReports && user?.role !== 'seller' && <td>{v.seller?.username || '—'}</td>}
                       {can('generate_voucher') && (
                         <td className="text-right whitespace-nowrap">
-                          {v.status === 'ready' && (
-                            <button className="text-xs font-bold text-emerald-600 hover:underline mr-3" onClick={() => { setSellVoucher(v); setCustomerUsername(''); setSelling(false) }}>Sell</button>
-                          )}
-                          <button
-                            className={`text-xs font-bold hover:underline mr-3 ${v.status === 'disabled' ? 'text-sky-600' : 'text-slate-500'}`}
-                            onClick={() => toggleDisable(v)}
-                          >
-                            {v.status === 'disabled' ? 'Enable' : 'Disable'}
-                          </button>
-                          <button className="text-xs font-bold text-primary hover:underline" onClick={() => printSingleCard(v)}>Card</button>
+                          <ActionsMenu
+                            items={[
+                              {
+                                label: 'Sell',
+                                hidden: v.status !== 'ready',
+                                className: 'text-emerald-600',
+                                onClick: () => { setSellVoucher(v); setCustomerUsername(''); setSelling(false) },
+                              },
+                              {
+                                label: 'Usage Graph',
+                                // A card still in stock has no accounting history to
+                                // plot; once it has been logged into even once there
+                                // is something to show.
+                                hidden: v.status === 'ready' && !v.activated_at,
+                                className: 'text-[#00579f]',
+                                onClick: () => setUsageVoucher(v),
+                              },
+                              {
+                                label: v.status === 'disabled' ? 'Enable' : 'Disable',
+                                className: v.status === 'disabled' ? 'text-sky-600' : 'text-slate-600',
+                                onClick: () => toggleDisable(v),
+                              },
+                              {
+                                label: 'Reset MAC',
+                                hidden: !(v.mac_bind && v.mac_address),
+                                className: 'text-amber-600',
+                                onClick: () => resetMac(v),
+                              },
+                              {
+                                label: 'Card',
+                                className: 'text-primary',
+                                onClick: () => printSingleCard(v),
+                              },
+                            ]}
+                          />
                         </td>
                       )}
                     </motion.tr>
@@ -633,6 +670,8 @@ export default function Vouchers() {
       )}
 
       {activeTab === 'sales-summary' && <VoucherSalesSummaryTab />}
+
+      <VoucherUsageModal voucher={usageVoucher} onClose={() => setUsageVoucher(null)} />
 
       {/* Sell Voucher Modal */}
       <Modal open={!!sellVoucher} onClose={() => setSellVoucher(null)} title={`Sell Voucher: ${sellVoucher?.code}`}>

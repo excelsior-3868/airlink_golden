@@ -42,8 +42,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/plans/{plan}', [PlanController::class, 'show']);
     // Permission checked inside store(): create_plan (Plans page) vs create_voucher_plan (voucher inline).
     Route::post('/plans', [PlanController::class, 'store']);
-    Route::put('/plans/{plan}', [PlanController::class, 'update'])->middleware('permission:create_plan');
-    Route::delete('/plans/{plan}', [PlanController::class, 'destroy'])->middleware('permission:create_plan');
+    // The OR gate lets a role holding only create_pppoe_plan reach the route;
+    // update()/destroy() then re-assert create_plan for any non-PPPoE plan, so
+    // a PPPoE-only grant cannot edit hotspot plans through the widened door.
+    Route::put('/plans/{plan}', [PlanController::class, 'update'])->middleware('permission:create_plan,create_pppoe_plan');
+    Route::delete('/plans/{plan}', [PlanController::class, 'destroy'])->middleware('permission:create_plan,create_pppoe_plan');
 
     // Bandwidths — read for all, writes gated by permission.
     Route::get('/bandwidths', [BandwidthController::class, 'index']);
@@ -128,9 +131,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/vouchers/{voucher}/sell', [VoucherController::class, 'sell']);
     Route::get('/vouchers/{voucher}', [VoucherController::class, 'show']);
     Route::get('/vouchers/{voucher}/card', [VoucherController::class, 'card']);
+    Route::get('/vouchers/{voucher}/usage', [VoucherController::class, 'usage']);
     Route::delete('/vouchers/{voucher}', [VoucherController::class, 'destroy'])->middleware('permission:delete_voucher');
     Route::patch('/vouchers/{voucher}/disable', [VoucherController::class, 'disable']);
     Route::patch('/vouchers/{voucher}/enable', [VoucherController::class, 'enable']);
+    Route::patch('/vouchers/{voucher}/reset-mac', [VoucherController::class, 'resetMac']);
 
     // PPPoE subscribers — admin + reseller only. The role: gate is deliberate
     // belt-and-braces on top of permission:, so a well-meaning flip of a
@@ -151,12 +156,16 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post  ('/pppoe/customers/{customer}/disconnect',  [PppoeCustomerController::class, 'disconnect'])  ->middleware('permission:suspend_pppoe_customer');
         Route::post  ('/pppoe/customers/{customer}/recharge',    [PppoeRechargeController::class, 'store'])       ->middleware('permission:recharge_pppoe_customer');
         Route::delete('/pppoe/customers/{customer}',             [PppoeCustomerController::class, 'destroy'])     ->middleware('permission:delete_pppoe_customer');
+
+        // PPPoE Sales Summary. Lives in this group rather than beside the other
+        // reports because the page is PPPoE-only: a seller has no PPPoE concept,
+        // so it answers 403 rather than rendering a page of zeroes.
+        Route::get   ('/reports/pppoe-sales-summary',            [ReportController::class, 'pppoeSalesSummary'])  ->middleware('permission:view_pppoe');
     });
 
     // Reports — used-voucher package summary (scoped); drill-down via /vouchers.
     Route::get('/reports/package-summary', [ReportController::class, 'packageSummary'])->middleware('permission:reports');
     Route::get('/reports/reseller-summary', [ReportController::class, 'resellerSummary'])->middleware('permission:reports');
-    Route::get('/reports/sales-summary', [ReportController::class, 'salesSummary']);
 
     // System Permissions Configuration Matrix
     Route::get('/permissions', [PermissionController::class, 'index']);

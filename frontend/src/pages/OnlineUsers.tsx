@@ -3,7 +3,7 @@ import { motion } from 'framer-motion'
 import { Wifi, RefreshCw, Power, Search, Database, Clock, Laptop, ShieldAlert, CheckCircle2, AlertTriangle, Activity, Router, Users } from 'lucide-react'
 import { api } from '../lib/api'
 import { formatBytes, gb, num, date, datet } from '../lib/format'
-import { GlassCard, PageTitle, Spinner, EmptyState, StatCard } from '../components/ui'
+import { GlassCard, PageTitle, Spinner, EmptyState, StatCard, Pagination, CustomSelect, SelectOption } from '../components/ui'
 
 interface OnlineSession {
   radacctid: number
@@ -32,11 +32,21 @@ interface OnlineSession {
   seller_name?: string
 }
 
+const perPageOptions: SelectOption[] = [
+  { value: '10', label: '10 / Page' },
+  { value: '15', label: '15 / Page' },
+  { value: '25', label: '25 / Page' },
+  { value: '50', label: '50 / Page' },
+  { value: '100', label: '100 / Page' },
+]
+
 export default function OnlineUsers() {
   const [sessions, setSessions] = useState<OnlineSession[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState<'all' | 'hotspot' | 'pppoe'>('all')
+  const [page, setPage] = useState(1)
+  const [perPage, setPerPage] = useState(15)
   const [disconnecting, setDisconnecting] = useState<string | null>(null)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
@@ -110,6 +120,23 @@ export default function OnlineUsers() {
   const visibleSessions = typeFilter === 'all'
     ? sessions
     : sessions.filter((s) => (s.connection_type ?? 'hotspot') === typeFilter)
+
+  const lastPage = Math.max(1, Math.ceil(visibleSessions.length / perPage))
+  const currentPage = Math.min(page, lastPage)
+  const pagedSessions = visibleSessions.slice((currentPage - 1) * perPage, currentPage * perPage)
+  const pageMeta = {
+    current_page: currentPage,
+    last_page: lastPage,
+    per_page: perPage,
+    total: visibleSessions.length,
+    from: visibleSessions.length === 0 ? 0 : (currentPage - 1) * perPage + 1,
+    to: Math.min(currentPage * perPage, visibleSessions.length),
+  }
+
+  // Reset to first page when search or tab filter changes
+  useEffect(() => {
+    setPage(1)
+  }, [search, typeFilter])
 
   // The summary cards always describe every live session, never the active tab —
   // a number that silently changed with the Hotspot/PPPoE filter read as a bug.
@@ -237,6 +264,17 @@ export default function OnlineUsers() {
                 className="w-full text-xs pl-8 pr-3 py-2 rounded-xl border border-slate-200 bg-white focus:outline-none focus:border-cyan-500 shadow-xs"
               />
             </div>
+            <div className="w-32">
+              <CustomSelect
+                options={perPageOptions}
+                value={String(perPage)}
+                onChange={(val) => {
+                  setPerPage(Number(val))
+                  setPage(1)
+                }}
+                searchable={false}
+              />
+            </div>
             <button
               onClick={fetchOnlineUsers}
               disabled={loading}
@@ -269,7 +307,7 @@ export default function OnlineUsers() {
                 </tr>
               </thead>
               <tbody>
-                {visibleSessions.map((s) => (
+                {pagedSessions.map((s) => (
                   <motion.tr
                     key={s.radacctid}
                     initial={{ opacity: 0 }}
@@ -353,6 +391,12 @@ export default function OnlineUsers() {
             </EmptyState>
           )}
         </div>
+
+        {visibleSessions.length > 0 && (
+          <div className="px-4 pb-4 border-t border-slate-100 bg-slate-50/30">
+            <Pagination meta={pageMeta} onPage={setPage} />
+          </div>
+        )}
       </GlassCard>
     </div>
   )

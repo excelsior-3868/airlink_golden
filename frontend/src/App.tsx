@@ -29,7 +29,7 @@ import PaymentMethods from './pages/PaymentMethods'
 import OnlineUsers from './pages/OnlineUsers'
 import PppoeCustomers from './pages/PppoeCustomers'
 import BrandingSettings from './pages/BrandingSettings'
-import SalesSummary from './pages/SalesSummary'
+import PppoeSalesSummary from './pages/PppoeSalesSummary'
 
 function Protected({ children }: { children: JSX.Element }) {
   const { user, loading } = useAuth()
@@ -79,10 +79,13 @@ export default function App() {
       >
         <Route path="/" element={<Guard perm="dashboard"><Dashboard /></Guard>} />
         <Route path="/financial-dashboard" element={<Guard roles={['admin', 'reseller', 'seller']}><FinancialDashboard /></Guard>} />
-        <Route path="/sales-summary" element={<Guard roles={['admin', 'reseller', 'seller']}><SalesSummary /></Guard>} />
+        {/* Renamed and moved under PPPoE. The page is PPPoE-only now, so it
+            follows the same admin + reseller gate as the rest of that menu. */}
+        <Route path="/sales-summary" element={<Navigate to="/pppoe/sales-summary" replace />} />
         <Route path="/online-users" element={<Guard roles={['admin', 'reseller', 'seller']}><OnlineUsers /></Guard>} />
         <Route path="/pppoe" element={<Navigate to="/pppoe/customers" replace />} />
         <Route path="/pppoe/customers" element={<Guard perm="view_pppoe" roles={['admin', 'reseller']}><PppoeCustomers /></Guard>} />
+        <Route path="/pppoe/sales-summary" element={<Guard perm="view_pppoe" roles={['admin', 'reseller']}><PppoeSalesSummary /></Guard>} />
         <Route path="/plans" element={<Navigate to="/plans/hotspot" replace />} />
         <Route path="/plans/hotspot" element={<Guard perm="view_plans"><HotspotPlans /></Guard>} />
         <Route path="/plans/pppoe" element={<Guard perm="view_plans" roles={['admin', 'reseller']}><PppoePlans /></Guard>} />

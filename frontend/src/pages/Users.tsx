@@ -1,7 +1,7 @@
-import { useEffect, useState, Fragment } from 'react'
+import { useEffect, useState, useMemo, Fragment } from 'react'
 import { useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Plus, HandCoins, Wallet, Database, UserPlus, Save, Users2, Store, FileText, CreditCard, CheckCircle2, RefreshCw, ChevronDown, ChevronUp, Percent, Coins, PlusCircle, Power, Eye, EyeOff, Edit3, UserMinus, UserCheck } from 'lucide-react'
+import { Plus, HandCoins, Wallet, Database, UserPlus, Save, Users2, Store, FileText, CreditCard, CheckCircle2, RefreshCw, ChevronDown, ChevronUp, Percent, Coins, PlusCircle, Power, Eye, EyeOff, Edit3, UserMinus, UserCheck, Search, RotateCcw, FilterX, User as UserIcon, Users as UsersIcon } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useQuery, invalidateCache } from '../lib/cache'
 import { useAuth } from '../lib/auth'
@@ -25,6 +25,10 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
   const { user, refresh, can } = useAuth()
   const location = useLocation()
   const [page, setPage] = useState(1)
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [resellerFilter, setResellerFilter] = useState('all')
+  const [sellerFilter, setSellerFilter] = useState('all')
 
   const [createOpen, setCreateOpen] = useState(false)
 
@@ -55,6 +59,7 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
       setCreateOpen(true)
     }
   }, [location.search])
+
   const [form, setForm] = useState<any>({ name: '', username: '', email: '', phone: '', password: '', confirm_password: '', gb_rate: '', commission_percent: '' })
   const [showPw, setShowPw] = useState(false)
   const [showConfirmPw, setShowConfirmPw] = useState(false)
@@ -146,11 +151,9 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
       let filteredP = pList;
 
       if (role === 'reseller') {
-        // Reseller page: show only transactions between Admin and Reseller
         filteredI = iList.filter((t: any) => t.receiver_id === u.id);
-        filteredP = pList.filter((t: any) => t.receiver_id === user?.id || t.receiver_id === 1); // target receiver is Admin (user.id or 1)
+        filteredP = pList.filter((t: any) => t.receiver_id === user?.id || t.receiver_id === 1);
       } else if (role === 'seller') {
-        // Seller page: show only transactions between Reseller/Admin and Seller
         filteredI = iList.filter((t: any) => t.receiver_id === u.id);
         filteredP = pList.filter((t: any) => t.sender_id === u.id);
       }
@@ -166,24 +169,91 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
 
   const label = role === 'reseller' ? 'Reseller' : 'Seller'
 
+  const queryParams = useMemo(() => {
+    const p: Record<string, any> = { role, page, per_page: 15 }
+    if (role === 'reseller') {
+      if (resellerFilter !== 'all') p.id = resellerFilter
+    } else if (role === 'seller') {
+      if (user?.role === 'admin' && resellerFilter !== 'all') {
+        p.parent_id = resellerFilter
+      } else if (user?.role === 'reseller' && sellerFilter !== 'all') {
+        p.id = sellerFilter
+      }
+    }
+    if (statusFilter !== 'all') p.status = statusFilter
+    return p
+  }, [role, page, statusFilter, resellerFilter, sellerFilter, user?.role])
+
+  const queryKey = useMemo(() => {
+    return `users?${new URLSearchParams(queryParams as any).toString()}`
+  }, [queryParams])
+
   const { data, loading: usersLoading, refetch } = useQuery<any>(
-    `users?role=${role}&page=${page}`,
-    () => api.get('/users', { params: { role, page } }).then((r) => r.data.data),
-  )
-  const { data: resellers = [] } = useQuery<any[]>(
-    'users?role=reseller&per_page=100',
-    () => api.get('/users', { params: { role: 'reseller', per_page: 100 } }).then((r) => r.data.data.data),
-    { enabled: role === 'seller' && user?.role === 'admin' },
+    queryKey,
+    () => api.get('/users', { params: queryParams }).then((r) => r.data.data),
   )
 
-  // Refresh this list plus balances/dashboard that a fund/status change affects.
+  const { data: resellers = [] } = useQuery<any[]>(
+    'users?role=reseller&per_page=200',
+    () => api.get('/users', { params: { role: 'reseller', per_page: 200 } }).then((r) => r.data.data.data || r.data.data),
+    { enabled: user?.role === 'admin' || role === 'reseller' },
+  )
+
+  const filterResellerOptions = useMemo(() => {
+    const opts: SelectOption[] = [
+      {
+        value: 'all',
+        label: 'All Resellers',
+        icon: <UsersIcon size={16} className="text-slate-400" />
+      }
+    ]
+    const list = role === 'reseller' ? (resellers.length > 0 ? resellers : (data?.data || [])) : resellers
+    list.forEach((r: any) => opts.push({
+      value: String(r.id),
+      label: r.name,
+      keywords: r.username,
+      icon: <UserIcon size={16} className="text-indigo-500" />
+    }))
+    return opts
+  }, [role, resellers, data?.data])
+
+  const { data: allSellersList = [] } = useQuery<any[]>(
+    'users?role=seller&per_page=200',
+    () => api.get('/users', { params: { role: 'seller', per_page: 200 } }).then((r) => r.data.data.data || r.data.data),
+    { enabled: role === 'seller' && user?.role === 'reseller' },
+  )
+
+  const filterSellerOptions = useMemo(() => {
+    const opts: SelectOption[] = [
+      {
+        value: 'all',
+        label: 'All Sellers',
+        icon: <UsersIcon size={16} className="text-slate-400" />
+      }
+    ]
+    const list = allSellersList.length > 0 ? allSellersList : (data?.data || [])
+    list.forEach((s: any) => opts.push({
+      value: String(s.id),
+      label: s.name,
+      keywords: s.username,
+      icon: <UserIcon size={16} className="text-indigo-500" />
+    }))
+    return opts
+  }, [allSellersList, data?.data])
+
+  const statusOptions: SelectOption[] = [
+    { value: 'all', label: 'All Statuses' },
+    { value: 'active', label: 'Active' },
+    { value: 'disabled', label: 'Disabled' },
+  ]
+
   const load = () => {
     refetch()
     invalidateCache('users'); invalidateCache('dashboard'); invalidateCache('wallet'); invalidateCache('gb')
   }
 
-  useEffect(() => { setPage(1) }, [role])
-  useEffect(() => { setExpandedUserId(null); setHistoryData([]) }, [role, page])
+  useEffect(() => { setPage(1) }, [role, statusFilter, resellerFilter, sellerFilter])
+  useEffect(() => { setExpandedUserId(null); setHistoryData([]) }, [role, page, statusFilter, resellerFilter, sellerFilter])
 
   const openEditUser = (u: any) => {
     setEditUser(u)
@@ -381,7 +451,97 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
         )}
       </div>
 
+      {/* Search & Filter Bar */}
+      <div className="bg-white rounded-3xl p-3.5 shadow-sm border border-slate-100/80 mb-4">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
+            {role === 'reseller' ? (
+              /* Reseller Page: Double-width Reseller Combobox (sm:w-80) + Status Combobox (sm:w-44) */
+              <>
+                <div className="w-full sm:w-80 shrink-0">
+                  <CustomSelect
+                    value={resellerFilter}
+                    onChange={(v) => setResellerFilter(String(v))}
+                    options={filterResellerOptions}
+                    placeholder="All Resellers"
+                    searchable={true}
+                    className="w-full"
+                  />
+                </div>
+
+                <div className="w-full sm:w-44 shrink-0">
+                  <CustomSelect
+                    value={statusFilter}
+                    onChange={(v) => setStatusFilter(String(v))}
+                    options={statusOptions}
+                    className="w-full"
+                  />
+                </div>
+              </>
+            ) : (
+              /* Seller Page: Double-width Combobox (sm:w-80) + Status Combobox (sm:w-44) */
+              <>
+                {user?.role === 'admin' ? (
+                  <div className="w-full sm:w-80 shrink-0">
+                    <CustomSelect
+                      value={resellerFilter}
+                      onChange={(v) => setResellerFilter(String(v))}
+                      options={filterResellerOptions}
+                      placeholder="All Resellers"
+                      searchable={true}
+                      className="w-full"
+                    />
+                  </div>
+                ) : (
+                  <div className="w-full sm:w-80 shrink-0">
+                    <CustomSelect
+                      value={sellerFilter}
+                      onChange={(v) => setSellerFilter(String(v))}
+                      options={filterSellerOptions}
+                      placeholder="All Sellers"
+                      searchable={true}
+                      className="w-full"
+                    />
+                  </div>
+                )}
+
+                <div className="w-full sm:w-44 shrink-0">
+                  <CustomSelect
+                    value={statusFilter}
+                    onChange={(v) => setStatusFilter(String(v))}
+                    options={statusOptions}
+                    className="w-full"
+                  />
+                </div>
+              </>
+            )}
+
+            {(statusFilter !== 'all' || resellerFilter !== 'all' || sellerFilter !== 'all') && (
+              <button
+                type="button"
+                onClick={() => {
+                  setStatusFilter('all')
+                  setResellerFilter('all')
+                  setSellerFilter('all')
+                }}
+                className="px-3.5 py-2 text-xs font-bold rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-800 transition flex items-center gap-1.5 shrink-0"
+                title="Reset Filters"
+              >
+                <RotateCcw size={14} /> Clear Filter
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
       <GlassCard className="!p-0 overflow-hidden">
+        {data && data.total > 0 && (
+          <div className="px-6 py-3 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between text-xs font-semibold text-slate-500">
+            <span>
+              Showing {data.from || 0} to {data.to || 0} of {data.total || 0} {role === 'reseller' ? 'resellers' : 'sellers'}
+            </span>
+          </div>
+        )}
         {usersLoading && !data ? (
           <Spinner />
         ) : null}

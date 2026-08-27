@@ -201,6 +201,131 @@ class VoucherController extends Controller
         return $this->ok($voucher->load('plan', 'owner:id,username', 'reseller:id,username', 'seller:id,username'));
     }
 
+    /**
+     * Usage history for one voucher, straight from radacct — the data behind
+     * the "Usage Graph" action.
+     *
+     * Three shapes, because they answer different questions:
+     *   sessions  every connection, with a running cumulative total, so the
+     *             chart can plot consumption against the card's cap.
+     *   daily     per-day totals, which is the granularity a daily_data_gb
+     *             plan is actually capped on.
+     *   totals    the headline figures, summed over ALL sessions — matching
+     *             how the authorize gate and vouchers:sync-status measure the
+     *             quota, so the graph can never disagree with the cutoff.
+     *
+     * Octet direction is from the NAS's point of view, so acctinputoctets is
+     * what the client uploaded and acctoutputoctets what it downloaded. The
+     * quota counts both, exactly as the RADIUS gate does.
+     */
+    public function usage(Request $request, Voucher $voucher): JsonResponse
+    {
+        if (! $request->user()->tokenCan('vouchers.read')) {
+            return $this->fail("This API token does not have the 'vouchers.read' ability.", 403);
+        }
+
+        if (! $this->canAccess($request->user(), $voucher)) {
+            return $this->fail('Not found.', 404);
+        }
+
+        $gib = 1073741824;
+
+        $rows = DB::table('radacct')
+            ->where('username', $voucher->username)
+            ->orderBy('acctstarttime')
+            ->orderBy('radacctid')
+            ->get([
+                'radacctid', 'acctstarttime', 'acctstoptime', 'acctupdatetime',
+                'acctsessiontime', 'acctinputoctets', 'acctoutputoctets',
+                'acctterminatecause', 'nasipaddress', 'framedipaddress', 'callingstationid',
+            ]);
+
+        // Only sessions that started on or after the card was created count.
+        // A recycled username can carry a previous holder's accounting rows,
+        // and charging those to this card would both overstate the graph and
+        // disagree with the quota maths in vouchers:sync-status, which applies
+        // the same cut-off.
+        $rows = $rows->filter(
+            fn ($r) => ! $voucher->created_at || ! $r->acctstarttime || $r->acctstarttime >= $voucher->created_at
+        )->values();
+
+        $cumulative = 0;
+        $sessions = $rows->map(function ($r) use (&$cumulative, $gib) {
+            $up = (int) $r->acctinputoctets;
+            $down = (int) $r->acctoutputoctets;
+            $cumulative += $up + $down;
+
+            return [
+                'id' => (int) $r->radacctid,
+                'start' => $r->acctstarttime,
+                'stop' => $r->acctstoptime,
+                'seconds' => (int) $r->acctsessiontime,
+                'upload_gb' => round($up / $gib, 4),
+                'download_gb' => round($down / $gib, 4),
+                'total_gb' => round(($up + $down) / $gib, 4),
+                'cumulative_gb' => round($cumulative / $gib, 4),
+                'nas_ip' => $r->nasipaddress,
+                'ip_address' => $r->framedipaddress,
+                'mac_address' => $r->callingstationid,
+                'terminate_cause' => $r->acctterminatecause ?: null,
+                'is_open' => $r->acctstoptime === null,
+            ];
+        })->all();
+
+        // A session spanning midnight lands wholly on its start date. The NAS
+        // reports one figure for the whole session, so there is nothing to
+        // split it by — approximating a split would invent detail the
+        // accounting data does not carry.
+        $daily = $rows
+            ->groupBy(fn ($r) => substr((string) $r->acctstarttime, 0, 10))
+            ->map(fn ($group, $date) => [
+                'date' => $date,
+                'upload_gb' => round($group->sum(fn ($r) => (int) $r->acctinputoctets) / $gib, 4),
+                'download_gb' => round($group->sum(fn ($r) => (int) $r->acctoutputoctets) / $gib, 4),
+                'total_gb' => round($group->sum(fn ($r) => (int) $r->acctinputoctets + (int) $r->acctoutputoctets) / $gib, 4),
+                'sessions' => $group->count(),
+            ])
+            ->values()
+            ->all();
+
+        $cap = $voucher->data_gb !== null && (float) $voucher->data_gb > 0 ? (float) $voucher->data_gb : null;
+        $usedGb = round($cumulative / $gib, 4);
+
+        // An open session whose counters have not moved past its Start packet
+        // means the NAS has sent no Interim-Update for it yet, so traffic in
+        // flight right now is not in any of the figures above. Surfaced so the
+        // chart can say so rather than showing a flat line for a live customer.
+        $liveNotYetCounted = $rows->contains(
+            fn ($r) => $r->acctstoptime === null
+                && (int) $r->acctinputoctets === 0
+                && (int) $r->acctoutputoctets === 0
+        );
+
+        return $this->ok([
+            'voucher' => [
+                'code' => $voucher->code,
+                'username' => $voucher->username,
+                'status' => $voucher->status,
+                'plan' => $voucher->plan?->name,
+                'data_gb' => $cap,
+                'daily_data_gb' => $voucher->daily_data_gb !== null ? (float) $voucher->daily_data_gb : null,
+                'activated_at' => $voucher->activated_at,
+                'expires_at' => $voucher->expires_at,
+            ],
+            'totals' => [
+                'used_gb' => $usedGb,
+                'cap_gb' => $cap,
+                'remaining_gb' => $cap !== null ? round(max(0, $cap - $usedGb), 4) : null,
+                'percent_used' => $cap !== null && $cap > 0 ? round(min(100, $usedGb / $cap * 100), 1) : null,
+                'session_count' => count($sessions),
+                'total_seconds' => (int) $rows->sum(fn ($r) => (int) $r->acctsessiontime),
+            ],
+            'sessions' => $sessions,
+            'daily' => $daily,
+            'live_session_not_yet_counted' => $liveNotYetCounted,
+        ]);
+    }
+
     /** Disable a voucher — removes its RADIUS credential so it rejects. */
     public function disable(Request $request, Voucher $voucher): JsonResponse
     {
@@ -243,6 +368,32 @@ class VoucherController extends Controller
         });
 
         return $this->ok($voucher, 'Voucher re-enabled.');
+    }
+
+    /**
+     * Clear a MAC-bound voucher's captured device, so it can bind to a new
+     * one on its next login. FreeRADIUS's post-auth capture only ever
+     * writes mac_address once (IFNULL-guarded on first login); there is no
+     * other way to undo that short of direct DB access, which is what this
+     * closes.
+     */
+    public function resetMac(Request $request, Voucher $voucher): JsonResponse
+    {
+        if (! $request->user()->tokenCan('vouchers.enable')) {
+            return $this->fail("This API token does not have the 'vouchers.enable' ability.", 403);
+        }
+
+        if (! $this->canAccess($request->user(), $voucher)) {
+            return $this->fail('You do not have permission to modify this voucher.', 403);
+        }
+
+        if (! $voucher->mac_bind) {
+            return $this->fail('This voucher is not MAC-bound.', 422);
+        }
+
+        $voucher->update(['mac_address' => null]);
+
+        return $this->ok($voucher, 'MAC lock cleared. The next device to log in will be bound.');
     }
 
     /** Delete a voucher (admin) — also drops its RADIUS rows. */

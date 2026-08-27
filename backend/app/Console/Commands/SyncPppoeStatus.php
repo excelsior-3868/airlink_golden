@@ -5,14 +5,19 @@ namespace App\Console\Commands;
 use App\Models\PppoeCustomer;
 use App\Services\Radius\CoaService;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Synchronizes PPPoE subscriber statuses based on expiry dates.
  * Runs on a schedule (see routes/console.php).
  *
  * Any active subscriber past expires_at is transitioned to 'expired'.
- * Note: radcheck rows are deliberately KEPT so the subscriber receives the
- * specific 'subscription has expired' Reply-Message in their PPP log.
+ * radcheck/radreply rows are deleted so the account actually can't
+ * re-authenticate — the comment this replaced claimed a FreeRADIUS-side
+ * "subscription expired" state machine handled rejection instead; that
+ * mechanism does not exist on this server. Credentials are rebuilt on the
+ * next recharge by PppoeRechargeService::recharge() (always calls
+ * rebuildRadiusRows(), regardless of prior status).
  * A CoA Disconnect-Request is issued for any active sessions.
  */
 class SyncPppoeStatus extends Command
@@ -42,6 +47,8 @@ class SyncPppoeStatus extends Command
 
         foreach ($expiredCustomers as $customer) {
             $customer->update(['status' => 'expired']);
+            DB::table('radcheck')->where('username', $customer->username)->delete();
+            DB::table('radreply')->where('username', $customer->username)->delete();
 
             try {
                 $this->coa->disconnectUsername($customer->username);

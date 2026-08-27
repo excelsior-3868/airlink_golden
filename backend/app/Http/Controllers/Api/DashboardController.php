@@ -422,7 +422,12 @@ class DashboardController extends Controller
 
         $byStatus = $live()->select('status', DB::raw('count(*) as c'))->groupBy('status')->pluck('c', 'status');
         $total = (int) $byStatus->sum();
+        // 'used' is the terminal stage — spent by expiry or an exhausted quota.
+        // A card the customer is still using sits on 'active', so unsold stock
+        // is the 'ready' count, not "everything that isn't spent": that older
+        // reading counted every in-use card as still available to sell.
         $used = (int) ($byStatus['used'] ?? 0);
+        $remaining = (int) ($byStatus['ready'] ?? 0);
         $last7Days = $live()->where('created_at', '>=', now()->subDays(7))->count();
         // Cards handed to a customer today. sold_at alone can never fire for
         // imported stock — nothing sets it — so this falls back to activated_at,
@@ -440,7 +445,7 @@ class DashboardController extends Controller
             'total' => $total,
             'by_status' => $byStatus,
             'used' => $used,
-            'remaining' => $total - $used,
+            'remaining' => $remaining,
             'last_7_days' => $last7Days,
             'sold_today' => $soldToday,
             'disabled' => $disabled,

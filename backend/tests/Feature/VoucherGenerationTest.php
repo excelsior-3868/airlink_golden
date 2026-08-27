@@ -196,4 +196,33 @@ class VoucherGenerationTest extends TestCase
         $this->assertEquals(1, $pkg['used']);
         $this->assertEquals(0, $pkg['remaining']);
     }
+
+    public function test_generated_voucher_codes_and_batch_codes_exclude_zero_and_letter_o(): void
+    {
+        $admin = $this->makeUser('admin', ['wallet_balance' => 10000, 'gb_balance' => 500]);
+        $plan = $this->plan();
+
+        Sanctum::actingAs($admin, ['*']);
+        $res = $this->postJson('/api/vouchers/generate', [
+            'plan_id' => $plan->id,
+            'quantity' => 50,
+        ]);
+
+        $res->assertStatus(201);
+        $batchCode = $res->json('data.batch_code');
+        $this->assertMatchesRegularExpression('/^BAT\d{6}[1-9A-HJ-NP-Z]{4}$/', $batchCode);
+        $this->assertDoesNotMatchRegularExpression('/[0OoIi]/', substr($batchCode, 9));
+
+        $batch = \App\Models\Batch::where('batch_code', $batchCode)->first();
+        $this->assertNotNull($batch);
+
+        $vouchers = \App\Models\Voucher::where('batch_id', $batch->id)->get();
+        $this->assertCount(50, $vouchers);
+
+        foreach ($vouchers as $v) {
+            $this->assertEquals(6, strlen($v->code));
+            $this->assertDoesNotMatchRegularExpression('/[0Oo]/', $v->code);
+            $this->assertMatchesRegularExpression('/^[1-9A-HJ-NP-Z]{6}$/', $v->code);
+        }
+    }
 }

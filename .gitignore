@@ -22,3 +22,5 @@ backend/storage/app/legacy-import-report.json
 # real customer data (voucher codes, passwords), never belongs in git history.
 /backups/
 /frontend/*.sql
+mera14august2026.sql
+implementation_plan_formera

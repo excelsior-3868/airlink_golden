@@ -333,17 +333,17 @@ authorize {
 	#  other authorize module so expired/disabled/quota-exhausted vouchers
 	#  get a distinct Reply-Message instead of a generic reject.
 	#
-	#  Note 'used' is NOT a reject reason: it means "activated", i.e. the
-	#  customer has logged in at least once, not that the card is spent.
-	#  What actually ends a card's life is expiry or an exhausted quota,
-	#  both checked live below — so a used card keeps reconnecting until
-	#  one of those trips.
+	#  'used' IS a reject reason: it is the terminal stage, meaning the card
+	#  is spent (validity window over, or data quota exhausted). A card the
+	#  customer is actively using sits on 'active' — see the post-auth hook
+	#  below, which is what promotes 'ready' → 'active' on first login.
 	#
 	#  Order matters: the data-cap tests run BEFORE the status/expires_at
 	#  tests. vouchers:sync-status collapses a quota-exhausted card into
-	#  status='expired', so checking status first told a customer who had
+	#  status='used', so checking status first told a customer who had
 	#  simply used up their GB that the card had "expired" — the wrong reason,
-	#  and the wrong action for them to take.
+	#  and the wrong action for them to take. Testing the cap first keeps the
+	#  "Data volume reached" message for exactly those cards.
 	#
 	#  Volume is summed across ALL radacct rows for this username, so a
 	#  voucher can be reconnected on repeatedly until its cap is hit —
@@ -359,7 +359,7 @@ authorize {
 				) >= (data_gb * 1073741824) THEN 'quota' \
 				WHEN daily_data_gb IS NOT NULL AND daily_data_gb > 0 \
 					AND daily_used_bytes >= (daily_data_gb * 1073741824) THEN 'daily_quota' \
-				WHEN status = 'expired' THEN 'expired' \
+				WHEN status = 'used' THEN 'expired' \
 				WHEN expires_at IS NOT NULL AND expires_at < NOW() THEN 'expired' \
 				WHEN nas_ip IS NOT NULL AND nas_ip <> '' AND nas_ip <> '%{NAS-IP-Address}' THEN 'nas_mismatch' \
 				WHEN mac_bind = 1 AND mac_address IS NOT NULL AND mac_address <> '' \
@@ -403,6 +403,60 @@ authorize {
 		case "mac_mismatch" {
 			update reply {
 				Reply-Message := "This voucher is locked to a different device."
+			}
+			reject
+		}
+	}
+
+	#  Airlink v3.0: PPPoE subscriber lifecycle check, same shape as the
+	#  voucher gate above but against `pppoe_customers`. Closes the up-to-
+	#  5-minute window between a subscription actually expiring and the next
+	#  pppoe:sync-status cron tick deleting its radcheck/radreply rows, and
+	#  gives the subscriber a specific reason instead of a bare reject.
+	#  Harmless no-op for voucher/non-PPPoE usernames (zero matching row).
+	update control {
+		Tmp-String-3 := "%{sql: SELECT \
+			CASE \
+				WHEN status = 'suspended' THEN 'suspended' \
+				WHEN status = 'terminated' THEN 'terminated' \
+				WHEN status = 'expired' THEN 'expired' \
+				WHEN expires_at IS NOT NULL AND expires_at < NOW() THEN 'expired' \
+				WHEN nas_ip IS NOT NULL AND nas_ip <> '' AND nas_ip <> '%{NAS-IP-Address}' THEN 'nas_mismatch' \
+				WHEN mac_bind = 1 AND mac_address IS NOT NULL AND mac_address <> '' \
+					AND mac_address <> '%{Calling-Station-Id}' THEN 'mac_mismatch' \
+				ELSE 'ok' \
+			END \
+			FROM pppoe_customers WHERE username = '%{User-Name}' LIMIT 1}"
+	}
+
+	switch &control:Tmp-String-3 {
+		case "expired" {
+			update reply {
+				Reply-Message := "Your subscription has expired. Please recharge to continue."
+			}
+			reject
+		}
+		case "suspended" {
+			update reply {
+				Reply-Message := "Your account has been suspended. Please contact support."
+			}
+			reject
+		}
+		case "terminated" {
+			update reply {
+				Reply-Message := "This account has been terminated."
+			}
+			reject
+		}
+		case "nas_mismatch" {
+			update reply {
+				Reply-Message := "Account not valid on this router."
+			}
+			reject
+		}
+		case "mac_mismatch" {
+			update reply {
+				Reply-Message := "This account is locked to a different device."
 			}
 			reject
 		}
@@ -964,24 +1018,30 @@ post-auth {
 	#  'detail reply_log' module.
 #	reply_log
 
-	#  Airlink v3.0: first login starts the clock. Mark the card 'used' and
+	#  Airlink v3.0: first login starts the clock. Mark the card 'active' and
 	#  stamp activated_at + expires_at (derived from validity_days), but the
-	#  timestamps only the first time (IFNULL). 'used' here means "activated",
-	#  not "spent" — the authorize gate above no longer rejects on it, so the
-	#  customer keeps reconnecting until expiry or an exhausted quota.
-	#  Both sale routes converge here: a card sold in the app (active→sold)
-	#  and a printed card handed over directly (still active) both become
-	#  'used' on the customer's first successful login.
-	#  'used' is in the WHERE so later logins still refresh the MAC binding.
+	#  timestamps only the first time (IFNULL).
+	#
+	#  Lifecycle stages (vouchers.status enum, and the only reading of them):
+	#    ready    generated / in stock, never logged in
+	#    active   customer has logged in — the card is in use
+	#    used     spent: validity window over, or data quota exhausted
+	#    disabled revoked by admin/reseller
+	#
+	#  So 'active' is what a successful login means, and 'used' is terminal
+	#  — set by vouchers:sync-status on expiry/quota, and rejected by the
+	#  authorize gate above. 'used' is deliberately NOT in the WHERE below:
+	#  a spent card must never be re-stamped back into service by a login.
+	#  'active' stays in it so later logins still refresh the MAC binding.
 	#  For MAC-bind vouchers, capture the client's MAC on this same first
 	#  login (IFNULL again) — every later login just compares against it.
 	update control {
 		Tmp-String-1 := "%{sql: UPDATE vouchers SET \
-			status = 'used', \
+			status = 'active', \
 			activated_at = IFNULL(activated_at, NOW()), \
 			expires_at = IFNULL(expires_at, DATE_ADD(NOW(), INTERVAL validity_days DAY)), \
 			mac_address = CASE WHEN mac_bind = 1 THEN IFNULL(mac_address, NULLIF('%{Calling-Station-Id}', '')) ELSE mac_address END \
-			WHERE username = '%{User-Name}' AND status IN ('active','sold','used')}"
+			WHERE username = '%{User-Name}' AND status IN ('ready','active')}"
 	}
 
 	#

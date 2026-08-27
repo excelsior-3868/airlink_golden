@@ -26,6 +26,12 @@ export default function Permissions() {
     setRows(updated)
   }
 
+  // PPPoE has no seller-facing surface at all — every PPPoE route is wrapped in
+  // role:admin,reseller on top of its permission gate, so a seller tick would
+  // save and then do nothing. The API strips it too; this only stops the UI
+  // offering a toggle that cannot take effect.
+  const sellerLocked = (row: any) => String(row.feature || '').includes('pppoe')
+
   const save = async () => {
     setSaving(true); setErr(''); setMsg('')
     try {
@@ -113,8 +119,10 @@ export default function Permissions() {
                     <td className="text-center">
                       <input 
                         type="checkbox" 
-                        className="w-4 h-4 text-primary rounded border-slate-300 focus:ring-primary focus:ring-offset-0 cursor-pointer"
-                        checked={!!row.seller}
+                        className="w-4 h-4 text-primary rounded border-slate-300 focus:ring-primary focus:ring-offset-0 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                        checked={!!row.seller && !sellerLocked(row)}
+                        disabled={sellerLocked(row)}
+                        title={sellerLocked(row) ? 'PPPoE features are unavailable to the seller role.' : undefined}
                         onChange={() => toggle(idx, 'seller')}
                       />
                     </td>
