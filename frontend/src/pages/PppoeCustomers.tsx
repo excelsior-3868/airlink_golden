@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import {
   Users2, Plus, Zap, Pencil, Trash2, PauseCircle, PlayCircle, Unplug,
@@ -10,8 +10,8 @@ import { useQuery, invalidateCache } from '../lib/cache'
 import { useAuth } from '../lib/auth'
 import { rs, date, datet, bsDate, statusPill } from '../lib/format'
 import {
-  GlassCard, PageTitle, Modal, Pill, EmptyState, ConfirmModal,
-  Spinner, CustomSelect, Combobox, Pagination, SelectOption
+  GlassCard, PageTitle, Modal, Pill, EmptyState, ConfirmModal, Toast,
+  Spinner, CustomSelect, Combobox, Pagination, SelectOption, ToastState
 } from '../components/ui'
 import PppoeRechargeModal from '../components/PppoeRechargeModal'
 
@@ -72,6 +72,13 @@ export default function PppoeCustomers() {
 
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
+
+  const [toast, setToast] = useState<ToastState | null>(null)
+  useEffect(() => {
+    if (!toast) return
+    const t = setTimeout(() => setToast(null), 4000)
+    return () => clearTimeout(t)
+  }, [toast])
 
   // Data fetching. /pppoe/customers is server-paginated AND server-filtered, so
   // the filters travel with the request rather than being applied to one page's
@@ -336,14 +343,24 @@ export default function PppoeCustomers() {
       } else if (type === 'resume') {
         await api.patch(`/pppoe/customers/${customer.id}/resume`)
       } else if (type === 'disconnect') {
-        await api.post(`/pppoe/customers/${customer.id}/disconnect`)
+        const res = await api.post(`/pppoe/customers/${customer.id}/disconnect`)
+        const results = Array.isArray(res.data?.data) ? res.data.data : []
+        const disconnected = results.filter((r: any) => r?.status === 'disconnected').length
+        // Backend returns 200 even when every session was skipped/failed (no
+        // active session, unresolvable NAS, unreachable router) — the message
+        // carries the real outcome, so surface it either way instead of a
+        // silent no-op on success or a blocking native alert on failure.
+        setToast({
+          ok: disconnected > 0,
+          text: res.data?.message || (disconnected > 0 ? 'Session disconnected.' : 'Disconnect did not complete.'),
+        })
       } else if (type === 'delete') {
         await api.delete(`/pppoe/customers/${customer.id}`)
       }
       setConfirmModal({ open: false, type: 'suspend', customer: null })
       loadAll()
     } catch (e) {
-      alert(apiError(e))
+      setToast({ ok: false, text: apiError(e) })
     } finally {
       setBusy(false)
     }
@@ -1405,6 +1422,8 @@ export default function PppoeCustomers() {
             : 'Delete Subscriber'
         }
       />
+
+      <Toast toast={toast} onDismiss={() => setToast(null)} />
     </div>
   )
 }

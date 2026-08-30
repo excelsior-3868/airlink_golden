@@ -367,7 +367,21 @@ class PppoeCustomerController extends Controller
 
         $result = $this->customerService->disconnect($actor, $customer);
 
-        return $this->ok($result, 'Disconnect command issued.');
+        // CoaService never throws — every outcome (success, no live session,
+        // unresolvable NAS, unreachable router, NAK) comes back as a per-session
+        // status/reason instead. Surface that here, or a failed/skipped disconnect
+        // looks identical to a successful one to the caller.
+        $disconnected = collect($result)->where('status', 'disconnected')->count();
+        $reasons = collect($result)->whereIn('status', ['failed', 'skipped'])->pluck('reason')->filter()->unique()->values();
+
+        $message = match (true) {
+            $disconnected > 0 && $reasons->isEmpty() => 'Disconnect command issued.',
+            $disconnected > 0 => "Disconnected {$disconnected} session(s), but " . $reasons->count() . ' could not be reached: ' . $reasons->first(),
+            $reasons->isNotEmpty() => $reasons->first(),
+            default => 'No active session found for this subscriber.',
+        };
+
+        return $this->ok($result, $message);
     }
 
     /**

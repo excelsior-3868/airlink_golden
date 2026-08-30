@@ -3,7 +3,7 @@ import { motion } from 'framer-motion'
 import { Wifi, RefreshCw, Power, Search, Database, Clock, Laptop, ShieldAlert, CheckCircle2, AlertTriangle, Activity, Router, Users } from 'lucide-react'
 import { api } from '../lib/api'
 import { formatBytes, gb, num, date, datet } from '../lib/format'
-import { GlassCard, PageTitle, Spinner, EmptyState, StatCard, Pagination, CustomSelect, SelectOption } from '../components/ui'
+import { GlassCard, PageTitle, Spinner, EmptyState, StatCard, Pagination, CustomSelect, SelectOption, ConfirmModal } from '../components/ui'
 
 interface OnlineSession {
   radacctid: number
@@ -48,6 +48,7 @@ export default function OnlineUsers() {
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(15)
   const [disconnecting, setDisconnecting] = useState<string | null>(null)
+  const [confirmDisconnect, setConfirmDisconnect] = useState<{ open: boolean; username: string | null }>({ open: false, username: null })
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
   const fetchOnlineUsers = async () => {
@@ -83,9 +84,6 @@ export default function OnlineUsers() {
   }, [])
 
   const handleDisconnect = async (username: string) => {
-    if (!window.confirm(`Are you sure you want to disconnect live session for '${username}'?`)) {
-      return
-    }
     setDisconnecting(username)
     setMsg(null)
     try {
@@ -369,7 +367,7 @@ export default function OnlineUsers() {
                     </td>
                     <td>
                       <button
-                        onClick={() => handleDisconnect(s.username)}
+                        onClick={() => setConfirmDisconnect({ open: true, username: s.username })}
                         disabled={disconnecting === s.username}
                         className="px-3 py-1.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-600 hover:bg-rose-100 font-bold transition-all text-xs flex items-center gap-1.5"
                         title="Disconnect Live Session via CoA"
@@ -398,6 +396,16 @@ export default function OnlineUsers() {
           </div>
         )}
       </GlassCard>
+
+      <ConfirmModal
+        open={confirmDisconnect.open}
+        onClose={() => setConfirmDisconnect({ open: false, username: null })}
+        onConfirm={() => handleDisconnect(confirmDisconnect.username!)}
+        title="Disconnect Session"
+        message={`Are you sure you want to disconnect live session for '${confirmDisconnect.username}'?`}
+        confirmText="Disconnect"
+        tone="danger"
+      />
     </div>
   )
 }

@@ -8,6 +8,8 @@ import { ComposedChart, Bar, Cell, Line, XAxis, Tooltip, ResponsiveContainer } f
 export { DualDatePicker } from './DualDatePicker'
 export { ConfirmModal } from './ConfirmModal'
 export type { ConfirmState } from './ConfirmModal'
+export { Toast } from './Toast'
+export type { ToastState } from './Toast'
 import { OnlineUsersBadge, OnlineUsersModal } from './OnlineUsersModal'
 export { OnlineUsersBadge, OnlineUsersModal } from './OnlineUsersModal'
 
