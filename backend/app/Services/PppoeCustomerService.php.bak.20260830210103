@@ -27,10 +27,8 @@ class PppoeCustomerService
     {
         $username = trim($data['username']);
 
-        // Check uniqueness across both PPPoE customers and Voucher codes (Risk R4).
-        // Void vouchers (e.g. legacy bad-import rows with no real credential) are
-        // excluded from every voucher listing, so they must not block new usernames.
-        if (PppoeCustomer::where('username', $username)->exists() || Voucher::where('code', $username)->whereNull('void_reason')->exists()) {
+        // Check uniqueness across both PPPoE customers and Voucher codes (Risk R4)
+        if (PppoeCustomer::where('username', $username)->exists() || Voucher::where('code', $username)->exists()) {
             throw ValidationException::withMessages([
                 'username' => 'The username has already been taken.',
             ]);
