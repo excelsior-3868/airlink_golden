@@ -48,7 +48,15 @@ api.interceptors.response.use(
 export function apiError(e: any): string {
   const d = e?.response?.data
   if (d?.errors) return Object.values(d.errors).flat()[0] as string
-  return d?.message || e?.message || 'Something went wrong.'
+  if (d?.message) return d.message
+  // No JSON body reached us: either the request never got a response (network down,
+  // timeout) or it hit a gateway/server error (502/503/504) before Laravel could run —
+  // in both cases there's no app-level message, so show a friendly status instead of
+  // axios's raw "Request failed with status code 502".
+  if (!e?.response || e.response.status >= 500) {
+    return 'Airlink is temporarily unavailable. Please try again shortly.'
+  }
+  return e?.message || 'Something went wrong.'
 }
 
 export const API_BASE = API_URL

@@ -634,8 +634,16 @@ export default function VoucherGenerateTab({ plans, plansLoading = false, refetc
   }
 
   return (
-    <div className="space-y-6">
-      <div className={`flex flex-wrap ${user?.role === 'seller' ? 'justify-end' : 'justify-between'} items-center gap-4 mb-2`}>
+    // flex+gap rather than space-y: a child's own margin utility can never
+    // actually win against a parent space-y-* rule — that selector's
+    // specificity always beats a plain single-class margin utility, so an
+    // attempt to tighten just one gap that way silently does nothing. gap-3
+    // applies uniformly and isn't fightable this way.
+    <div className="flex flex-col gap-3">
+      {/* Owner selector, Create button, category sub-tabs and the package
+          filter all share one left-aligned row — everything that controls
+          what's in the grid below lives together, above it. */}
+      <div className="flex flex-wrap items-center gap-3 border-b border-slate-200/80 pb-3">
         {user?.role !== 'seller' && (
           <div className="flex items-center gap-3">
             <span className="text-sm font-bold text-[#003164] whitespace-nowrap">Generate Packages for:</span>
@@ -655,50 +663,42 @@ export default function VoucherGenerateTab({ plans, plansLoading = false, refetc
         >
           <Plus size={16} /> Create a Package
         </button>
-      </div>
+        {walletCount > 0 && (
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => setPackageTypeTab('all')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer select-none ${
+                packageTypeTab === 'all'
+                  ? 'bg-[#003164] text-white shadow-sm'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              <Layers size={13} /> All Packages ({ownerFilteredPackages.length})
+            </button>
 
+            <button
+              onClick={() => setPackageTypeTab('gb')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer select-none ${
+                packageTypeTab === 'gb'
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200/60'
+              }`}
+            >
+              <Database size={13} /> GB Packages ({gbCount})
+            </button>
 
-
-      {/* Category Sub-Tabs (Differentiate GB vs Wallet packages) + package filter */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/80 pb-3 -mt-2">
-        <div className="flex flex-wrap gap-2">
-          {walletCount > 0 && (
-          <>
-          <button
-            onClick={() => setPackageTypeTab('all')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer select-none ${
-              packageTypeTab === 'all'
-                ? 'bg-[#003164] text-white shadow-sm'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}
-          >
-            <Layers size={13} /> All Packages ({ownerFilteredPackages.length})
-          </button>
-
-          <button
-            onClick={() => setPackageTypeTab('gb')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer select-none ${
-              packageTypeTab === 'gb'
-                ? 'bg-emerald-600 text-white shadow-sm'
-                : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200/60'
-            }`}
-          >
-            <Database size={13} /> GB Packages ({gbCount})
-          </button>
-
-          <button
-            onClick={() => setPackageTypeTab('wallet')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer select-none ${
-              packageTypeTab === 'wallet'
-                ? 'bg-cyan-600 text-white shadow-sm'
-                : 'bg-cyan-50 text-cyan-700 hover:bg-cyan-100 border border-cyan-200/60'
-            }`}
-          >
-            <Wallet size={13} /> Wallet Packages ({walletCount})
-          </button>
-          </>
-          )}
-        </div>
+            <button
+              onClick={() => setPackageTypeTab('wallet')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer select-none ${
+                packageTypeTab === 'wallet'
+                  ? 'bg-cyan-600 text-white shadow-sm'
+                  : 'bg-cyan-50 text-cyan-700 hover:bg-cyan-100 border border-cyan-200/60'
+              }`}
+            >
+              <Wallet size={13} /> Wallet Packages ({walletCount})
+            </button>
+          </div>
+        )}
 
         <div className="relative w-full sm:w-64">
           <span className="absolute inset-y-0 left-3 flex items-center text-slate-400 pointer-events-none">
@@ -1030,16 +1030,22 @@ export default function VoucherGenerateTab({ plans, plansLoading = false, refetc
                 <p className="text-xs text-emerald-600 mt-0.5">
                   Batch <span className="font-mono font-bold bg-white/70 px-1.5 py-0.5 rounded-lg border border-emerald-100">{successResult.batch_code}</span> · {successResult.quantity} voucher(s) · {successResult.plan}
                 </p>
+                {successResult.serial_start && (
+                  <p className="text-xs text-emerald-600 mt-0.5">
+                    Serial <span className="font-mono font-bold bg-white/70 px-1.5 py-0.5 rounded-lg border border-emerald-100">{successResult.serial_start}</span> to <span className="font-mono font-bold bg-white/70 px-1.5 py-0.5 rounded-lg border border-emerald-100">{successResult.serial_end}</span>
+                  </p>
+                )}
               </div>
             </div>
 
             <div>
               <p className="text-xs font-bold text-slate-400 mb-3 uppercase tracking-wider">Preview (first {successResult.sample?.length})</p>
               <div className="flex gap-4 overflow-x-auto pb-3">
-                {cardTemplate && successResult.sample?.map((code: string) => (
+                {cardTemplate && successResult.sample?.map((v: any) => (
                   <VoucherCard
-                    key={code}
-                    code={code}
+                    key={v.code}
+                    code={v.code}
+                    serialNumber={v.serial_number}
                     planName={successResult.plan}
                     price={successPlan?.selling_price}
                     size={200}

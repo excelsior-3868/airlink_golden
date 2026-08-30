@@ -111,6 +111,7 @@ class VoucherCardService
         return match ($el['field'] ?? 'text') {
             'price' => $voucher->price ? 'Rs. ' . number_format((float) $voucher->price, 0) : '',
             'code' => (string) $voucher->code,
+            'serial_number' => (string) $voucher->serial_number,
             'plan_name' => (string) ($voucher->plan?->name ?? ''),
             'username' => (string) $voucher->username,
             'password' => (string) $voucher->password,

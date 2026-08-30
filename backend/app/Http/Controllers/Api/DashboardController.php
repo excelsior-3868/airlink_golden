@@ -277,7 +277,6 @@ class DashboardController extends Controller
         });
 
         $voucherSales = $vouchers->sum('price');
-        $packagesCount = \App\Models\InternetPlan::where('created_by', $seller->id)->count();
 
         // Daily Sales Trend & Voucher Count (split GB vs Wallet) for the last 14 days.
         $dailyTrend = $this->voucherDailyTrend(fn ($q) => $q->where('vouchers.seller_id', $seller->id));
@@ -292,9 +291,6 @@ class DashboardController extends Controller
                 'wallet_due' => $seller->wallet_due,
             ],
             'reseller_name' => $resellerName,
-            'counts' => [
-                'packages' => $packagesCount,
-            ],
             'voucher_sales' => (float) $voucherSales,
             // Cumulative takings on cards actually handed off to a customer. Uses the
             // same 'sold' definition as the sales/package reports — 'ready' cards are
@@ -308,6 +304,18 @@ class DashboardController extends Controller
             'vouchers' => $this->voucherBreakdown(Voucher::where('seller_id', $seller->id)),
             'gb_vouchers' => $this->voucherBreakdown(Voucher::where('seller_id', $seller->id)->whereHas('plan', fn($q) => $q->where('package_type', 'gb'))),
             'wallet_vouchers' => $this->voucherBreakdown(Voucher::where('seller_id', $seller->id)->whereHas('plan', fn($q) => $q->where('package_type', 'wallet'))),
+            // Cards this seller currently holds that arrived via a Reseller's Allocate
+            // Voucher action (VoucherTransferService), as distinct from stock the seller
+            // generated themselves — the vouchers table alone can't tell the two apart
+            // (a transfer just overwrites seller_id/owner_id), so this joins through the
+            // transfer ledger to find which of the seller's own cards actually came in
+            // that way.
+            'allocated_vouchers' => $this->voucherBreakdown(Voucher::where('seller_id', $seller->id)->whereIn('id', function ($q) use ($seller) {
+                $q->select('voucher_transfer_items.voucher_id')
+                    ->from('voucher_transfer_items')
+                    ->join('voucher_transfers', 'voucher_transfers.id', '=', 'voucher_transfer_items.voucher_transfer_id')
+                    ->where('voucher_transfers.to_user_id', $seller->id);
+            })),
             'daily_trend' => $dailyTrend,
             'today' => [
                 'vouchers' => (clone $today)->count(),

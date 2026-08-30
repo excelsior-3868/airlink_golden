@@ -257,6 +257,9 @@ export default function VoucherGenerator() {
               <div>
                 <p className="font-extrabold text-emerald-800">{result.message}</p>
                 <p className="text-xs text-emerald-600 mt-0.5">Batch <span className="font-mono font-bold bg-white/70 px-1.5 py-0.5 rounded-lg border border-emerald-100">{result.batch_code}</span> · {result.quantity} voucher(s) · {result.plan}</p>
+                {result.serial_start && (
+                  <p className="text-xs text-emerald-600 mt-0.5">Serial <span className="font-mono font-bold bg-white/70 px-1.5 py-0.5 rounded-lg border border-emerald-100">{result.serial_start}</span> to <span className="font-mono font-bold bg-white/70 px-1.5 py-0.5 rounded-lg border border-emerald-100">{result.serial_end}</span></p>
+                )}
               </div>
             </div>
 
@@ -264,10 +267,11 @@ export default function VoucherGenerator() {
             <div>
               <p className="text-xs font-bold text-slate-400 mb-3 uppercase tracking-wider">Preview (first {result.sample?.length})</p>
               <div className="flex gap-4 overflow-x-auto pb-3">
-                {cardTemplate && result.sample?.map((code: string) => (
+                {cardTemplate && result.sample?.map((v: any) => (
                   <VoucherCard
-                    key={code}
-                    code={code}
+                    key={v.code}
+                    code={v.code}
+                    serialNumber={v.serial_number}
                     planName={result.plan}
                     price={gen.custom_price || (gen.plan_id === 'custom' ? gen.custom_selling_price : selectedPlan?.selling_price)}
                     size={220}

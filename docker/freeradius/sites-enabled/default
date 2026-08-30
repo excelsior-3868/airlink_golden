@@ -462,6 +462,60 @@ authorize {
 		}
 	}
 
+	#  Airlink v3.0: PPPoE subscriber lifecycle check, same shape as the
+	#  voucher gate above but against `pppoe_customers`. Closes the up-to-
+	#  5-minute window between a subscription actually expiring and the next
+	#  pppoe:sync-status cron tick deleting its radcheck/radreply rows, and
+	#  gives the subscriber a specific reason instead of a bare reject.
+	#  Harmless no-op for voucher/non-PPPoE usernames (zero matching row).
+	update control {
+		Tmp-String-3 := "%{sql: SELECT \
+			CASE \
+				WHEN status = 'suspended' THEN 'suspended' \
+				WHEN status = 'terminated' THEN 'terminated' \
+				WHEN status = 'expired' THEN 'expired' \
+				WHEN expires_at IS NOT NULL AND expires_at < NOW() THEN 'expired' \
+				WHEN nas_ip IS NOT NULL AND nas_ip <> '' AND nas_ip <> '%{NAS-IP-Address}' THEN 'nas_mismatch' \
+				WHEN mac_bind = 1 AND mac_address IS NOT NULL AND mac_address <> '' \
+					AND mac_address <> '%{Calling-Station-Id}' THEN 'mac_mismatch' \
+				ELSE 'ok' \
+			END \
+			FROM pppoe_customers WHERE username = '%{User-Name}' LIMIT 1}"
+	}
+
+	switch &control:Tmp-String-3 {
+		case "expired" {
+			update reply {
+				Reply-Message := "Your subscription has expired. Please recharge to continue."
+			}
+			reject
+		}
+		case "suspended" {
+			update reply {
+				Reply-Message := "Your account has been suspended. Please contact support."
+			}
+			reject
+		}
+		case "terminated" {
+			update reply {
+				Reply-Message := "This account has been terminated."
+			}
+			reject
+		}
+		case "nas_mismatch" {
+			update reply {
+				Reply-Message := "Account not valid on this router."
+			}
+			reject
+		}
+		case "mac_mismatch" {
+			update reply {
+				Reply-Message := "This account is locked to a different device."
+			}
+			reject
+		}
+	}
+
 	#  If you intend to use CUI and you require that the Operator-Name
 	#  be set for CUI generation and you want to generate CUI also
 	#  for your local clients then uncomment the operator-name

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Wallet, Database, Users2, Store, Ticket, TrendingUp, History, UserCheck, LayoutDashboard, CreditCard, PlusCircle, Package, UserPlus, Receipt, Coins, Sparkles, Layers, Activity, BarChart3, HandCoins, Router, Terminal } from 'lucide-react'
+import { Wallet, Database, Users2, Store, Ticket, TrendingUp, History, UserCheck, LayoutDashboard, CreditCard, PlusCircle, Send, Package, UserPlus, Receipt, Coins, Sparkles, Layers, Activity, BarChart3, HandCoins, Router, Terminal } from 'lucide-react'
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { api } from '../lib/api'
 import { useQuery } from '../lib/cache'
@@ -668,6 +668,9 @@ export default function Dashboard() {
       {/* Seller Dashboard */}
       {d.role === 'seller' && (
         <div className="space-y-6">
+          {/* Left: a 2x2 matrix of plain balance/sales stats. Right: GB Vouchers and
+              Allocated Voucher sit side by side, each spanning both matrix rows so
+              their status chart and pills get room to breathe. */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <StatCard label="GB Balance (Stock)" value={<span className="text-cyan-600">{gb(d.balances.gb)}</span>} icon={<Database size={22} />} iconColorClass="text-cyan-600 bg-cyan-50 border border-cyan-100/50" />
             <StatCard
@@ -677,9 +680,9 @@ export default function Dashboard() {
               iconColorClass="text-indigo-600 bg-indigo-50 border border-indigo-100/50"
               sub={<span>Reserved by Vouchers: <strong className="text-slate-700">{gb(d.balances.gb_reserved ?? 0)}</strong></span>}
             />
-            <StatCard label="Due Payable" value={<span className="text-rose-600">{rs(d.balances.wallet_due)}</span>} icon={<Wallet size={22} />} iconColorClass="text-rose-600 bg-rose-50 border border-rose-100/50" sub={d.reseller_name ? <span className="text-xs text-slate-500">To: <span className="font-semibold text-slate-700">{d.reseller_name}</span></span> : undefined} />
-            {/* Spans both rows so the status chart and its pills get room to breathe. */}
             <VoucherStatCard title="GB Vouchers" vouchers={d.gb_vouchers || d.vouchers} icon={<Ticket size={22} />} iconColorClass="text-rose-600 bg-rose-50 border border-rose-100/50" valueColorClass="text-rose-600" className="lg:row-span-2" />
+            <VoucherStatCard title="Allocated Voucher" vouchers={d.allocated_vouchers} icon={<Send size={22} />} iconColorClass="text-indigo-600 bg-indigo-50 border border-indigo-100/50" valueColorClass="text-indigo-600" className="lg:row-span-2" />
+            <StatCard label="Due Payable" value={<span className="text-rose-600">{rs(d.balances.wallet_due)}</span>} icon={<Wallet size={22} />} iconColorClass="text-rose-600 bg-rose-50 border border-rose-100/50" sub={d.reseller_name ? <span className="text-xs text-slate-500">To: <span className="font-semibold text-slate-700">{d.reseller_name}</span></span> : undefined} />
             <StatCard
               label="Voucher Sales"
               value={<span className="text-blue-600">{rs(d.voucher_sales_to_date ?? 0)}</span>}
@@ -693,8 +696,6 @@ export default function Dashboard() {
                 </span>
               }
             />
-            <StatCard label="Created Voucher Value" value={<span className="text-indigo-600">{rs(d.voucher_sales)}</span>} icon={<TrendingUp size={22} />} iconColorClass="text-indigo-600 bg-indigo-50 border border-indigo-100/50" />
-            <StatCard label="Packages" value={<span className="text-amber-600">{num(d.counts.packages)}</span>} icon={<Package size={22} />} iconColorClass="text-amber-600 bg-amber-50 border border-amber-100/50" />
           </div>
 
           {/* Charts Row */}

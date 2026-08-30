@@ -124,12 +124,22 @@ class VoucherService
             // successful RADIUS login, at which point FreeRADIUS post-auth stamps
             // activated_at and derives expires_at from validity_days itself.
 
+            // Serial number: "{2-digit year}-{6-digit running count}", one continuous
+            // sequence per calendar year shared across every batch (not reset per
+            // batch) — e.g. 26-000001, 26-000002, ... resetting to 000001 the next
+            // year. Distinct from `code`, which is the random, globally-unique RADIUS
+            // credential. $serialYear + $lastSerial mark this batch's reserved
+            // starting offset in that year's sequence.
+            $serialYear = $now->format('y');
+            $lastSerial = $this->reserveSerialRange($serialYear, $quantity);
+
             $voucherRows = [];
             $checkRows = [];
             $replyRows = [];
-            foreach ($codes as $code) {
+            foreach ($codes as $i => $code) {
                 $voucherRows[] = [
-                    'code' => $code, 'username' => $code, 'password' => $code,
+                    'code' => $code, 'serial_number' => sprintf('%s-%06d', $serialYear, $lastSerial + $i + 1),
+                    'username' => $code, 'password' => $code,
                     'plan_id' => $plan->id, 'batch_id' => $batch->id,
                     'owner_id' => $owner->id, 'reseller_id' => $resellerId, 'seller_id' => $sellerId,
                     // Only a real 'data' plan's cap belongs on data_gb — $gbPer below is a
@@ -185,6 +195,32 @@ class VoucherService
         });
     }
 
+    /**
+     * Atomically reserve $count serial numbers in $yearKey's sequence and
+     * return the last serial issued *before* this reservation (so the caller's
+     * first number is the return value + 1). Row-locked so concurrent
+     * `generate()` calls for the same year serialize instead of racing onto
+     * the same numbers — safe to call only from within the enclosing
+     * DB::transaction in generate().
+     */
+    private function reserveSerialRange(string $yearKey, int $count): int
+    {
+        DB::table('voucher_serial_counters')->insertOrIgnore([
+            'year_key' => $yearKey, 'last_serial' => 0, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $lastSerial = DB::table('voucher_serial_counters')
+            ->where('year_key', $yearKey)
+            ->lockForUpdate()
+            ->value('last_serial');
+
+        DB::table('voucher_serial_counters')
+            ->where('year_key', $yearKey)
+            ->update(['last_serial' => $lastSerial + $count, 'updated_at' => now()]);
+
+        return $lastSerial;
+    }
+
     private function uniqueBatchCode(): string
     {
         do {
@@ -231,5 +267,43 @@ class VoucherService
         }
 
         return array_slice(array_keys($codes), 0, $count);
+    }
+
+    /**
+     * Regenerate a voucher's password, decoupling it from the printed `code`
+     * — which up to now has always doubled as both username and password
+     * (see the voucher row shape in generate() above). Lets whoever currently
+     * holds a card invalidate whatever password is printed on it before it
+     * reaches the end customer. This matters most for allocated stock: it
+     * passes through more hands (Reseller -> Seller -> customer) before sale,
+     * so there's more chance the printed code was seen by someone other than
+     * the eventual buyer.
+     *
+     * Only the RADIUS Cleartext-Password row is touched — username and
+     * everything else on the voucher stay put. If the voucher is currently
+     * 'disabled' (no radcheck rows exist at all — see VoucherController::disable),
+     * this still updates the password column; the new value takes effect
+     * automatically the next time the voucher is re-enabled, since enable()
+     * rebuilds radcheck from the voucher's own columns.
+     *
+     * $newPassword lets the caller set a specific value (e.g. one they've
+     * already told the customer); left null, a random one is generated from
+     * the same unambiguous charset as a voucher code.
+     *
+     * @return string the new password
+     */
+    public function changePassword(Voucher $voucher, ?string $newPassword = null): string
+    {
+        $new = $newPassword ?: $this->randomCode();
+
+        DB::transaction(function () use ($voucher, $new) {
+            $voucher->update(['password' => $new]);
+            DB::table('radcheck')
+                ->where('username', $voucher->username)
+                ->where('attribute', 'Cleartext-Password')
+                ->update(['value' => $new]);
+        });
+
+        return $new;
     }
 }

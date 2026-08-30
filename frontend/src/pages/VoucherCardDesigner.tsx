@@ -9,11 +9,12 @@ import { CardElement, CardTemplate } from '../components/VoucherCard'
 const CANVAS_W = 640
 
 // Sample values used only for the live preview.
-const SAMPLE = { code: '2AA0E9', price: 1500, planName: 'Monthly_staff_package', username: '2AA0E9', password: '2AA0E9' }
+const SAMPLE = { code: '2AA0E9', serialNumber: '26-000001', price: 1500, planName: 'Monthly_staff_package', username: '2AA0E9', password: '2AA0E9' }
 
 const FIELD_LABELS: Record<CardElement['field'], string> = {
   text: 'Static Text',
   code: 'Voucher Code',
+  serial_number: 'Serial Number',
   price: 'Price',
   plan_name: 'Plan Name',
   username: 'Username',
@@ -22,12 +23,13 @@ const FIELD_LABELS: Record<CardElement['field'], string> = {
 }
 
 // Content types offered in the element editor dropdown (image is added via its own button).
-const TEXT_FIELDS: CardElement['field'][] = ['text', 'code', 'price', 'plan_name', 'username', 'password']
+const TEXT_FIELDS: CardElement['field'][] = ['text', 'code', 'serial_number', 'price', 'plan_name', 'username', 'password']
 
 function resolvePreview(el: CardElement): string {
   switch (el.field) {
     case 'price': return `Rs. ${SAMPLE.price.toLocaleString()}`
     case 'code': return SAMPLE.code
+    case 'serial_number': return SAMPLE.serialNumber
     case 'plan_name': return SAMPLE.planName
     case 'username': return SAMPLE.username
     case 'password': return SAMPLE.password

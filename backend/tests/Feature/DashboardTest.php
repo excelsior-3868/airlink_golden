@@ -106,4 +106,46 @@ class DashboardTest extends TestCase
         $this->assertEquals(1, $topSellers[0]['vouchers']);
         $this->assertEquals(500, $topSellers[0]['revenue']);
     }
+
+    /**
+     * A voucher transfer overwrites owner_id/seller_id just like self-generation
+     * would, so 'allocated_vouchers' has to be sourced from the transfer ledger
+     * (voucher_transfer_items/voucher_transfers), not the vouchers table alone —
+     * this confirms it actually excludes stock the seller generated themselves.
+     */
+    public function test_seller_dashboard_allocated_vouchers_only_counts_transferred_stock(): void
+    {
+        $admin = $this->makeUser('admin');
+        $reseller = $this->makeUser('reseller', ['parent_id' => $admin->id]);
+        $seller = $this->makeUser('seller', ['parent_id' => $reseller->id]);
+        $plan = InternetPlan::create([
+            'name' => 'Test Plan', 'plan_type' => 'time', 'selling_price' => 500,
+            'package_type' => 'wallet', 'validity_days' => 30, 'status' => 'active',
+        ]);
+
+        for ($i = 1; $i <= 5; $i++) {
+            Voucher::create([
+                'code' => "ALLOC$i", 'username' => "ALLOC$i", 'password' => 'x',
+                'serial_number' => sprintf('26-%06d', $i),
+                'plan_id' => $plan->id, 'owner_id' => $reseller->id, 'reseller_id' => $reseller->id,
+                'price' => 500, 'status' => 'ready',
+            ]);
+        }
+
+        $this->actingAs($reseller, 'sanctum')->postJson('/api/vouchers/transfers', [
+            'to_user_id' => $seller->id, 'start_serial' => '26-000001', 'quantity' => 3,
+        ])->assertStatus(201);
+
+        // Never touched the transfer ledger — the seller generated this one themselves.
+        Voucher::create([
+            'code' => 'SELFGEN1', 'username' => 'SELFGEN1', 'password' => 'x',
+            'plan_id' => $plan->id, 'owner_id' => $seller->id, 'reseller_id' => $reseller->id, 'seller_id' => $seller->id,
+            'price' => 500, 'status' => 'ready',
+        ]);
+
+        $res = $this->actingAs($seller, 'sanctum')->getJson('/api/dashboard');
+        $res->assertOk();
+        $this->assertEquals(3, $res->json('data.allocated_vouchers.total'));
+        $this->assertEquals(4, $res->json('data.vouchers.total'));
+    }
 }

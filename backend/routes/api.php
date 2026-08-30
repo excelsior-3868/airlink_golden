@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\BandwidthController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\VoucherController;
+use App\Http\Controllers\Api\VoucherTransferController;
 use App\Http\Controllers\Api\WalletController;
 use App\Http\Controllers\Api\BatchController;
 use App\Http\Controllers\Api\LoginLogController;
@@ -126,8 +127,16 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/vouchers/export', [VoucherController::class, 'exportCsv']);
     Route::get('/vouchers/export-xlsx', [VoucherController::class, 'exportXlsx']);
     Route::get('/vouchers/print', [VoucherController::class, 'printSheet']);
+    Route::get('/vouchers/next-serial', [VoucherController::class, 'nextSerial']);
     Route::post('/vouchers/generate', [VoucherController::class, 'generate'])->middleware('permission:generate_voucher');
     Route::post('/vouchers/redeem', [VoucherController::class, 'redeem']);
+
+    // Voucher distribution — Reseller hands off already-generated "ready" stock to a
+    // Seller. Reseller-only to create (not relevant for an Admin account, which only
+    // views the resulting history below); the role: gate is deliberate belt-and-braces
+    // on top of permission:, matching the PPPoE routes' pattern.
+    Route::get('/vouchers/transfers', [VoucherTransferController::class, 'index']);
+    Route::post('/vouchers/transfers', [VoucherTransferController::class, 'store'])->middleware(['role:reseller', 'permission:transfer_voucher']);
     Route::post('/vouchers/{voucher}/sell', [VoucherController::class, 'sell']);
     Route::get('/vouchers/{voucher}', [VoucherController::class, 'show']);
     Route::get('/vouchers/{voucher}/card', [VoucherController::class, 'card']);
@@ -136,6 +145,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::patch('/vouchers/{voucher}/disable', [VoucherController::class, 'disable']);
     Route::patch('/vouchers/{voucher}/enable', [VoucherController::class, 'enable']);
     Route::patch('/vouchers/{voucher}/reset-mac', [VoucherController::class, 'resetMac']);
+    Route::patch('/vouchers/{voucher}/change-password', [VoucherController::class, 'changePassword']);
 
     // PPPoE subscribers — admin + reseller only. The role: gate is deliberate
     // belt-and-braces on top of permission:, so a well-meaning flip of a

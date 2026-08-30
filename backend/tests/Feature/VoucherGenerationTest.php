@@ -93,6 +93,64 @@ class VoucherGenerationTest extends TestCase
         $this->assertEquals($seller->id, $v->owner_id);
     }
 
+    public function test_change_password_updates_voucher_and_radcheck(): void
+    {
+        $admin = $this->makeUser('admin');
+        $seller = $this->makeUser('seller', ['parent_id' => $admin->id]);
+        $plan = $this->plan();
+
+        $voucher = \App\Models\Voucher::create([
+            'code' => 'TESTCODE', 'username' => 'TESTCODE', 'password' => 'TESTCODE',
+            'plan_id' => $plan->id, 'owner_id' => $seller->id, 'seller_id' => $seller->id,
+            'price' => 150, 'status' => 'ready',
+        ]);
+        DB::table('radcheck')->insert([
+            'username' => 'TESTCODE', 'attribute' => 'Cleartext-Password', 'op' => ':=', 'value' => 'TESTCODE',
+        ]);
+
+        Sanctum::actingAs($seller, ['*']);
+        $res = $this->patchJson("/api/vouchers/{$voucher->id}/change-password");
+
+        $res->assertStatus(200);
+        $newPassword = $res->json('data.new_password');
+        $this->assertNotEmpty($newPassword);
+        $this->assertNotEquals('TESTCODE', $newPassword);
+        $this->assertEquals($newPassword, $voucher->fresh()->password);
+        // Username/code are untouched — only the password changed.
+        $this->assertEquals('TESTCODE', $voucher->fresh()->username);
+        $this->assertEquals(
+            $newPassword,
+            DB::table('radcheck')->where('username', 'TESTCODE')->where('attribute', 'Cleartext-Password')->value('value')
+        );
+    }
+
+    public function test_change_password_accepts_a_caller_supplied_value(): void
+    {
+        $admin = $this->makeUser('admin');
+        $seller = $this->makeUser('seller', ['parent_id' => $admin->id]);
+        $plan = $this->plan();
+
+        $voucher = \App\Models\Voucher::create([
+            'code' => 'TESTCODE2', 'username' => 'TESTCODE2', 'password' => 'TESTCODE2',
+            'plan_id' => $plan->id, 'owner_id' => $seller->id, 'seller_id' => $seller->id,
+            'price' => 150, 'status' => 'ready',
+        ]);
+        DB::table('radcheck')->insert([
+            'username' => 'TESTCODE2', 'attribute' => 'Cleartext-Password', 'op' => ':=', 'value' => 'TESTCODE2',
+        ]);
+
+        Sanctum::actingAs($seller, ['*']);
+        $res = $this->patchJson("/api/vouchers/{$voucher->id}/change-password", ['new_password' => 'mynewpass1']);
+
+        $res->assertStatus(200);
+        $this->assertEquals('mynewpass1', $res->json('data.new_password'));
+        $this->assertEquals('mynewpass1', $voucher->fresh()->password);
+        $this->assertEquals(
+            'mynewpass1',
+            DB::table('radcheck')->where('username', 'TESTCODE2')->where('attribute', 'Cleartext-Password')->value('value')
+        );
+    }
+
     public function test_sell_voucher_succeeds(): void
     {
         $admin = $this->makeUser('admin');
@@ -224,5 +282,32 @@ class VoucherGenerationTest extends TestCase
             $this->assertDoesNotMatchRegularExpression('/[0Oo]/', $v->code);
             $this->assertMatchesRegularExpression('/^[1-9A-HJ-NP-Z]{6}$/', $v->code);
         }
+    }
+
+    public function test_export_csv_has_owner_column_and_drops_customer_status_expiry(): void
+    {
+        $admin = $this->makeUser('admin');
+        $seller = $this->makeUser('seller', ['parent_id' => $admin->id, 'username' => 'exportseller']);
+        $plan = $this->plan();
+
+        \App\Models\Voucher::create([
+            'code' => 'EXPORT1', 'username' => 'EXPORT1', 'password' => 'EXPORT1',
+            'plan_id' => $plan->id, 'owner_id' => $seller->id, 'seller_id' => $seller->id,
+            'price' => 150, 'status' => 'ready',
+        ]);
+
+        Sanctum::actingAs($admin, ['*']);
+        $res = $this->get('/api/vouchers/export');
+        $res->assertStatus(200);
+
+        $lines = array_filter(explode("\n", str_replace("\r\n", "\n", $res->streamedContent())));
+        $header = str_getcsv($lines[0]);
+        $this->assertEquals(['Serial Number', 'Code', 'Username', 'Password', 'Plan', 'Data GB', 'Validity Days', 'Price', 'Owner'], $header);
+        $this->assertNotContains('Customer Name', $header);
+        $this->assertNotContains('Status', $header);
+        $this->assertNotContains('Expires At', $header);
+
+        $row = str_getcsv($lines[1]);
+        $this->assertEquals('exportseller', $row[array_search('Owner', $header)]);
     }
 }

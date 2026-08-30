@@ -1,6 +1,6 @@
 export interface CardElement {
   id: string
-  field: 'text' | 'price' | 'code' | 'plan_name' | 'username' | 'password' | 'image'
+  field: 'text' | 'price' | 'code' | 'serial_number' | 'plan_name' | 'username' | 'password' | 'image'
   text?: string
   x: number            // % of width
   y: number            // % of height
@@ -25,6 +25,7 @@ export interface CardTemplate {
 
 interface VoucherCardProps {
   code: string
+  serialNumber?: string
   planName?: string
   price?: number | string | null
   username?: string
@@ -33,13 +34,14 @@ interface VoucherCardProps {
   template: CardTemplate
 }
 
-function resolve(el: CardElement, v: { code: string; planName?: string; price?: number | string | null; username?: string; password?: string }): string {
+function resolve(el: CardElement, v: { code: string; serialNumber?: string; planName?: string; price?: number | string | null; username?: string; password?: string }): string {
   switch (el.field) {
     case 'price':
       return v.price != null && Number(v.price) > 0
         ? `Rs. ${Number(v.price).toLocaleString('en-NP', { minimumFractionDigits: 0 })}`
         : ''
     case 'code': return v.code ?? ''
+    case 'serial_number': return v.serialNumber ?? ''
     case 'plan_name': return v.planName ?? ''
     case 'username': return v.username ?? ''
     case 'password': return v.password ?? ''

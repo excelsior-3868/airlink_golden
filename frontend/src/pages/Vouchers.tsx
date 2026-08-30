@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Ticket, Download, Zap, Printer, Layers, BarChart3, Calendar, Sparkles, Sun, Leaf, Snowflake } from 'lucide-react'
+import { Ticket, Download, Zap, Printer, Layers, BarChart3, Calendar, Sparkles, Sun, Leaf, Snowflake, Send } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { api, apiError } from '../lib/api'
 import { useQuery } from '../lib/cache'
@@ -29,7 +29,7 @@ const STAT_CARDS: { label: string; color: string; pick: (t: any) => number }[] =
 export default function Vouchers() {
   const { user, refresh, can } = useAuth()
   const navigate = useNavigate()
-  const [activeTab, setActiveTab] = useState<'vouchers' | 'batches' | 'generate' | 'sales-summary'>('generate')
+  const [activeTab, setActiveTab] = useState<'vouchers' | 'batches' | 'generate' | 'sales-summary' | 'distribution'>('generate')
   const [loadingAction, setLoadingAction] = useState(false)
   const [progress, setProgress] = useState(0)
   
@@ -119,6 +119,89 @@ export default function Vouchers() {
   const [usageVoucher, setUsageVoucher] = useState<any>(null)
   const [customerUsername, setCustomerUsername] = useState('')
   const [selling, setSelling] = useState(false)
+  const [sellError, setSellError] = useState('')
+
+  // Allocate Voucher state — a Reseller hands off already-generated "ready"
+  // stock to one of their own Sellers, by physical serial range. Confirmed
+  // with the client: not relevant for an Admin account, which only views the
+  // resulting history — an admin never gets the ability to create one.
+  const canViewAllocationTab = user?.role === 'admin' || user?.role === 'reseller'
+  const [allocateModalOpen, setAllocateModalOpen] = useState(false)
+  const [allocateSellerId, setAllocateSellerId] = useState<any>('')
+  const [allocateStartSerial, setAllocateStartSerial] = useState('')
+  const [allocateQuantity, setAllocateQuantity] = useState('')
+  const [allocateNote, setAllocateNote] = useState('')
+  const [allocating, setAllocating] = useState(false)
+  const [allocateError, setAllocateError] = useState('')
+  const [historyPage, setHistoryPage] = useState(1)
+
+  const { data: transferHistory, loading: historyLoading, refetch: refetchHistory } = useQuery<any>(
+    `vouchers/transfers?page=${historyPage}`,
+    () => api.get('/vouchers/transfers', { params: { page: historyPage, per_page: 15 } }).then((r) => r.data.data),
+    { enabled: activeTab === 'distribution' },
+  )
+
+  // The reseller's own sellers — the only valid allocation targets.
+  const { data: allocateSellers = [] } = useQuery<any[]>(
+    'users?role=seller&scope=own',
+    () => api.get('/users', { params: { role: 'seller', per_page: 500 } }).then((r) => r.data.data.data),
+    { enabled: user?.role === 'reseller' },
+  )
+
+  // The next unallocated serial in the reseller's own pool — a fresh batch
+  // starts at its first card; once some are already handed off, it advances
+  // past them. This drives the Start Serial combobox below so the reseller
+  // never has to hunt for or type it.
+  const { data: nextSerialInfo, loading: nextSerialLoading } = useQuery<any>(
+    'vouchers/next-serial',
+    () => api.get('/vouchers/next-serial').then((r) => r.data.data),
+    { enabled: allocateModalOpen && user?.role === 'reseller' },
+  )
+  useEffect(() => {
+    if (allocateModalOpen) setAllocateStartSerial(nextSerialInfo?.next_serial || '')
+  }, [nextSerialInfo, allocateModalOpen])
+
+  // Derived purely client-side, for the reseller to confirm before submitting —
+  // the backend independently computes (and authoritatively validates) the
+  // same range server-side.
+  const allocateEndSerial = (() => {
+    const m = /^(\d{2})-(\d{6})$/.exec(allocateStartSerial.trim())
+    const qty = +allocateQuantity
+    if (!m || !qty || qty < 1) return ''
+    return `${m[1]}-${String(+m[2] + qty - 1).padStart(6, '0')}`
+  })()
+
+  const openAllocateModal = () => {
+    setAllocateSellerId('')
+    setAllocateStartSerial('')
+    setAllocateQuantity('')
+    setAllocateNote('')
+    setAllocating(false)
+    setAllocateError('')
+    setAllocateModalOpen(true)
+  }
+
+  const handleAllocate = async () => {
+    if (!allocateSellerId || !allocateStartSerial || !allocateQuantity) return
+    setAllocating(true)
+    setAllocateError('')
+    try {
+      await api.post('/vouchers/transfers', {
+        to_user_id: allocateSellerId,
+        start_serial: allocateStartSerial.trim(),
+        quantity: +allocateQuantity,
+        note: allocateNote || undefined,
+      })
+      setAllocateModalOpen(false)
+      refetchHistory()
+      load()
+      refetchBatches()
+    } catch (e) {
+      setAllocateError(apiError(e))
+    } finally {
+      setAllocating(false)
+    }
+  }
 
   // Reporting extras (season filter, summary cards) are only relevant — and only
   // authorized — for users with the 'reports' permission, same as the old standalone page.
@@ -255,13 +338,14 @@ export default function Vouchers() {
   const handleSell = async () => {
     if (!sellVoucher) return
     setSelling(true)
+    setSellError('')
     try {
       await api.post(`/vouchers/${sellVoucher.id}/sell`, { customer_username: customerUsername })
       setSellVoucher(null)
       setCustomerUsername('')
       load()
       refresh()
-    } catch (e) { alert(apiError(e)) } finally { setSelling(false) }
+    } catch (e) { setSellError(apiError(e)) } finally { setSelling(false) }
   }
 
   const toggleDisable = async (v: any) => {
@@ -281,6 +365,42 @@ export default function Vouchers() {
       load()
     } catch (e) {
       alert(apiError(e))
+    }
+  }
+
+  // Change Password state — matters most for allocated stock: it passes
+  // through more hands (Reseller -> Seller -> customer) before sale, so
+  // there's more chance the printed code was seen by someone other than the
+  // eventual buyer. Confirms in-modal (not a native confirm()) and reveals
+  // the new password in-modal (not a native alert()).
+  const [changePwVoucher, setChangePwVoucher] = useState<any>(null)
+  const [changePwNewValue, setChangePwNewValue] = useState('')
+  const [changePwResult, setChangePwResult] = useState('')
+  const [changePwError, setChangePwError] = useState('')
+  const [changingPw, setChangingPw] = useState(false)
+
+  const openChangePassword = (v: any) => {
+    setChangePwVoucher(v)
+    setChangePwNewValue('')
+    setChangePwResult('')
+    setChangePwError('')
+    setChangingPw(false)
+  }
+
+  const confirmChangePassword = async () => {
+    if (!changePwVoucher) return
+    setChangingPw(true)
+    setChangePwError('')
+    try {
+      const res = await api.patch(`/vouchers/${changePwVoucher.id}/change-password`, {
+        new_password: changePwNewValue.trim() || undefined,
+      })
+      setChangePwResult(res.data.data.new_password)
+      load()
+    } catch (e) {
+      setChangePwError(apiError(e))
+    } finally {
+      setChangingPw(false)
     }
   }
 
@@ -320,6 +440,14 @@ export default function Vouchers() {
             onClick={() => setActiveTab('sales-summary')}
           >
             <BarChart3 size={16} /> Sales Summary
+          </button>
+        )}
+        {canViewAllocationTab && (
+          <button
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-t-xl border-b-2 transition-all ${activeTab === 'distribution' ? 'border-primary text-primary' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+            onClick={() => setActiveTab('distribution')}
+          >
+            <Send size={16} /> {user?.role === 'admin' ? 'Allocation History' : 'Allocate Voucher'}
           </button>
         )}
       </div>
@@ -462,22 +590,63 @@ export default function Vouchers() {
           )}
           {summary && !summaryError && (
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-6">
-              {STAT_CARDS.map((c) => (
+              {STAT_CARDS.flatMap((c) => {
+                const card = (
                 <StatCard
                   key={c.label}
                   label={c.label}
-                  value={<span className={`${c.color} font-bold`}>{num(c.pick(summary.totals))}</span>}
+                  // "Generated", for a Seller, means stock they bought
+                  // themselves — a GB Voucher, paid for from their own GB
+                  // balance. Wallet-type cards are never self-purchased; a
+                  // Seller only ever gets those via a Reseller's Allocate
+                  // Voucher action, so counting them here would be wrong —
+                  // this reads only the GB half of the total.
+                  value={<span className={`${c.color} font-bold`}>{num(user?.role === 'seller' && c.label === 'Generated' ? c.pick(summary.totals.by_package_type?.gb) : c.pick(summary.totals))}</span>}
                   // Admins and resellers deal in two card types with different
                   // pricing and settlement, so each figure is also split GB / Wallet.
+                  // A Seller sees the same GB split, but Wallet is replaced with
+                  // Allocated — how much of each figure came from a Reseller's
+                  // Allocate Voucher action rather than stock the seller generated
+                  // themselves (see ReportController::packageSummary — only ever
+                  // non-zero for a Seller, the only role a transfer names).
                   sub={showPackageSplit ? (
                     <span className="flex items-center gap-2 whitespace-nowrap">
                       <span className="text-emerald-600 font-semibold">GB {num(c.pick(summary.totals.by_package_type?.gb))}</span>
                       <span className="text-slate-300">|</span>
                       <span className="text-sky-600 font-semibold">Wallet {num(c.pick(summary.totals.by_package_type?.wallet))}</span>
                     </span>
+                  ) : user?.role === 'seller' && c.label === 'Generated' ? (
+                    // Generated's value above is already GB-only, so this just
+                    // labels it explicitly — no Allocated pairing here, since
+                    // that split only makes sense once a card has an actual
+                    // status, which Generated isn't one of.
+                    <span className="text-emerald-600 font-semibold">GB {num(c.pick(summary.totals.by_package_type?.gb))}</span>
+                  ) : user?.role === 'seller' ? (
+                    <span className="flex items-center gap-2 whitespace-nowrap">
+                      <span className="text-emerald-600 font-semibold">GB {num(c.pick(summary.totals.by_package_type?.gb))}</span>
+                      <span className="text-slate-300">|</span>
+                      <span className="text-sky-600 font-semibold">Allocated {num(c.pick(summary.totals.by_allocation?.allocated))}</span>
+                    </span>
                   ) : undefined}
                 />
-              ))}
+                )
+                // Sits right after Generated: the total of all cards this
+                // seller has ever received via a Reseller's Allocate Voucher
+                // action, across every status (Ready/Active/Used, same
+                // "live stock" definition Generated itself excludes Disabled
+                // from) — the single-glance counterpart to the per-tile
+                // Allocated split shown below.
+                if (c.label === 'Generated' && user?.role === 'seller') {
+                  return [card, (
+                    <StatCard
+                      key="total-allocated"
+                      label="Total Allocated Voucher"
+                      value={<span className="text-violet-600 font-bold">{num(summary.totals.by_allocation?.allocated?.generated || 0)}</span>}
+                    />
+                  )]
+                }
+                return [card]
+              })}
             </div>
           )}
 
@@ -487,6 +656,7 @@ export default function Vouchers() {
               <table className="w-full">
                 <thead>
                   <tr>
+                    <th>Serial No.</th>
                     <th>Username</th>
                     <th>Plan</th>
                     <th>Batch</th>
@@ -504,6 +674,7 @@ export default function Vouchers() {
                 <tbody>
                   {(data?.data || []).map((v: any, idx: number) => (
                     <motion.tr key={v.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: idx * 0.02 }} className="hover:bg-secondary/30">
+                      <td className="font-mono text-xs text-slate-500">{v.serial_number || '—'}</td>
                       <td className="font-mono font-semibold">{v.code}</td>
                       <td>
                         <span>{v.plan?.name || '—'}</span>
@@ -541,9 +712,9 @@ export default function Vouchers() {
                             items={[
                               {
                                 label: 'Sell',
-                                hidden: v.status !== 'ready',
+                                hidden: v.status !== 'ready' || !!(v.seller_id && v.seller_id !== user?.id) || !!(user?.role === 'seller' && v.is_allocated),
                                 className: 'text-emerald-600',
-                                onClick: () => { setSellVoucher(v); setCustomerUsername(''); setSelling(false) },
+                                onClick: () => { setSellVoucher(v); setCustomerUsername(''); setSelling(false); setSellError('') },
                               },
                               {
                                 label: 'Usage Graph',
@@ -556,6 +727,7 @@ export default function Vouchers() {
                               },
                               {
                                 label: v.status === 'disabled' ? 'Enable' : 'Disable',
+                                hidden: !!(v.seller_id && v.seller_id !== user?.id) || !!(user?.role === 'seller' && v.is_allocated),
                                 className: v.status === 'disabled' ? 'text-sky-600' : 'text-slate-600',
                                 onClick: () => toggleDisable(v),
                               },
@@ -564,6 +736,11 @@ export default function Vouchers() {
                                 hidden: !(v.mac_bind && v.mac_address),
                                 className: 'text-amber-600',
                                 onClick: () => resetMac(v),
+                              },
+                              {
+                                label: 'Change Password',
+                                className: 'text-fuchsia-600',
+                                onClick: () => openChangePassword(v),
                               },
                               {
                                 label: 'Card',
@@ -620,6 +797,7 @@ export default function Vouchers() {
                   <tr>
                     <th>Batch Code</th>
                     <th>Plan</th>
+                    <th>Serial Range</th>
                     <th>Quantity</th>
                     <th>Generated By</th>
                     <th>Created At</th>
@@ -638,6 +816,7 @@ export default function Vouchers() {
                           </Pill>
                         )}
                       </td>
+                      <td className="font-mono text-xs text-slate-500">{b.serial_start && b.serial_end ? `${b.serial_start} – ${b.serial_end}` : '—'}</td>
                       <td>{b.quantity}</td>
                       <td>{b.generated_by?.username || '—'}</td>
                       <td className="text-xs">{date(b.created_at)}</td>
@@ -671,6 +850,141 @@ export default function Vouchers() {
 
       {activeTab === 'sales-summary' && <VoucherSalesSummaryTab />}
 
+      {activeTab === 'distribution' && (
+        <>
+          {/* Admin only ever views the resulting history — allocating stock to a
+              Seller is a Reseller-only action, confirmed with the client. */}
+          {user?.role === 'reseller' && (
+            <GlassCard className="mb-4 flex justify-end relative z-10">
+              <button
+                className="btn-primary py-2.5 px-5 rounded-2xl font-bold flex items-center gap-2 shadow-md"
+                onClick={() => openAllocateModal()}
+              >
+                <Send size={16} /> Allocate Voucher
+              </button>
+            </GlassCard>
+          )}
+
+          <GlassCard className="!p-0 overflow-hidden">
+            <div className="p-4 pb-0">
+              <h3 className="text-sm font-bold text-slate-700">Allocation History</h3>
+            </div>
+            {historyLoading && !transferHistory ? <div className="py-8"><Spinner /></div> : (
+              <div className="overflow-x-auto p-4 pt-2">
+                <table className="w-full">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Batch</th>
+                      <th>Serial Range</th>
+                      <th>From</th>
+                      <th>To</th>
+                      <th>Quantity</th>
+                      <th>Note</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(transferHistory?.data || []).map((t: any) => (
+                      <tr key={t.id}>
+                        <td className="text-xs">{datet(t.created_at)}</td>
+                        <td className="font-mono text-xs">{t.batch?.batch_code || '—'}</td>
+                        <td className="font-mono text-xs">{t.start_serial ? `${t.start_serial} – ${t.end_serial}` : '—'}</td>
+                        <td>{t.from_user?.username || '—'}</td>
+                        <td>{t.to_user?.username || '—'}</td>
+                        <td className="font-bold">{t.quantity}</td>
+                        <td className="text-xs text-slate-500">{t.note || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {(transferHistory?.data || []).length === 0 && <EmptyState>No allocations yet.</EmptyState>}
+              </div>
+            )}
+            <div className="p-4"><Pagination meta={transferHistory} onPage={setHistoryPage} /></div>
+          </GlassCard>
+        </>
+      )}
+
+      {/* Allocate Voucher Modal — Reseller only */}
+      <Modal
+        open={allocateModalOpen}
+        onClose={() => setAllocateModalOpen(false)}
+        title="Allocate Voucher"
+        subtitle="Hand off already-generated, ready stock to a Seller by its printed serial range — no wallet balance is touched."
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="text-xs font-semibold text-slate-500">Seller</label>
+            <CustomSelect
+              searchable
+              className="w-full mt-1"
+              placeholder="Select seller"
+              value={allocateSellerId}
+              onChange={setAllocateSellerId}
+              options={allocateSellers.map((s: any) => ({ value: s.id, label: s.name || s.username }))}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-semibold text-slate-500">Start Serial Number</label>
+              <CustomSelect
+                className="w-full mt-1"
+                buttonClassName="font-mono"
+                placeholder={nextSerialLoading ? 'Loading…' : 'No stock available'}
+                disabled={!nextSerialInfo?.next_serial}
+                value={allocateStartSerial}
+                onChange={setAllocateStartSerial}
+                options={nextSerialInfo?.next_serial ? [{ value: nextSerialInfo.next_serial, label: nextSerialInfo.next_serial }] : []}
+              />
+              {!nextSerialLoading && (
+                <p className="text-xs text-slate-400 mt-1">
+                  {nextSerialInfo?.available ? `${nextSerialInfo.available} unallocated card(s) in stock` : 'Nothing left to allocate'}
+                </p>
+              )}
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-slate-500">Quantity</label>
+              <input
+                type="number"
+                min={1}
+                max={nextSerialInfo?.available || undefined}
+                className="input mt-1"
+                placeholder="e.g. 20"
+                value={allocateQuantity}
+                onChange={(e) => setAllocateQuantity(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="bg-slate-50 rounded-xl p-3 text-sm flex justify-between">
+            <span className="text-muted-foreground">End Serial Number</span>
+            <span className="font-mono font-bold">{allocateEndSerial || '—'}</span>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-slate-500">Note (optional)</label>
+            <input
+              className="input mt-1"
+              placeholder="e.g. Handed over in person"
+              value={allocateNote}
+              onChange={(e) => setAllocateNote(e.target.value)}
+            />
+          </div>
+          {allocateError && (
+            <div className="pill danger w-full justify-center py-2 text-xs font-medium">{allocateError}</div>
+          )}
+          <div className="flex justify-end gap-3 pt-4 border-t border-slate-100 mt-5">
+            <button className="btn-ghost !border-slate-200 !text-slate-700 hover:!bg-slate-50 py-2.5 px-6 rounded-2xl font-bold transition-all" onClick={() => setAllocateModalOpen(false)}>Cancel</button>
+            <motion.button
+              whileTap={{ scale: 0.95 }}
+              className="btn-primary py-2.5 px-6 rounded-2xl font-bold transition-all shadow-md"
+              disabled={allocating || !allocateSellerId || !allocateStartSerial || !allocateQuantity}
+              onClick={handleAllocate}
+            >
+              {allocating ? 'Allocating…' : 'Allocate Voucher'}
+            </motion.button>
+          </div>
+        </div>
+      </Modal>
+
       <VoucherUsageModal voucher={usageVoucher} onClose={() => setUsageVoucher(null)} />
 
       {/* Sell Voucher Modal */}
@@ -689,6 +1003,9 @@ export default function Vouchers() {
             <div className="flex justify-between"><span className="text-muted-foreground">Plan</span><span className="font-bold">{sellVoucher?.plan?.name}</span></div>
             <div className="flex justify-between"><span className="text-muted-foreground">Price</span><span className="font-bold">{rs(sellVoucher?.price)}</span></div>
           </div>
+          {sellError && (
+            <div className="pill danger w-full justify-center py-2 text-xs font-medium">{sellError}</div>
+          )}
           <div className="flex justify-end gap-3 pt-4 border-t border-slate-100 mt-5">
             <button className="btn-ghost !border-slate-200 !text-slate-700 hover:!bg-slate-50 py-2.5 px-6 rounded-2xl font-bold transition-all" onClick={() => setSellVoucher(null)}>Cancel</button>
             <motion.button 
@@ -699,6 +1016,58 @@ export default function Vouchers() {
             >
               {selling ? 'Selling…' : 'Mark as Sold'}
             </motion.button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Change Password Modal */}
+      <Modal
+        open={!!changePwVoucher}
+        onClose={() => setChangePwVoucher(null)}
+        title={`Change Password: ${changePwVoucher?.username}`}
+        subtitle={!changePwResult ? 'Invalidates whatever password is printed on this card — useful if it may have been seen by someone other than the buyer.' : undefined}
+      >
+        <div className="space-y-4">
+          {changePwResult ? (
+            <div className="bg-slate-50 rounded-xl p-4 text-center space-y-1">
+              <p className="text-xs font-semibold text-slate-500">New Password</p>
+              <p className="text-2xl font-mono font-bold text-fuchsia-600 tracking-widest">{changePwResult}</p>
+              <p className="text-xs text-slate-400 mt-2">Share this with the customer directly — the printed code no longer works as the password.</p>
+            </div>
+          ) : (
+            <>
+              <div className="bg-slate-50 rounded-xl p-3 text-sm space-y-1">
+                <div className="flex justify-between"><span className="text-muted-foreground">Username</span><span className="font-bold font-mono">{changePwVoucher?.username}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Current password</span><span className="font-bold font-mono">{changePwVoucher?.password}</span></div>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-500">New Password</label>
+                <input
+                  className="input mt-1 font-mono"
+                  placeholder="Leave blank to auto-generate a random one"
+                  value={changePwNewValue}
+                  onChange={(e) => setChangePwNewValue(e.target.value)}
+                />
+              </div>
+            </>
+          )}
+          {changePwError && (
+            <div className="pill danger w-full justify-center py-2 text-xs font-medium">{changePwError}</div>
+          )}
+          <div className="flex justify-end gap-3 pt-4 border-t border-slate-100 mt-5">
+            <button className="btn-ghost !border-slate-200 !text-slate-700 hover:!bg-slate-50 py-2.5 px-6 rounded-2xl font-bold transition-all" onClick={() => setChangePwVoucher(null)}>
+              {changePwResult ? 'Done' : 'Cancel'}
+            </button>
+            {!changePwResult && (
+              <motion.button
+                whileTap={{ scale: 0.95 }}
+                className="btn-primary py-2.5 px-6 rounded-2xl font-bold transition-all shadow-md"
+                disabled={changingPw}
+                onClick={confirmChangePassword}
+              >
+                {changingPw ? 'Changing…' : 'Change Password'}
+              </motion.button>
+            )}
           </div>
         </div>
       </Modal>
@@ -759,6 +1128,7 @@ export default function Vouchers() {
                 <div key={v.id} className="print-card-wrapper">
                   <VoucherCard
                     code={v.code}
+                    serialNumber={v.serial_number}
                     planName={v.plan?.name}
                     price={v.price}
                     username={v.username}
@@ -781,6 +1151,7 @@ export default function Vouchers() {
               <div key={v.id} className="print-card-wrapper">
                 <VoucherCard
                   code={v.code}
+                  serialNumber={v.serial_number}
                   planName={v.plan?.name}
                   price={v.price}
                   username={v.username}
