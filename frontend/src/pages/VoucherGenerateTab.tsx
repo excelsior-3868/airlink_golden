@@ -415,24 +415,69 @@ export default function VoucherGenerateTab({ plans, plansLoading = false, refetc
   const gbCount = useMemo(() => ownerFilteredPackages.filter((p) => p.package_type === 'gb').length, [ownerFilteredPackages])
   const walletCount = useMemo(() => ownerFilteredPackages.filter((p) => p.package_type === 'wallet').length, [ownerFilteredPackages])
 
-  const [packageSearch, setPackageSearch] = useState('')
+  const [selectedPackageId, setSelectedPackageId] = useState<string>('')
 
-  // Apply category sub-tab filter, then the free-text package filter. The tab
-  // counts above stay on the unsearched set so typing narrows the grid without
-  // making the tab labels flicker.
-  const displayedPackages = useMemo(() => {
+  // Filter plans by category tab
+  const tabFilteredPackages = useMemo(() => {
     let list = ownerFilteredPackages
     if (packageTypeTab === 'gb') {
       list = list.filter((p) => p.package_type === 'gb')
     } else if (packageTypeTab === 'wallet') {
       list = list.filter((p) => p.package_type === 'wallet')
     }
-    const q = packageSearch.trim().toLowerCase()
-    if (q) {
-      list = list.filter((p) => (p.name || '').toLowerCase().includes(q))
-    }
     return list
-  }, [ownerFilteredPackages, packageTypeTab, packageSearch])
+  }, [ownerFilteredPackages, packageTypeTab])
+
+  // Auto-Sync & Reset: Re-evaluate selected package when category tab or owner changes
+  useEffect(() => {
+    if (selectedPackageId && !tabFilteredPackages.some((p) => String(p.id) === selectedPackageId)) {
+      setSelectedPackageId('')
+    }
+  }, [tabFilteredPackages, selectedPackageId])
+
+  // Package Filter Options for Combo Box (CustomSelect)
+  const packageFilterOptions = useMemo(() => {
+    const opts: SelectOption[] = [
+      {
+        value: '',
+        label: 'All Packages',
+        badge: (
+          <span className="text-[10px] bg-slate-100 text-slate-600 font-bold px-2 py-0.5 rounded-full border border-slate-200/60">
+            {tabFilteredPackages.length} {tabFilteredPackages.length === 1 ? 'Package' : 'Packages'}
+          </span>
+        ),
+      },
+    ]
+
+    tabFilteredPackages.forEach((p) => {
+      const isWallet = p.package_type === 'wallet'
+      const gbLabel = p.data_gb ? `${p.data_gb} GB` : '—'
+      const validityLabel = p.validity_days ? `${p.validity_days} Days` : '—'
+      opts.push({
+        value: String(p.id),
+        label: `${p.name} (${gbLabel} · ${validityLabel} · ${rs(p.selling_price)})`,
+        badge: isWallet ? (
+          <span className="text-[10px] bg-cyan-50 text-cyan-700 font-bold px-2 py-0.5 rounded-full border border-cyan-200/60 flex items-center gap-1">
+            <Wallet size={10} /> Wallet
+          </span>
+        ) : (
+          <span className="text-[10px] bg-emerald-50 text-emerald-700 font-bold px-2 py-0.5 rounded-full border border-emerald-200/60 flex items-center gap-1">
+            <Database size={10} /> GB
+          </span>
+        ),
+        keywords: `${p.name} ${p.data_gb ? p.data_gb + ' GB' : ''} ${p.selling_price} ${rs(p.selling_price)} ${isWallet ? 'wallet' : 'gb'} ${p.validity_days ? p.validity_days + ' days' : ''}`,
+      })
+    })
+
+    return opts
+  }, [tabFilteredPackages])
+
+  const displayedPackages = useMemo(() => {
+    if (selectedPackageId) {
+      return tabFilteredPackages.filter((p) => String(p.id) === selectedPackageId)
+    }
+    return tabFilteredPackages
+  }, [tabFilteredPackages, selectedPackageId])
 
   // Create Package State
   const [createModalOpen, setCreateModalOpen] = useState(false)
@@ -706,26 +751,14 @@ export default function VoucherGenerateTab({ plans, plansLoading = false, refetc
           </div>
         )}
 
-        <div className="relative w-full sm:w-64">
-          <span className="absolute inset-y-0 left-3 flex items-center text-slate-400 pointer-events-none">
-            <Search size={15} />
-          </span>
-          <input
-            className="input pl-9 pr-8"
-            placeholder="Filter packages..."
-            value={packageSearch}
-            onChange={(e) => setPackageSearch(e.target.value)}
+        <div className="w-full sm:w-72">
+          <CustomSelect
+            value={selectedPackageId}
+            onChange={(val) => setSelectedPackageId(val)}
+            options={packageFilterOptions}
+            placeholder="All Packages"
+            searchable={true}
           />
-          {packageSearch && (
-            <button
-              type="button"
-              onClick={() => setPackageSearch('')}
-              className="absolute inset-y-0 right-2 flex items-center text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
-              title="Clear filter"
-            >
-              <X size={14} />
-            </button>
-          )}
         </div>
       </div>
 
@@ -754,25 +787,25 @@ export default function VoucherGenerateTab({ plans, plansLoading = false, refetc
       {displayedPackages.length === 0 && (
         <div className="bg-white border border-slate-200/80 rounded-[24px] p-12 shadow-sm flex flex-col items-center justify-center text-center">
           <div className="p-4 bg-slate-50 text-[#003164]/60 rounded-full mb-4 border border-slate-100">
-            {packageSearch ? <Search size={32} /> : <Ticket size={32} />}
+            {selectedPackageId ? <Search size={32} /> : <Ticket size={32} />}
           </div>
           <h3 className="text-base font-bold text-slate-800 tracking-tight">
-            {packageSearch
+            {selectedPackageId
               ? 'No Matching Packages'
-              : user?.role === 'admin' && !selectedOwnerId ? 'Select a Reseller / Seller' : 'No Custom Packages Found'}
+              : user?.role === 'admin' && !selectedOwnerId ? 'Select A Reseller / Seller' : 'No Custom Packages Found'}
           </h3>
           <p className="text-xs text-slate-400 font-medium max-w-sm mt-1 mb-2">
-            {packageSearch
-              ? `Nothing matches “${packageSearch}”. Try a different name or clear the filter.`
+            {selectedPackageId
+              ? 'The selected package could not be displayed. Clear the filter to view all packages.'
               : user?.role === 'admin' && !selectedOwnerId
                 ? 'Packages are generated for a reseller or seller. Pick one above to see their packages.'
                 : user?.role === 'seller'
                   ? 'You do not have any custom packages configured yet.'
-                  : 'There are no custom packages created for this user yet. Click "Create a Package" to get started.'}
+                  : 'There are no custom packages created for this user yet. Click "Create A Package" to get started.'}
           </p>
-          {packageSearch && (
-            <button onClick={() => setPackageSearch('')} className="text-xs font-bold text-primary hover:underline cursor-pointer">
-              Clear filter
+          {selectedPackageId && (
+            <button onClick={() => setSelectedPackageId('')} className="text-xs font-bold text-primary hover:underline cursor-pointer">
+              Clear Filter
             </button>
           )}
         </div>

@@ -85,12 +85,16 @@ class PppoeRechargeController extends Controller
             'periods' => ['nullable', 'integer', 'min:1', 'max:24'],
             'payment_method' => ['nullable', 'string', 'max:40'],
             'note' => ['nullable', 'string', 'max:255'],
+            'on_behalf_of' => ['nullable', 'integer', 'exists:users,id'],
+            'owner_id' => ['nullable', 'integer', 'exists:users,id'],
         ]);
 
         $plan = null;
         if (!empty($data['plan_id'])) {
             $plan = InternetPlan::findOrFail($data['plan_id']);
         }
+
+        $ownerId = $data['on_behalf_of'] ?? $data['owner_id'] ?? null;
 
         $recharge = $this->rechargeService->recharge(
             $actor,
@@ -100,7 +104,8 @@ class PppoeRechargeController extends Controller
             isset($data['validity_days']) ? (int) $data['validity_days'] : null,
             (int) ($data['periods'] ?? 1),
             $data['payment_method'] ?? 'wallet',
-            $data['note'] ?? null
+            $data['note'] ?? null,
+            $ownerId ? (int) $ownerId : null
         );
 
         return $this->created($recharge->load(['customer', 'plan', 'collectedBy']), 'Subscriber recharged successfully.');

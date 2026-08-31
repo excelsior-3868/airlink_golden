@@ -91,17 +91,17 @@ export default function Vouchers() {
   // seller_id defaults to 'own' — cards the actor generated itself, with none of
   // its sellers' stock mixed in. 'all' widens it to the whole downline.
   const EMPTY_FILTERS = {
-    status: '', code: '', batch: '',
+    status: '', code: '', batch: '', serial_number: '',
     from: '', to: '', plan_id: '', reseller_id: '', seller_id: 'own', season_id: '',
   }
   const [filters, setFilters] = useState<any>(EMPTY_FILTERS)
   // Filters apply as soon as they change. Only the free-text fields are debounced
   // so typing doesn't fire a request per keystroke; selects/dates take effect at once.
-  const [debouncedText, setDebouncedText] = useState({ code: '', batch: '' })
+  const [debouncedText, setDebouncedText] = useState({ code: '', batch: '', serial_number: '' })
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedText({ code: filters.code, batch: filters.batch }), 400)
+    const t = setTimeout(() => setDebouncedText({ code: filters.code, batch: filters.batch, serial_number: filters.serial_number }), 400)
     return () => clearTimeout(t)
-  }, [filters.code, filters.batch])
+  }, [filters.code, filters.batch, filters.serial_number])
 
   // Batches state
   const [batchesPage, setBatchesPage] = useState(1)
@@ -222,6 +222,7 @@ export default function Vouchers() {
     ...filters,
     code: debouncedText.code,
     batch: debouncedText.batch,
+    serial_number: debouncedText.serial_number,
     seller_id: sellerFilterVisible ? sellerScope : '',
   }
   const cleanFilters = () => Object.fromEntries(Object.entries(effectiveFilters).filter(([, v]) => v))
@@ -559,17 +560,21 @@ export default function Vouchers() {
                 </div>
               )}
               <div className="flex-1 min-w-[140px] max-w-[250px]">
+                <label className="text-xs font-semibold text-slate-500 block mb-1">Serial Number</label>
+                <input className="input" value={filters.serial_number} onChange={(e) => setFilters({ ...filters, serial_number: e.target.value })} placeholder="Search Serial Number" />
+              </div>
+              <div className="flex-1 min-w-[140px] max-w-[250px]">
                 <label className="text-xs font-semibold text-slate-500 block mb-1">Code</label>
-                <input className="input" value={filters.code} onChange={(e) => setFilters({ ...filters, code: e.target.value })} placeholder="Search code" />
+                <input className="input" value={filters.code} onChange={(e) => setFilters({ ...filters, code: e.target.value })} placeholder="Search Code" />
               </div>
               <div className="flex-1 min-w-[140px] max-w-[250px]">
                 <label className="text-xs font-semibold text-slate-500 block mb-1">Batch</label>
-                <input className="input" value={filters.batch} onChange={(e) => setFilters({ ...filters, batch: e.target.value })} placeholder="Batch code" />
+                <input className="input" value={filters.batch} onChange={(e) => setFilters({ ...filters, batch: e.target.value })} placeholder="Batch Code" />
               </div>
               <div className="md:ml-auto flex gap-2 shrink-0 w-full md:w-auto">
                 <button
                   className="btn-ghost flex-1 md:flex-initial"
-                  onClick={() => { setFilters(EMPTY_FILTERS); setDebouncedText({ code: '', batch: '' }) }}
+                  onClick={() => { setFilters(EMPTY_FILTERS); setDebouncedText({ code: '', batch: '', serial_number: '' }) }}
                 >
                   Clear
                 </button>

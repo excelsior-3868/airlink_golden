@@ -124,6 +124,9 @@ class VoucherController extends Controller
         if ($c = $request->query('code')) {
             $q->where('code', 'like', "%$c%");
         }
+        if ($sn = $request->query('serial_number')) {
+            $q->where('serial_number', 'like', "%$sn%");
+        }
         if ($u = $request->query('username')) {
             $q->where('username', 'like', "%$u%");
         }
@@ -503,6 +506,15 @@ class VoucherController extends Controller
         if ($s = $request->query('status')) {
             $q->where('status', $s);
         }
+        if ($p = $request->query('plan_id')) {
+            $q->where('plan_id', $p);
+        }
+        if ($c = $request->query('code')) {
+            $q->where('code', 'like', "%$c%");
+        }
+        if ($sn = $request->query('serial_number')) {
+            $q->where('serial_number', 'like', "%$sn%");
+        }
 
         $filename = 'vouchers-'.now()->format('Ymd-His').'.csv';
 
@@ -532,6 +544,12 @@ class VoucherController extends Controller
         }
         if ($p = $request->query('plan_id')) {
             $q->where('plan_id', $p);
+        }
+        if ($c = $request->query('code')) {
+            $q->where('code', 'like', "%$c%");
+        }
+        if ($sn = $request->query('serial_number')) {
+            $q->where('serial_number', 'like', "%$sn%");
         }
 
         $spreadsheet = new Spreadsheet();

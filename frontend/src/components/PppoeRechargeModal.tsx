@@ -15,17 +15,24 @@ interface PppoeRechargeModalProps {
 
 export default function PppoeRechargeModal({ open, onClose, customer, onSuccess }: PppoeRechargeModalProps) {
   const { user, refresh } = useAuth()
+  const isAdmin = user?.role === 'admin'
   const isReseller = user?.role === 'reseller'
   const [planId, setPlanId] = useState<string>('')
   const [showPlanPicker, setShowPlanPicker] = useState<boolean>(false)
   const [periods, setPeriods] = useState<number>(1)
   const [paymentMethod, setPaymentMethod] = useState<string>('wallet')
+  const [onBehalfOf, setOnBehalfOf] = useState<string>('')
   const [note, setNote] = useState<string>('')
   const [err, setErr] = useState<string>('')
   const [busy, setBusy] = useState<boolean>(false)
 
   const { data: plans = [] } = useQuery<any[]>('plans?type=pppoe&active_only=1', () =>
     api.get('/plans?type=pppoe&active_only=1').then((r) => r.data.data)
+  )
+
+  const { data: allResellers = [] } = useQuery<any[]>('users?role=reseller&per_page=100', () =>
+    api.get('/users?role=reseller&per_page=100').then((r) => r.data.data?.data || []),
+    { enabled: isAdmin }
   )
 
   const { data: paymentMethods = [] } = useQuery<any[]>('payment-methods', () =>
@@ -40,8 +47,27 @@ export default function PppoeRechargeModal({ open, onClose, customer, onSuccess 
       setPaymentMethod('wallet')
       setNote('')
       setErr('')
+      setOnBehalfOf(customer.reseller_id ? String(customer.reseller_id) : (customer.owner_id ? String(customer.owner_id) : ''))
     }
   }, [customer, open])
+
+  const resellerOptions = useMemo(() => {
+    const opts: SelectOption[] = [
+      {
+        value: '',
+        label: 'Admin Direct (Myself)',
+        badge: <span className="text-[10px] bg-blue-50 text-blue-600 font-bold px-2 py-0.5 rounded-full border border-blue-100/50">Admin</span>,
+      },
+    ]
+    allResellers.forEach((r: any) => {
+      opts.push({
+        value: String(r.id),
+        label: r.name || r.username,
+        badge: <span className="text-[10px] bg-purple-50 text-purple-600 font-bold px-2 py-0.5 rounded-full border border-purple-100/50">Reseller</span>,
+      })
+    })
+    return opts
+  }, [allResellers])
 
   const selectedPlan = useMemo(() => {
     return plans.find((p) => String(p.id) === String(planId)) || customer?.plan || null
@@ -118,12 +144,18 @@ export default function PppoeRechargeModal({ open, onClose, customer, onSuccess 
 
     setBusy(true)
     try {
-      await api.post(`/pppoe/customers/${customer.id}/recharge`, {
+      const payload: any = {
         plan_id: +planId,
         periods,
         payment_method: paymentMethod,
         note: note.trim() || null,
-      })
+      }
+      if (isAdmin && onBehalfOf) {
+        payload.on_behalf_of = +onBehalfOf
+        payload.owner_id = +onBehalfOf
+      }
+
+      await api.post(`/pppoe/customers/${customer.id}/recharge`, payload)
 
       invalidateCache('pppoe')
       invalidateCache('dashboard')
@@ -250,6 +282,23 @@ export default function PppoeRechargeModal({ open, onClose, customer, onSuccess 
             </div>
           )}
         </div>
+
+        {/* On Behalf Of (Admin Only) */}
+        {isAdmin && (
+          <div>
+            <label className="text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5 flex items-center gap-1.5">
+              <UserCheck size={14} className="text-indigo-500" />
+              On Behalf Of
+            </label>
+            <CustomSelect
+              value={onBehalfOf}
+              onChange={(val) => setOnBehalfOf(val)}
+              options={resellerOptions}
+              placeholder="Admin Direct (Myself)"
+              searchable={true}
+            />
+          </div>
+        )}
 
         {/* Periods & Payment Method */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

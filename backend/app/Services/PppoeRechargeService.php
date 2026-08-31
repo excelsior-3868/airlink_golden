@@ -43,6 +43,7 @@ class PppoeRechargeService
         int $periods = 1,
         ?string $paymentMethod = 'wallet',
         ?string $note = null,
+        ?int $ownerId = null,
     ): PppoeRecharge {
         $priorStatus = $customer->status;
 
@@ -92,7 +93,8 @@ class PppoeRechargeService
             $totalValidityDays,
             $reference,
             $paymentMethod,
-            $note
+            $note,
+            $ownerId
         ) {
             // Lock subscriber row
             /** @var PppoeCustomer $c */
@@ -102,7 +104,11 @@ class PppoeRechargeService
             $this->wallet->deduct($actor, $totalPrice, $reference, "PPPoE Recharge for {$c->username} ({$targetPlan->name})");
 
             // 2. Commission split (mirroring VoucherController::sell)
-            $resellerId = $c->reseller_id ?: ($actor->isReseller() ? $actor->id : null);
+            $delegatedOwner = ($actor->isAdmin() && $ownerId) ? User::find($ownerId) : null;
+            $targetOwnerId = $delegatedOwner ? $delegatedOwner->id : $c->owner_id;
+            $resellerId = $delegatedOwner?->isReseller()
+                ? $delegatedOwner->id
+                : ($c->reseller_id ?: ($actor->isReseller() ? $actor->id : null));
             $reseller = $resellerId ? User::find($resellerId) : null;
             $percent = $reseller ? (float) $reseller->commission_percent : 0.0;
             $adminShare = round($totalPrice * $percent / 100, 2);
@@ -131,6 +137,8 @@ class PppoeRechargeService
             $c->update([
                 'plan_id' => $targetPlan->id,
                 'status' => 'active',
+                'owner_id' => $targetOwnerId,
+                'reseller_id' => $resellerId,
                 'activated_at' => $c->activated_at ?? $now,
                 'expires_at' => $periodEnd,
                 'last_recharged_at' => $now,
@@ -141,7 +149,7 @@ class PppoeRechargeService
                 'reference' => $reference,
                 'customer_id' => $c->id,
                 'plan_id' => $targetPlan->id,
-                'owner_id' => $c->owner_id,
+                'owner_id' => $targetOwnerId,
                 'reseller_id' => $resellerId,
                 'collected_by' => $actor->id,
                 'price' => $totalPrice,

@@ -338,6 +338,9 @@ class ReportController extends Controller
         if ($code = $request->query('code')) {
             $q->where('vouchers.code', 'like', "%$code%");
         }
+        if ($serialNumber = $request->query('serial_number')) {
+            $q->where('vouchers.serial_number', 'like', "%$serialNumber%");
+        }
         if ($batch = $request->query('batch')) {
             $q->whereHas('batch', fn ($x) => $x->where('batch_code', 'like', "%$batch%"));
         }
