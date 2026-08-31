@@ -169,8 +169,10 @@ class PppoeCustomerService
      */
     public function suspend(User $actor, PppoeCustomer $customer): PppoeCustomer
     {
-        $customer->update(['status' => 'suspended']);
-        $this->deleteRadiusRows($customer->username);
+        DB::transaction(function () use ($customer) {
+            $customer->update(['status' => 'suspended']);
+            $this->deleteRadiusRows($customer->username);
+        });
 
         try {
             $this->coaService->disconnectUsername($customer->username);

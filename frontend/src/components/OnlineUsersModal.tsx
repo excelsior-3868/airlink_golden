@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Wifi, RefreshCw, Power, Search, Database, Clock, Laptop, Users, ShieldAlert, CheckCircle2, AlertTriangle } from 'lucide-react'
+import { Wifi, RefreshCw, Power, Search, Database, Clock, Laptop, Users, ShieldAlert, CheckCircle2, AlertTriangle, Activity } from 'lucide-react'
 import { api } from '../lib/api'
 import { formatBytes, gb, num, date, datet } from '../lib/format'
 import { GlassCard, Modal, Spinner, EmptyState } from './ui'
+import { LiveUsageGraphModal } from './LiveUsageGraphModal'
 
 interface OnlineSession {
   radacctid: number
@@ -12,6 +13,7 @@ interface OnlineSession {
   ip_address?: string
   mac_address?: string
   nas_ip?: string
+  nas_name?: string
   start_time?: string
   session_time?: number
   input_bytes?: number
@@ -21,6 +23,7 @@ interface OnlineSession {
   customer_username?: string
   price?: number
   voucher_status?: string
+  is_stale_session?: boolean
   plan_name?: string
   package_type?: string
   reseller_username?: string
@@ -79,6 +82,7 @@ export function OnlineUsersModal({ open, onClose }: { open: boolean; onClose: ()
   const [search, setSearch] = useState('')
   const [disconnecting, setDisconnecting] = useState<string | null>(null)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [selectedForUsage, setSelectedForUsage] = useState<OnlineSession | null>(null)
 
   const fetchOnlineUsers = async () => {
     setLoading(true)
@@ -205,9 +209,24 @@ export function OnlineUsersModal({ open, onClose }: { open: boolean; onClose: ()
               </thead>
               <tbody>
                 {sessions.map((s) => (
-                  <motion.tr key={s.radacctid} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="hover:bg-slate-50/70">
+                  <motion.tr
+                    key={s.radacctid}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className={s.is_stale_session ? 'bg-amber-50/60 hover:bg-amber-50' : 'hover:bg-slate-50/70'}
+                  >
                     <td className="font-semibold text-slate-800">
-                      <div>{s.voucher_code || s.username}</div>
+                      <div className="flex items-center gap-1.5">
+                        <span>{s.voucher_code || s.username}</span>
+                        {s.is_stale_session && (
+                          <span
+                            className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-200"
+                            title={`Account status is '${s.voucher_status || 'inactive'}' — this session should not still be online.`}
+                          >
+                            Stale
+                          </span>
+                        )}
+                      </div>
                       {s.customer_username && (
                         <div className="text-[10px] text-slate-400 font-mono">User: {s.customer_username}</div>
                       )}
@@ -221,8 +240,15 @@ export function OnlineUsersModal({ open, onClose }: { open: boolean; onClose: ()
                       <div>{formatDuration(s.session_time)}</div>
                       <div className="text-[10px] text-slate-400">{s.start_time ? datet(s.start_time) : ''}</div>
                     </td>
-                    <td className="font-bold text-slate-700">
-                      <div>{formatBytes(s.total_bytes || 0)}</div>
+                    <td
+                      className="font-bold text-slate-700 cursor-pointer group"
+                      onClick={() => setSelectedForUsage(s)}
+                      title="Click to view live data usage graph"
+                    >
+                      <div className="group-hover:text-cyan-600 transition-colors flex items-center gap-1">
+                        <span>{formatBytes(s.total_bytes || 0)}</span>
+                        <Activity size={11} className="opacity-0 group-hover:opacity-100 text-cyan-500 transition-opacity" />
+                      </div>
                       {(s.input_bytes || s.output_bytes) ? (
                         <div className="text-[10px] text-slate-400 font-normal flex items-center gap-1.5 mt-0.5">
                           <span title="Download (Rx)">↓ {formatBytes(s.output_bytes || 0)}</span>
@@ -236,15 +262,25 @@ export function OnlineUsersModal({ open, onClose }: { open: boolean; onClose: ()
                       {s.seller_name && <div className="text-[10px] text-slate-400">{s.seller_name}</div>}
                     </td>
                     <td>
-                      <button
-                        onClick={() => handleDisconnect(s.username)}
-                        disabled={disconnecting === s.username}
-                        className="px-2.5 py-1 rounded-lg bg-rose-50 border border-rose-200 text-rose-600 hover:bg-rose-100 font-bold transition-all text-[11px] flex items-center gap-1"
-                        title="Disconnect Live Session via CoA"
-                      >
-                        <Power size={12} />
-                        {disconnecting === s.username ? '...' : 'Disconnect'}
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => setSelectedForUsage(s)}
+                          className="p-1.5 rounded-lg bg-cyan-50 border border-cyan-200 text-cyan-700 hover:bg-cyan-100 font-bold transition-all text-[11px] flex items-center gap-1 cursor-pointer"
+                          title={`View live data usage graph for ${s.voucher_code || s.username}`}
+                        >
+                          <Activity size={12} />
+                          <span>Graph</span>
+                        </button>
+                        <button
+                          onClick={() => handleDisconnect(s.username)}
+                          disabled={disconnecting === s.username}
+                          className="p-1.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-600 hover:bg-rose-100 font-bold transition-all text-[11px] flex items-center gap-1 cursor-pointer"
+                          title="Disconnect Live Session via CoA"
+                        >
+                          <Power size={12} />
+                          <span>{disconnecting === s.username ? '...' : 'Disconnect'}</span>
+                        </button>
+                      </div>
                     </td>
                   </motion.tr>
                 ))}
@@ -256,6 +292,20 @@ export function OnlineUsersModal({ open, onClose }: { open: boolean; onClose: ()
           )}
         </div>
       </div>
+
+      <LiveUsageGraphModal
+        open={!!selectedForUsage}
+        onClose={() => setSelectedForUsage(null)}
+        username={selectedForUsage?.voucher_code || selectedForUsage?.username || null}
+        sessionMeta={{
+          customer: selectedForUsage?.customer_username || selectedForUsage?.username,
+          plan: selectedForUsage?.plan_name,
+          ip_address: selectedForUsage?.ip_address,
+          mac_address: selectedForUsage?.mac_address,
+          start_time: selectedForUsage?.start_time,
+          nas_name: selectedForUsage?.nas_name,
+        }}
+      />
     </Modal>
   )
 }

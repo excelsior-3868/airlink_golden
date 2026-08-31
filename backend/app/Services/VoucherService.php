@@ -45,6 +45,16 @@ class VoucherService
         if ($plan->status !== 'active') {
             throw ValidationException::withMessages(['plan_id' => 'Plan is not active.']);
         }
+        if ($plan->type === 'pppoe') {
+            // A voucher's credential lives in `vouchers`/radcheck with no record of which
+            // app table "owns" it, so FreeRADIUS will happily authenticate it on a PPPoE
+            // NAS port too. That already happened for real on the sibling airlink_3.0
+            // tenant (legacy-import rows, plus vouchers minted off PPPoE-typed plans like
+            // staff/FOC packages) and produces vouchers.* rows that behave like PPPoE
+            // subscribers with none of the pppoe_customers bookkeeping. PPPoE plans must
+            // only be provisioned through PppoeCustomerService, never through a voucher batch.
+            throw ValidationException::withMessages(['plan_id' => 'This plan is PPPoE-only and cannot be used to generate vouchers.']);
+        }
 
         // Determine target user (owner)
         $owner = $actor;

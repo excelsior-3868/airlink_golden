@@ -203,10 +203,14 @@ class PppoeCustomerTest extends TestCase
             'status' => 'suspended',
         ]);
 
-        // Radcheck rows must still exist for suspended subscriber (so FreeRADIUS can return suspended unlang reply)
-        $this->assertDatabaseHas('radcheck', [
+        // No FreeRADIUS-side status gate exists — radcheck/radreply MUST be
+        // deleted on suspend, or the subscriber can simply re-authenticate
+        // with their existing credentials while "suspended".
+        $this->assertDatabaseMissing('radcheck', [
             'username' => 'suspend_test',
-            'attribute' => 'Cleartext-Password',
+        ]);
+        $this->assertDatabaseMissing('radreply', [
+            'username' => 'suspend_test',
         ]);
 
         // Resume
@@ -217,6 +221,13 @@ class PppoeCustomerTest extends TestCase
         $this->assertDatabaseHas('pppoe_customers', [
             'id' => $customer->id,
             'status' => 'active',
+        ]);
+
+        // Resume must rebuild radius rows so the customer can authenticate again.
+        $this->assertDatabaseHas('radcheck', [
+            'username' => 'suspend_test',
+            'attribute' => 'Cleartext-Password',
+            'value' => 'pass123',
         ]);
     }
 

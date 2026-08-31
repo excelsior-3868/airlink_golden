@@ -453,23 +453,37 @@ export default function HotspotPlans() {
         </div>
       )}
 
-      {/* Each control sizes to its own label and wraps to the next line when the row
-          runs out of room. A fixed column count forced every select to the same
-          track width, which its 180px minimum then overflowed into its neighbour. */}
+      {/* Each control gets its own fixed-width wrapper and the row wraps when it
+          runs out of room. The width has to live on the wrapper, not on the
+          select: CustomSelect's own root is w-full, so an unwrapped one claims
+          the whole flex line and every filter ends up on a row of its own. */}
       <div className="mb-6 flex flex-wrap items-center gap-3 bg-slate-50/70 p-3.5 rounded-xl border border-slate-200/60">
-        {/* Searchable so a long package list stays reachable by typing. !min-w-0
-            matches the sibling selects — CustomSelect otherwise reserves 180px. */}
-        <Combobox className="!min-w-0" value={nameFilter} onChange={setNameFilter} options={nameFilterOptions} />
+        {/* Searchable so a long package list stays reachable by typing. */}
+        <div className="w-56">
+          <Combobox value={nameFilter} onChange={setNameFilter} options={nameFilterOptions} />
+        </div>
         {showPlanAttributeFilters && (
           <>
-            <CustomSelect className="!min-w-0" value={typeFilter} onChange={setTypeFilter} options={typeFilterOptions} />
-            <CustomSelect className="!min-w-0" value={nasFilter} onChange={setNasFilter} options={yesNoOptions('NAS')} />
-            <CustomSelect className="!min-w-0" value={macFilter} onChange={setMacFilter} options={yesNoOptions('MAC Bind')} />
+            <div className="w-40">
+              <CustomSelect value={typeFilter} onChange={setTypeFilter} options={typeFilterOptions} />
+            </div>
+            <div className="w-36">
+              <CustomSelect value={nasFilter} onChange={setNasFilter} options={yesNoOptions('NAS')} />
+            </div>
+            <div className="w-44">
+              <CustomSelect value={macFilter} onChange={setMacFilter} options={yesNoOptions('MAC Bind')} />
+            </div>
           </>
         )}
-        <CustomSelect className="!min-w-0" value={bandwidthFilter} onChange={setBandwidthFilter} options={bandwidthFilterOptions} />
-        <CustomSelect className="!min-w-0" value={statusFilter} onChange={setStatusFilter} options={statusFilterOptions} />
-        <CustomSelect className="!min-w-0" value={validityFilter} onChange={setValidityFilter} options={validityFilterOptions} />
+        <div className="w-48">
+          <CustomSelect value={bandwidthFilter} onChange={setBandwidthFilter} options={bandwidthFilterOptions} />
+        </div>
+        <div className="w-40">
+          <CustomSelect value={statusFilter} onChange={setStatusFilter} options={statusFilterOptions} />
+        </div>
+        <div className="w-40">
+          <CustomSelect value={validityFilter} onChange={setValidityFilter} options={validityFilterOptions} />
+        </div>
         <button
           onClick={clearFilters}
           disabled={!isFiltered}

@@ -398,7 +398,8 @@ export function CustomSelect({
   className = '',
   disabled = false,
   searchable = false,
-  borderless = false
+  borderless = false,
+  buttonClassName = ''
 }: {
   value: any;
   onChange: (val: any) => void;
@@ -408,6 +409,7 @@ export function CustomSelect({
   disabled?: boolean;
   searchable?: boolean;
   borderless?: boolean;
+  buttonClassName?: string;
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -535,7 +537,7 @@ export function CustomSelect({
         type="button"
         disabled={disabled}
         onClick={() => setOpen(!open)}
-        className={`w-full flex items-center justify-between gap-3 px-4 py-2.5 bg-white disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm font-semibold text-slate-700 ${borderless ? 'border-0 rounded-none shadow-none hover:bg-slate-50' : 'border border-slate-200 rounded-2xl hover:border-slate-300 shadow-sm'}`}
+        className={`w-full flex items-center justify-between gap-3 px-4 py-2.5 bg-white disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm font-semibold text-slate-700 ${borderless ? 'border-0 rounded-none shadow-none hover:bg-slate-50' : 'border border-slate-200 rounded-2xl hover:border-slate-300 shadow-sm'} ${buttonClassName}`}
       >
         <div className="flex flex-1 items-center gap-2 min-w-0">
           {selected?.icon && <div className="shrink-0 flex items-center justify-center">{selected.icon}</div>}

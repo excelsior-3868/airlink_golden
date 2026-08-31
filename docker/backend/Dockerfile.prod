@@ -29,6 +29,11 @@ RUN groupadd -g 5555 radiusweb && usermod -aG radiusweb www-data
 #   Composer's GitHub downloads from the low-ceiling anonymous path to the
 #   authenticated API, which is what actually fixes sustained 429/504s from
 #   codeload.github.com — a token needs no scopes, it just needs to exist.
+#
+# The trailing chmod is not cosmetic: COPY preserves host file modes, so a
+# 0640 file in the build context is unreadable to php-fpm's www-data — the
+# class silently fails to autoload and every route touching it returns 500.
+# Normalizing here means a stray host umask can never take the image down.
 COPY backend/ /var/www/html/
 RUN --mount=type=cache,target=/composer-cache,sharing=locked \
     --mount=type=secret,id=github_token \
@@ -36,7 +41,8 @@ RUN --mount=type=cache,target=/composer-cache,sharing=locked \
         composer config -g github-oauth.github.com "$(cat /run/secrets/github_token)"; \
     fi \
     && composer install --no-dev --optimize-autoloader --no-interaction --no-progress \
-    && chown -R www-data:www-data storage bootstrap/cache
+    && chown -R www-data:www-data storage bootstrap/cache \
+    && chmod -R a+rX /var/www/html
 
 COPY docker/backend/prod-entrypoint.sh /usr/local/bin/prod-entrypoint.sh
 RUN chmod +x /usr/local/bin/prod-entrypoint.sh

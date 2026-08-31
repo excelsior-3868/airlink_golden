@@ -6,8 +6,10 @@ use App\Models\Bandwidth;
 use App\Models\InternetPlan;
 use App\Models\PppoeCustomer;
 use App\Models\User;
+use App\Services\Radius\CoaService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class PppoeSyncStatusTest extends TestCase
@@ -16,6 +18,16 @@ class PppoeSyncStatusTest extends TestCase
 
     public function test_sync_status_expires_past_due_active_customers(): void
     {
+        // Bound before any Artisan call (including $this->seed() below): the
+        // console kernel resolves and caches command instances — with whatever
+        // CoaService is bound at that moment — the first time Artisan runs, so
+        // rebinding after that point would be too late for SyncPppoeStatus's
+        // already-constructed instance to see the mock.
+        $coaMock = \Mockery::mock(CoaService::class);
+        $coaMock->shouldReceive('disconnectUsername')->once()->with('expired_customer')->andReturn([]);
+        $coaMock->shouldNotReceive('disconnectUsername')->with('good_customer');
+        $this->app->instance(CoaService::class, $coaMock);
+
         $this->seed();
 
         $admin = $this->makeUser('admin');
@@ -61,6 +73,22 @@ class PppoeSyncStatusTest extends TestCase
             'bandwidth' => '10M/10M',
         ]);
 
+        // Both start provisioned in RADIUS, as any active subscriber would be.
+        foreach (['good_customer', 'expired_customer'] as $username) {
+            DB::table('radcheck')->insert([
+                'username' => $username,
+                'attribute' => 'Cleartext-Password',
+                'op' => ':=',
+                'value' => 'x',
+            ]);
+            DB::table('radreply')->insert([
+                'username' => $username,
+                'attribute' => 'Mikrotik-Rate-Limit',
+                'op' => ':=',
+                'value' => '10M/10M',
+            ]);
+        }
+
         Artisan::call('pppoe:sync-status');
 
         $activeGood->refresh();
@@ -68,5 +96,13 @@ class PppoeSyncStatusTest extends TestCase
 
         $this->assertEquals('active', $activeGood->status);
         $this->assertEquals('expired', $activeExpired->status);
+
+        // The whole point of this command: an expired subscriber must lose the
+        // radcheck/radreply rows that let them re-authenticate. A still-active
+        // subscriber's rows must be left alone.
+        $this->assertDatabaseMissing('radcheck', ['username' => 'expired_customer']);
+        $this->assertDatabaseMissing('radreply', ['username' => 'expired_customer']);
+        $this->assertDatabaseHas('radcheck', ['username' => 'good_customer']);
+        $this->assertDatabaseHas('radreply', ['username' => 'good_customer']);
     }
 }

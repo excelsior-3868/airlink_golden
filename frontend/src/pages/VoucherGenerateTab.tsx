@@ -387,6 +387,12 @@ export default function VoucherGenerateTab({ plans, plansLoading = false, refetc
     const isSellerTarget = user?.role === 'seller' || selectedOwnerId.startsWith('seller-')
 
     return plans.filter((p) => {
+      // PPPoE-typed plans are provisioned as pppoe_customers, never as vouchers — a
+      // voucher's credential lands in radcheck indistinguishably from any other, so
+      // FreeRADIUS would authenticate it on a PPPoE NAS port with none of the
+      // pppoe_customers bookkeeping. Keep them out of the voucher generator entirely.
+      if (p.type === 'pppoe') return false
+
       // Wallet packages are NEVER accessible to sellers or when viewing seller packages
       if (p.package_type === 'wallet') {
         if (isSellerTarget) return false

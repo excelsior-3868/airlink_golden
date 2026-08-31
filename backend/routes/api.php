@@ -43,9 +43,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/plans/{plan}', [PlanController::class, 'show']);
     // Permission checked inside store(): create_plan (Plans page) vs create_voucher_plan (voucher inline).
     Route::post('/plans', [PlanController::class, 'store']);
-    // The OR gate lets a role holding only create_pppoe_plan reach the route;
-    // update()/destroy() then re-assert create_plan for any non-PPPoE plan, so
-    // a PPPoE-only grant cannot edit hotspot plans through the widened door.
+    // OR gate: a PPPoE-only grant (create_pppoe_plan) must not be blocked here by
+    // a permission about wallet packages. Which one actually applies depends on the
+    // plan's type, so the real decision is made in update()/destroy() — this only
+    // turns away callers holding neither.
     Route::put('/plans/{plan}', [PlanController::class, 'update'])->middleware('permission:create_plan,create_pppoe_plan');
     Route::delete('/plans/{plan}', [PlanController::class, 'destroy'])->middleware('permission:create_plan,create_pppoe_plan');
 
@@ -156,6 +157,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get   ('/pppoe/customers/export',                 [PppoeCustomerController::class, 'exportCsv'])   ->middleware('permission:view_pppoe');
         Route::get   ('/pppoe/sessions',                         [PppoeCustomerController::class, 'liveSessions']) ->middleware('permission:view_pppoe');
         Route::get   ('/pppoe/recharges',                        [PppoeRechargeController::class, 'index'])       ->middleware('permission:view_pppoe');
+        Route::get   ('/reports/pppoe-sales-summary',            [ReportController::class, 'pppoeSalesSummary'])  ->middleware('permission:view_pppoe');
         Route::post  ('/pppoe/customers',                        [PppoeCustomerController::class, 'store'])       ->middleware('permission:create_pppoe_customer');
         Route::get   ('/pppoe/customers/{customer}',             [PppoeCustomerController::class, 'show'])        ->middleware('permission:view_pppoe');
         Route::get   ('/pppoe/customers/{customer}/sessions',    [PppoeCustomerController::class, 'sessions'])    ->middleware('permission:view_pppoe');
@@ -166,11 +168,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post  ('/pppoe/customers/{customer}/disconnect',  [PppoeCustomerController::class, 'disconnect'])  ->middleware('permission:suspend_pppoe_customer');
         Route::post  ('/pppoe/customers/{customer}/recharge',    [PppoeRechargeController::class, 'store'])       ->middleware('permission:recharge_pppoe_customer');
         Route::delete('/pppoe/customers/{customer}',             [PppoeCustomerController::class, 'destroy'])     ->middleware('permission:delete_pppoe_customer');
-
-        // PPPoE Sales Summary. Lives in this group rather than beside the other
-        // reports because the page is PPPoE-only: a seller has no PPPoE concept,
-        // so it answers 403 rather than rendering a page of zeroes.
-        Route::get   ('/reports/pppoe-sales-summary',            [ReportController::class, 'pppoeSalesSummary'])  ->middleware('permission:view_pppoe');
     });
 
     // Reports — used-voucher package summary (scoped); drill-down via /vouchers.
@@ -193,10 +190,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/nas', [NasController::class, 'index']);
 
     // Voucher Diagnostics & Online Users — readable by all authenticated roles.
-    Route::get('/radius/online-users', [RadiusController::class, 'onlineUsers']);
-    Route::post('/radius/disconnect-user', [RadiusController::class, 'disconnectUser']);
     Route::get('/radius/server-log', [RadiusController::class, 'serverLog']);
     Route::get('/radius/diagnose/{code}', [RadiusController::class, 'diagnoseVoucher']);
+    Route::get('/radius/online-users', [RadiusController::class, 'onlineUsers']);
+    Route::get('/radius/session-usage', [RadiusController::class, 'sessionUsage']);
+    Route::post('/radius/disconnect-user', [RadiusController::class, 'disconnectUser']);
 
     // Seasons lookup readable by all authenticated roles
     Route::get('/seasons', [SeasonController::class, 'index']);
