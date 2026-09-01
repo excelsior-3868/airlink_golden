@@ -366,7 +366,9 @@ authorize {
 					AND mac_address <> '%{Calling-Station-Id}' THEN 'mac_mismatch' \
 				ELSE 'ok' \
 			END \
-			FROM vouchers WHERE username = '%{User-Name}' LIMIT 1}"
+			FROM vouchers WHERE username = '%{User-Name}' \
+				AND NOT EXISTS (SELECT 1 FROM pppoe_customers pc WHERE pc.username = vouchers.username) \
+			LIMIT 1}"
 	}
 
 	switch &control:Tmp-String-0 {

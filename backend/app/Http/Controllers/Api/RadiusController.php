@@ -43,9 +43,9 @@ class RadiusController extends Controller
                 'radacct.username',
                 'pc.id as pppoe_customer_id',
                 DB::raw("CASE WHEN pc.id IS NOT NULL THEN 'pppoe' ELSE 'hotspot' END as connection_type"),
-                DB::raw('COALESCE(vouchers.customer_username, pc.full_name) as customer_username'),
-                DB::raw('COALESCE(vouchers.price, pc.contract_price, pp.selling_price) as price'),
-                DB::raw('COALESCE(vouchers.status, pc.status) as voucher_status'),
+                DB::raw('CASE WHEN pc.id IS NOT NULL THEN pc.full_name ELSE vouchers.customer_username END as customer_username'),
+                DB::raw('CASE WHEN pc.id IS NOT NULL THEN COALESCE(pc.contract_price, pp.selling_price) ELSE vouchers.price END as price'),
+                DB::raw('CASE WHEN pc.id IS NOT NULL THEN pc.status ELSE vouchers.status END as voucher_status'),
                 // Flags a session whose owning account is not in the one status
                 // that is supposed to have live radcheck rows ('active' for both
                 // vouchers and pppoe_customers). A row here means either the
@@ -55,25 +55,25 @@ class RadiusController extends Controller
                 // PppoeCustomerService::suspend()/SyncPppoeStatus. NULL status
                 // (no matching voucher/pppoe_customers row at all) is left
                 // unflagged rather than guessed at.
-                DB::raw("CASE WHEN COALESCE(vouchers.status, pc.status) IS NULL THEN 0
-                    WHEN COALESCE(vouchers.status, pc.status) = 'active' THEN 0
+                DB::raw("CASE WHEN (CASE WHEN pc.id IS NOT NULL THEN pc.status ELSE vouchers.status END) IS NULL THEN 0
+                    WHEN (CASE WHEN pc.id IS NOT NULL THEN pc.status ELSE vouchers.status END) = 'active' THEN 0
                     ELSE 1 END as is_stale_session"),
-                DB::raw('COALESCE(radacct.acctstarttime, vouchers.activated_at, pc.activated_at) as start_time'),
-                DB::raw('COALESCE(vouchers.expires_at, pc.expires_at) as expires_at'),
+                DB::raw('COALESCE(radacct.acctstarttime, CASE WHEN pc.id IS NOT NULL THEN pc.activated_at ELSE vouchers.activated_at END) as start_time'),
+                DB::raw('CASE WHEN pc.id IS NOT NULL THEN pc.expires_at ELSE vouchers.expires_at END as expires_at'),
                 DB::raw('COALESCE(p.name, pp.name) as plan_name'),
                 DB::raw('COALESCE(p.package_type, pp.package_type) as package_type'),
-                DB::raw('COALESCE(radacct.framedipaddress, vouchers.nas_ip, pc.nas_ip, "Dynamic") as ip_address'),
-                DB::raw('COALESCE(radacct.callingstationid, vouchers.mac_address, pc.mac_address, "Active") as mac_address'),
-                DB::raw('COALESCE(radacct.nasipaddress, vouchers.nas_ip, pc.nas_ip) as nas_ip'),
+                DB::raw('COALESCE(radacct.framedipaddress, CASE WHEN pc.id IS NOT NULL THEN pc.nas_ip ELSE vouchers.nas_ip END, "Dynamic") as ip_address'),
+                DB::raw('COALESCE(radacct.callingstationid, CASE WHEN pc.id IS NOT NULL THEN pc.mac_address ELSE vouchers.mac_address END, "Active") as mac_address'),
+                DB::raw('COALESCE(radacct.nasipaddress, CASE WHEN pc.id IS NOT NULL THEN pc.nas_ip ELSE vouchers.nas_ip END) as nas_ip'),
                 // Friendly router name for the address the session came in on.
                 // A correlated subquery rather than a join because nas_devices
                 // does not enforce a unique nasname, and a duplicate registration
                 // would otherwise fan one session out into several rows.
                 DB::raw('(SELECT COALESCE(NULLIF(nd.name, ""), nd.shortname)
                     FROM nas_devices nd
-                    WHERE nd.nasname = COALESCE(radacct.nasipaddress, vouchers.nas_ip, pc.nas_ip)
+                    WHERE nd.nasname = COALESCE(radacct.nasipaddress, CASE WHEN pc.id IS NOT NULL THEN pc.nas_ip ELSE vouchers.nas_ip END)
                     ORDER BY nd.id LIMIT 1) as nas_name'),
-                DB::raw('CAST(GREATEST(0, TIMESTAMPDIFF(SECOND, COALESCE(radacct.acctstarttime, vouchers.activated_at, pc.activated_at, NOW()), NOW())) AS UNSIGNED) as session_time'),
+                DB::raw('CAST(GREATEST(0, TIMESTAMPDIFF(SECOND, COALESCE(radacct.acctstarttime, CASE WHEN pc.id IS NOT NULL THEN pc.activated_at ELSE vouchers.activated_at END, NOW()), NOW())) AS UNSIGNED) as session_time'),
                 DB::raw('COALESCE(radacct.acctinputoctets, 0) as input_bytes'),
                 DB::raw('COALESCE(radacct.acctoutputoctets, 0) as output_bytes'),
                 DB::raw('GREATEST(
@@ -81,8 +81,8 @@ class RadiusController extends Controller
                     COALESCE(radacct.acctinputoctets, 0) + COALESCE(radacct.acctoutputoctets, 0),
                     COALESCE(vouchers.daily_used_bytes, 0)
                 ) as total_bytes'),
-                DB::raw('COALESCE(reseller.username, pppoe_reseller.username) as reseller_username'),
-                DB::raw('COALESCE(reseller.name, pppoe_reseller.name) as reseller_name'),
+                DB::raw('CASE WHEN pc.id IS NOT NULL THEN pppoe_reseller.username ELSE reseller.username END as reseller_username'),
+                DB::raw('CASE WHEN pc.id IS NOT NULL THEN pppoe_reseller.name ELSE reseller.name END as reseller_name'),
                 'seller.username as seller_username',
                 'seller.name as seller_name'
             );
