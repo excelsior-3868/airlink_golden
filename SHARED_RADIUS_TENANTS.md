@@ -77,7 +77,7 @@ Mera's policy stays the single source of truth: change
 |---|---|---|
 | Compose project | `airlink3-prod` | `airlink3-annapurna` |
 | Repo | `/home/airlink_mera` | `/home/airlink_annapurna` |
-| Web | `:8090` | `:8091` |
+| Web | `:8090` (`WEB_PORT`) | `:8091` (`ANNAPURNA_WEB_PORT`) |
 | DB container | `airlink-mera-prod-mariadb` | `airlink-mariadb-annapurna` |
 | DB host port | `127.0.0.1:3308` | `127.0.0.1:3309` |
 | Schema | `airlink_mera` | `airlink_annapurna` |
@@ -86,6 +86,7 @@ Mera's policy stays the single source of truth: change
 | Clients file | `clients.conf` | `clients-annapurna.conf` |
 | Client name prefix | *(none)* | `ann_` |
 | FreeRADIUS | **owns it** (`airlink-prod-freeradius`) | **shares Mera's** |
+| Docker proxy | `airlink-mera-prod-docker-proxy` | `airlink-docker-proxy-annapurna` |
 
 Both clients files live on the shared `radius_shared` volume and are
 `$INCLUDE`d by the stock `clients.conf`.
@@ -118,6 +119,42 @@ point: it is the only container serving both tenants, and naming it after one
 of them invites the assumption that restarting it affects only that tenant.
 It is *defined* in Mera's compose file because it has to live somewhere, not
 because it belongs to Mera.
+
+### Why each tenant's web port has its own variable name
+
+Mera's web tier publishes `${WEB_PORT:-8090}`; Annapurna's publishes
+`${ANNAPURNA_WEB_PORT:-8091}`. The names differ on purpose.
+
+Compose reads the `.env` sitting next to the compose file, and each checkout
+has its own. Run `docker-compose.annapurna.yml` from `/home/airlink_mera` and
+it picks up that checkout's `WEB_PORT=8090` — a *set* variable beats the
+`:-8091` default — so Annapurna's web container tries to bind the port Mera
+already holds. It does not error usefully; the container is created and then
+fails to start, and the only symptom is that the tenant's UI is simply gone.
+
+Distinct names mean the wrong-directory deploy still binds the right port.
+**Deploy each tenant from its own checkout regardless** (`/home/airlink_mera`
+for Mera, `/home/airlink_annapurna` for Annapurna) — the variable name is a
+backstop, not a licence to skip that.
+
+### Why the System Monitor shows only one tenant's containers
+
+One Docker socket sees every container on the box: both prod stacks, the dev
+stack, phpMyAdmin, everything. The System Monitor's container table is scoped
+by the `com.docker.compose.project` label, matched against the app's
+`MONITOR_COMPOSE_PROJECT` — the `name:` at the top of that tenant's compose
+file (`airlink3-prod` / `airlink3-annapurna`).
+
+A container a tenant uses but does not own is listed in
+`MONITOR_SHARED_CONTAINERS` by container name; it appears in the table with a
+**Shared** badge. Annapurna uses this for `airlink-prod-freeradius`, which
+belongs to the Mera project but serves both tenants. With no project
+configured (the dev stack) nothing is filtered.
+
+Each stack runs its **own** `docker-socket-proxy` (`CONTAINERS: 1`, socket
+mounted read-only) rather than sharing one, so a tenant's monitoring does not
+go dark when another stack is rebuilding. The proxy is not the tenant
+boundary — it can see everything — `MONITOR_COMPOSE_PROJECT` is.
 
 ### Why two clients files rather than one
 

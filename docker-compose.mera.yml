@@ -51,6 +51,14 @@ services:
       APP_ENV: production
       APP_DEBUG: "false"
       RUN_MIGRATIONS: 1
+      # --- System Monitor ------------------------------------------------
+      # Read-only Docker API, and the compose project whose containers this
+      # tenant's System Monitor may list — the `name:` at the top of this
+      # file. One socket sees every stack on the host, so this label is what
+      # keeps Annapurna's topology out of Mera's UI and vice versa.
+      DOCKER_PROXY_HOST: docker-proxy
+      DOCKER_PROXY_PORT: 2375
+      MONITOR_COMPOSE_PROJECT: airlink3-prod
       # FreeRADIUS runs as the `freeradius` compose service (see below),
       # reached by its service name on the internal docker network.
       RADIUS_HOST: freeradius
@@ -171,6 +179,24 @@ services:
     depends_on:
       mariadb:
         condition: service_healthy
+
+  # Read-only window onto the host's Docker API, for the System Monitor's
+  # container list. A per-stack proxy rather than a shared one: this tenant's
+  # monitor has to keep working when the other tenant's stack — or the dev
+  # stack, which owns airlink-docker-proxy — is down or rebuilding.
+  # CONTAINERS alone: the FreeRADIUS restart action goes through the shared
+  # restart-trigger file, not the Docker API, so nothing here needs POST.
+  #
+  # The socket still sees every container on the host. The tenant boundary is
+  # MONITOR_COMPOSE_PROJECT on the app, not this proxy.
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    container_name: airlink-mera-prod-docker-proxy
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
 
 networks:
   default:

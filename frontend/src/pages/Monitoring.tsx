@@ -166,6 +166,11 @@ export default function Monitoring() {
   const database = data?.database
   const radius = data?.radius
   const containers = data?.containers?.list || []
+  // The backend returns an empty list rather than a placeholder one when
+  // it cannot reach the Docker proxy, so the failure has to be shown.
+  const proxyConnected = data?.containers?.proxy_connected !== false
+  const containerProject = data?.containers?.project || ''
+  const containerError = data?.containers?.error || ''
   const queue = data?.queue
   const network = data?.network_summary
 
@@ -663,9 +668,35 @@ export default function Monitoring() {
                 <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
                   <Box size={18} className="text-[#003164]" /> Docker Service Containers
                 </h3>
-                <p className="text-xs text-slate-500 mt-0.5">Production application service topology</p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {containerProject
+                    ? <>Service topology for this stack (<span className="font-mono">{containerProject}</span>)</>
+                    : 'Production application service topology'}
+                </p>
               </div>
 
+              {!proxyConnected && (
+                <div className="m-5 rounded-xl border border-amber-200 bg-amber-50 p-4 flex items-start gap-3">
+                  <AlertCircle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-xs font-bold text-amber-800">Container list unavailable</p>
+                    <p className="text-xs text-amber-700 mt-0.5">
+                      {containerError || 'The Docker socket proxy could not be reached, so no container states can be read.'}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {containers.length === 0 && proxyConnected && (
+                <EmptyState
+                  title="No Containers Found"
+                  subtitle={containerProject
+                    ? `Nothing is running under the compose project ${containerProject}.`
+                    : 'The Docker daemon reported no containers.'}
+                />
+              )}
+
+              {containers.length > 0 && (
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
@@ -687,8 +718,18 @@ export default function Monitoring() {
                           transition={{ delay: idx * 0.02 }}
                           className="hover:bg-secondary/30"
                         >
-                          <td className="font-mono text-xs font-bold text-slate-800 flex items-center gap-2">
-                            <Box size={14} className="text-primary" /> {c.name}
+                          <td className="font-mono text-xs font-bold text-slate-800">
+                            <span className="flex items-center gap-2">
+                              <Box size={14} className="text-primary" /> {c.name}
+                              {c.shared && (
+                                <span
+                                  title="Owned by another stack, used by this one"
+                                  className="font-sans text-[10px] font-semibold uppercase tracking-wide text-slate-500 bg-slate-100 rounded px-1.5 py-0.5"
+                                >
+                                  Shared
+                                </span>
+                              )}
+                            </span>
                           </td>
                           <td className="text-xs text-slate-600 font-medium">{c.role || c.image || 'Service Container'}</td>
                           <td>
@@ -703,6 +744,7 @@ export default function Monitoring() {
                   </tbody>
                 </table>
               </div>
+              )}
             </GlassCard>
           )}
 

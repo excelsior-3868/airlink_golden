@@ -366,69 +366,228 @@ class MonitoringController extends Controller
     }
 
     /**
-     * Docker container states.
+     * Docker container states, scoped to THIS tenant's compose project.
+     *
+     * Several Airlink stacks share one host — the Mera prod stack, the
+     * Annapurna prod stack and the dev stack — and one Docker socket sees
+     * all of them. Filtering on the `com.docker.compose.project` label is
+     * what keeps one tenant's System Monitor from listing another tenant's
+     * services; MONITOR_COMPOSE_PROJECT is the `name:` at the top of that
+     * stack's compose file. A container a tenant uses but does not own —
+     * Annapurna's view of the Mera-owned FreeRADIUS — is named in
+     * MONITOR_SHARED_CONTAINERS and flagged so the UI can mark it as such.
+     *
+     * With no project configured (the dev stack) nothing is filtered out.
      */
     private function getContainerMetrics(): array
     {
-        $proxyHost = env('DOCKER_PROXY_HOST', 'airlink-docker-proxy');
-        $proxyPort = (int) env('DOCKER_PROXY_PORT', 2375);
+        $project = trim((string) env('MONITOR_COMPOSE_PROJECT', ''));
+        $shared = array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) env('MONITOR_SHARED_CONTAINERS', ''))
+        )));
 
-        $containers = [];
-        $proxyAvailable = false;
+        [$raw, $error] = $this->fetchDockerContainers();
 
-        try {
-            $fp = @stream_socket_client("tcp://$proxyHost:$proxyPort", $errno, $errstr, 2);
-            if ($fp) {
-                $proxyAvailable = true;
-                fwrite($fp, "GET /containers/json?all=1 HTTP/1.1\r\nHost: $proxyHost\r\nConnection: Close\r\n\r\n");
-                $response = '';
-                while (!feof($fp)) {
-                    $response .= fgets($fp, 4096);
-                }
-                fclose($fp);
-
-                $parts = explode("\r\n\r\n", $response, 2);
-                if (isset($parts[1])) {
-                    $json = json_decode($parts[1], true);
-                    if (is_array($json)) {
-                        foreach ($json as $c) {
-                            $name = trim($c['Names'][0] ?? '', '/');
-                            $containers[] = [
-                                'name' => $name,
-                                'image' => $c['Image'] ?? '',
-                                'state' => $c['State'] ?? 'unknown',
-                                'status' => $c['Status'] ?? '',
-                                'created' => $c['Created'] ?? 0,
-                            ];
-                        }
-                    }
-                }
-            }
-        } catch (Exception $e) {
-            $proxyAvailable = false;
-        }
-
-        // Fallback default container health inspection if proxy isn't direct
-        if (empty($containers)) {
-            $knownContainers = [
-                ['name' => 'airlink-mera-prod-app', 'role' => 'Laravel Application Backend', 'state' => 'running', 'status' => 'Up'],
-                ['name' => 'airlink-mera-prod-web', 'role' => 'Nginx Reverse Proxy & Web Frontend', 'state' => 'running', 'status' => 'Up'],
-                ['name' => 'airlink-mera-prod-mariadb', 'role' => 'MariaDB Primary Database', 'state' => 'running', 'status' => 'Healthy'],
-                ['name' => 'airlink-prod-freeradius', 'role' => 'FreeRADIUS AAA Daemon', 'state' => 'running', 'status' => 'Healthy'],
-                ['name' => 'airlink-mera-prod-queue', 'role' => 'Background Job Queue Worker', 'state' => 'running', 'status' => 'Up'],
-                ['name' => 'airlink-mera-prod-scheduler', 'role' => 'Automated Tasks & Cron Scheduler', 'state' => 'running', 'status' => 'Up'],
-            ];
-
+        // Nothing is fabricated on failure. A hardcoded fallback list used
+        // to stand in here, which rendered the Mera stack's container names
+        // inside every tenant's UI and read as live data, because nothing
+        // surfaced that the proxy was never reached.
+        if ($raw === null) {
             return [
-                'proxy_connected' => $proxyAvailable,
-                'list' => $knownContainers,
+                'proxy_connected' => false,
+                'project' => $project,
+                'error' => $error,
+                'list' => [],
             ];
         }
+
+        $list = [];
+
+        foreach ($raw as $c) {
+            $name = trim($c['Names'][0] ?? '', '/');
+            if ($name === '') {
+                continue;
+            }
+
+            $labels = is_array($c['Labels'] ?? null) ? $c['Labels'] : [];
+            $service = (string) ($labels['com.docker.compose.service'] ?? '');
+            $image = (string) ($c['Image'] ?? '');
+            $owned = $project === '' || ($labels['com.docker.compose.project'] ?? '') === $project;
+            $isShared = !$owned && in_array($name, $shared, true);
+
+            if (!$owned && !$isShared) {
+                continue;
+            }
+
+            $list[] = [
+                'name' => $name,
+                'image' => $image,
+                'service' => $service,
+                'role' => $this->containerRole($service, $image),
+                'shared' => $isShared,
+                'state' => (string) ($c['State'] ?? 'unknown'),
+                'status' => (string) ($c['Status'] ?? ''),
+                'created' => (int) ($c['Created'] ?? 0),
+            ];
+        }
+
+        // Owned services first, then shared ones, each in topology order
+        // rather than the Docker API's creation order, so the table reads
+        // app -> web -> db -> radius -> workers on every refresh.
+        usort($list, fn (array $a, array $b) => [$a['shared'], $this->roleRank($a['service']), $a['name']]
+            <=> [$b['shared'], $this->roleRank($b['service']), $b['name']]);
 
         return [
-            'proxy_connected' => $proxyAvailable,
-            'list' => $containers,
+            'proxy_connected' => true,
+            'project' => $project,
+            'list' => $list,
         ];
+    }
+
+    /**
+     * Fetch /containers/json from the read-only Docker socket proxy.
+     *
+     * Returns [containers, null] on success or [null, reason] on failure.
+     * The request goes out as HTTP/1.0 deliberately: the Docker API answers
+     * HTTP/1.1 with `Transfer-Encoding: chunked`, and the raw chunk-size
+     * lines made json_decode() fail — indistinguishable from an unreachable
+     * proxy, and it fell straight through to the fallback list. HTTP/1.0
+     * gets a plain body; the chunked decode below covers it regardless.
+     */
+    private function fetchDockerContainers(): array
+    {
+        $host = (string) env('DOCKER_PROXY_HOST', 'airlink-docker-proxy');
+        $port = (int) env('DOCKER_PROXY_PORT', 2375);
+
+        // The dev stack supplies the same endpoint as a URL.
+        if ($url = env('DOCKER_PROXY_URL')) {
+            $parts = parse_url((string) $url);
+            $host = $parts['host'] ?? $host;
+            $port = (int) ($parts['port'] ?? $port);
+        }
+
+        try {
+            $fp = @stream_socket_client("tcp://$host:$port", $errno, $errstr, 2);
+            if (!$fp) {
+                return [null, "Docker proxy unreachable at $host:$port ($errstr)"];
+            }
+
+            stream_set_timeout($fp, 5);
+            fwrite($fp, "GET /containers/json?all=1 HTTP/1.0\r\nHost: $host\r\nAccept: application/json\r\n\r\n");
+
+            $response = '';
+            while (!feof($fp)) {
+                $response .= fgets($fp, 8192);
+            }
+            fclose($fp);
+
+            $parts = explode("\r\n\r\n", $response, 2);
+            if (!isset($parts[1])) {
+                return [null, 'Docker proxy returned an empty response'];
+            }
+
+            $body = stripos($parts[0], 'transfer-encoding: chunked') !== false
+                ? $this->decodeChunked($parts[1])
+                : $parts[1];
+
+            $json = json_decode($body, true);
+            if (!is_array($json)) {
+                return [null, 'Docker proxy returned an unreadable response'];
+            }
+
+            return [$json, null];
+        } catch (Exception $e) {
+            return [null, 'Docker proxy error: ' . $e->getMessage()];
+        }
+    }
+
+    /**
+     * Strip HTTP chunked-transfer framing from a response body.
+     */
+    private function decodeChunked(string $body): string
+    {
+        $out = '';
+
+        while ($body !== '') {
+            $eol = strpos($body, "\r\n");
+            if ($eol === false) {
+                break;
+            }
+
+            // Chunk header is a hex length, optionally followed by ;extension.
+            $size = (int) hexdec(trim(explode(';', substr($body, 0, $eol))[0]));
+            if ($size <= 0) {
+                break;
+            }
+
+            $out .= substr($body, $eol + 2, $size);
+            $body = substr($body, $eol + 2 + $size + 2);
+        }
+
+        return $out;
+    }
+
+    /**
+     * Compose service name -> the role label the System Monitor shows.
+     *
+     * Keyed on the service rather than the container name, because the two
+     * prod stacks name containers differently (`airlink-mera-prod-app` vs
+     * `airlink-backend-annapurna`) while both run a service called `app`.
+     */
+    private function containerRole(string $service, string $image = ''): string
+    {
+        $roles = [
+            'app' => 'Laravel Application Backend',
+            'backend' => 'Laravel Application Backend',
+            'web' => 'Nginx Reverse Proxy & Web Frontend',
+            'frontend' => 'Nginx Reverse Proxy & Web Frontend',
+            'mariadb' => 'MariaDB Primary Database',
+            'db' => 'MariaDB Primary Database',
+            'freeradius' => 'FreeRADIUS AAA Daemon',
+            'queue' => 'Background Job Queue Worker',
+            'scheduler' => 'Automated Tasks & Cron Scheduler',
+            'proxy' => 'Docker Socket Proxy (read-only)',
+            'phpmyadmin' => 'Database Admin Console',
+        ];
+
+        $role = $roles[$service] ?? $roles[$this->serviceKey($service)] ?? null;
+
+        return $role ?? ($image !== '' ? $image : 'Service Container');
+    }
+
+    /**
+     * Topology sort position for a compose service; unknown services last.
+     */
+    private function roleRank(string $service): int
+    {
+        $order = [
+            'app' => 0, 'backend' => 0,
+            'web' => 1, 'frontend' => 1,
+            'mariadb' => 2, 'db' => 2,
+            'freeradius' => 3,
+            'queue' => 4,
+            'scheduler' => 5,
+            'proxy' => 6,
+            'phpmyadmin' => 7,
+        ];
+
+        return $order[$service] ?? $order[$this->serviceKey($service)] ?? 99;
+    }
+
+    /**
+     * Last dash-separated segment of a compose service name.
+     *
+     * Annapurna calls its database service `annapurna-mariadb` so that the
+     * shared FreeRADIUS cannot resolve a bare `mariadb` ambiguously across
+     * the tenant_link network; this collapses that spelling back onto the
+     * same role and sort position as Mera's plain `mariadb`.
+     */
+    private function serviceKey(string $service): string
+    {
+        $pos = strrpos($service, '-');
+
+        return $pos === false ? $service : substr($service, $pos + 1);
     }
 
     /**

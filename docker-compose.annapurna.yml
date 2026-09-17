@@ -89,6 +89,17 @@ services:
       # Creates the whole schema on first boot and seeds the default admin
       # + permission matrix. Nothing else is imported: this tenant is empty.
       RUN_MIGRATIONS: 1
+      # --- System Monitor ------------------------------------------------
+      # Read-only Docker API, and the compose project whose containers this
+      # tenant's System Monitor may list — the `name:` at the top of this
+      # file. One socket sees every stack on the host, so this label is what
+      # keeps Annapurna's topology out of Mera's UI and vice versa.
+      DOCKER_PROXY_HOST: docker-proxy
+      DOCKER_PROXY_PORT: 2375
+      MONITOR_COMPOSE_PROJECT: airlink3-annapurna
+      # Owned by the Mera stack, used by this one. Named here so it still
+      # appears in this tenant's topology, flagged as shared, not owned.
+      MONITOR_SHARED_CONTAINERS: airlink-prod-freeradius
       # --- Shared FreeRADIUS wiring ------------------------------------
       # Reached by container name across tenant_link (the `freeradius`
       # service alias belongs to the Mera compose project).
@@ -135,7 +146,13 @@ services:
     container_name: airlink-frontend-annapurna
     restart: unless-stopped
     ports:
-      - "${WEB_PORT:-8091}:80"
+      # Deliberately NOT ${WEB_PORT}. Both tenants run this repo from their
+      # own checkout, and each checkout has its own .env — Mera's sets
+      # WEB_PORT=8090. A set variable beats the `:-8091` default, so running
+      # this file from the Mera checkout used to make Annapurna's web tier
+      # try to bind Mera's port: it failed to start rather than erroring out
+      # anywhere visible. A distinct name makes that impossible.
+      - "${ANNAPURNA_WEB_PORT:-8091}:80"
     depends_on:
       - app
 
@@ -190,6 +207,24 @@ services:
     command: ["php", "artisan", "schedule:work"]
     depends_on:
       - app
+
+  # Read-only window onto the host's Docker API, for the System Monitor's
+  # container list. A per-stack proxy rather than a shared one: this tenant's
+  # monitor has to keep working when the other tenant's stack — or the dev
+  # stack, which owns airlink-docker-proxy — is down or rebuilding.
+  # CONTAINERS alone: the FreeRADIUS restart action goes through the shared
+  # restart-trigger file, not the Docker API, so nothing here needs POST.
+  #
+  # The socket still sees every container on the host. The tenant boundary is
+  # MONITOR_COMPOSE_PROJECT on the app, not this proxy.
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    container_name: airlink-docker-proxy-annapurna
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
 
 networks:
   default:
