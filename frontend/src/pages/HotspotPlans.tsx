@@ -10,7 +10,7 @@ import GbPackageModal from '../components/GbPackageModal'
 
 const PER_PAGE = 15
 
-const blank = { name: '', type: 'hotspot', package_type: 'wallet', plan_type: 'unlimited', bandwidth_id: '', data_gb: '', daily_data_gb: '', validity_days: 1, simultaneous_use: 1, base_price: 0, selling_price: 0, status: 'active', delegation_id: '', nas_device_id: '', mac_bind: false }
+const blank = { name: '', type: 'hotspot', package_type: 'wallet', plan_type: 'unlimited', bandwidth_id: '', data_gb: '', daily_data_gb: '', validity_days: 1, simultaneous_use: 1, base_price: 0, selling_price: 0, status: 'active', delegation_id: '', nas_device_id: '', mac_bind: false, enforce_physical_mac: true }
 
 export default function HotspotPlans() {
   const { user, can } = useAuth()
@@ -245,7 +245,8 @@ export default function HotspotPlans() {
       selling_price: p.selling_price ?? 0,
       delegation_id: delId,
       nas_device_id: p.nas_device_id ?? '',
-      mac_bind: !!p.mac_bind
+      mac_bind: !!p.mac_bind,
+      enforce_physical_mac: p.enforce_physical_mac !== undefined ? !!p.enforce_physical_mac : true
     })
     setEditId(p.id)
     setErr('')
@@ -281,6 +282,7 @@ export default function HotspotPlans() {
         daily_data_gb: quotaType === 'daily_data' ? +form.daily_data_gb || null : null,
         nas_device_id: form.nas_device_id || null,
         mac_bind: !!form.mac_bind,
+        enforce_physical_mac: form.enforce_physical_mac !== undefined ? !!form.enforce_physical_mac : true,
         simultaneous_use: +form.simultaneous_use || 1,
         base_price: +form.base_price || 0,
         selling_price: +form.selling_price || 0
@@ -815,7 +817,7 @@ export default function HotspotPlans() {
               </div>
 
               <div className="col-span-2">
-                <label className="text-xs font-bold text-slate-600 block mb-1">Bind to First-Used MAC Address</label>
+                <label className="text-xs font-bold text-slate-600 dark:text-slate-300 block mb-1">Bind to First-Used MAC Address</label>
                 <CustomSelect
                   value={form.mac_bind ? '1' : '0'}
                   onChange={(val) => setForm({ ...form, mac_bind: val === '1' })}
@@ -826,6 +828,34 @@ export default function HotspotPlans() {
                   className="w-full"
                 />
               </div>
+
+              {form.mac_bind && (
+                <div className="col-span-2 space-y-2">
+                  <label className="text-xs font-bold text-slate-600 dark:text-slate-300 block mb-1">
+                    Enforce Physical MAC Address (Block Private Wi-Fi)
+                  </label>
+                  <CustomSelect
+                    value={form.enforce_physical_mac !== false ? '1' : '0'}
+                    onChange={(val) => setForm({ ...form, enforce_physical_mac: val === '1' })}
+                    options={[
+                      { value: '1', label: 'Enabled (Require Real Hardware / Phone MAC)' },
+                      { value: '0', label: 'Disabled (Allow Randomized / Private MACs)' }
+                    ]}
+                    className="w-full"
+                  />
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 bg-slate-50/80 dark:bg-slate-900/50 p-2.5 rounded-xl border border-slate-200/60 dark:border-slate-800">
+                    {form.enforce_physical_mac !== false ? (
+                      <span className="text-emerald-700 dark:text-emerald-400 font-medium">
+                        🛡️ <strong>Active Protection:</strong> Phones connecting with randomized private MAC addresses will be instructed to toggle off "Private Wi-Fi Address" and use device MAC before voucher activation to prevent lockouts.
+                      </span>
+                    ) : (
+                      <span className="text-amber-700 dark:text-amber-400 font-medium">
+                        ⚠️ <strong>Warning:</strong> Randomized MACs will be allowed. If a customer's phone rotates its MAC address later, they may get locked out of their voucher.
+                      </span>
+                    )}
+                  </p>
+                </div>
+              )}
             </div>
           )}
 

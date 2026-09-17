@@ -228,7 +228,7 @@ class PppoeCustomerController extends Controller
             'simultaneous_use' => ['nullable', 'integer', 'min:1', 'max:10'],
             'contract_price' => ['nullable', 'numeric', 'min:0'],
             'mac_bind' => ['nullable', 'boolean'],
-            'mac_address' => ['nullable', 'string', 'regex:/^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/'],
+            'mac_address' => ['nullable', 'string', 'regex:/^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/'],
             'nas_device_id' => ['nullable', 'integer', 'exists:nas_devices,id'],
             'owner_id' => ['nullable', 'integer', 'exists:users,id'],
             // Optional one-step onboarding: create the subscriber and take the
@@ -238,6 +238,8 @@ class PppoeCustomerController extends Controller
             'periods' => ['nullable', 'integer', 'min:1', 'max:24'],
             'payment_method' => ['nullable', 'string', 'max:40'],
         ]);
+
+        $data = $this->normalizeMac($data);
 
         $activateNow = (bool) ($data['activate_now'] ?? false);
         $periods = (int) ($data['periods'] ?? 1);
@@ -296,13 +298,34 @@ class PppoeCustomerController extends Controller
             'simultaneous_use' => ['nullable', 'integer', 'min:1', 'max:10'],
             'contract_price' => ['nullable', 'numeric', 'min:0'],
             'mac_bind' => ['nullable', 'boolean'],
-            'mac_address' => ['nullable', 'string', 'regex:/^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/'],
+            'mac_address' => ['nullable', 'string', 'regex:/^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/'],
             'nas_device_id' => ['nullable', 'integer', 'exists:nas_devices,id'],
         ]);
+
+        $data = $this->normalizeMac($data);
 
         $updated = $this->customerService->update($actor, $customer, $data);
 
         return $this->ok($updated->fresh(['plan', 'owner', 'reseller', 'nasDevice']), 'PPPoE subscriber updated successfully.');
+    }
+
+    /**
+     * Store MACs in one shape -- uppercase, colon-separated -- whichever way
+     * the operator typed them. The RADIUS gate compares mac_address against
+     * Calling-Station-Id as a plain string, so a dash-separated row would
+     * never match a NAS that sends colons and would lock the subscriber out
+     * of their own account. Same normalisation as VoucherController::updateMac.
+     */
+    private function normalizeMac(array $data): array
+    {
+        if (array_key_exists('mac_address', $data)) {
+            $mac = $data['mac_address'];
+            $data['mac_address'] = $mac
+                ? strtoupper(str_replace('-', ':', trim($mac)))
+                : null;
+        }
+
+        return $data;
     }
 
     /**

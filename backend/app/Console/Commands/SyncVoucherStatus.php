@@ -79,17 +79,24 @@ class SyncVoucherStatus extends Command
 
         // 1. Usernames whose live voucher has a data cap and whose cumulative
         //    radacct usage has met or exceeded it.
+        //
+        //    Counts only sessions that started at or after the voucher was created,
+        //    the same guard step 0 applies. Voucher codes are six characters and get
+        //    recycled, so a bare SUM() over radacct charges a freshly issued card for
+        //    every byte the previous holder of that code ever used — enough, on a
+        //    code with real history, to mark it 'used' and delete its credentials on
+        //    the very first sync after it is sold. The join has to be direct rather
+        //    than a pre-aggregated subquery, because the cutoff is per-voucher.
         $exhaustedUsernames = collect(DB::select(
             "SELECT v.username
              FROM vouchers v
-             JOIN (
-                 SELECT username, SUM(acctinputoctets + acctoutputoctets) AS bytes_used
-                 FROM radacct
-                 GROUP BY username
-             ) u ON u.username = v.username
+             JOIN radacct r
+               ON r.username = v.username
+              AND r.acctstarttime >= v.created_at
              WHERE v.status IN ('ready', 'active')
                AND v.data_gb IS NOT NULL AND v.data_gb > 0
-               AND u.bytes_used >= v.data_gb * 1073741824"
+             GROUP BY v.id, v.username, v.data_gb
+             HAVING SUM(r.acctinputoctets + r.acctoutputoctets) >= v.data_gb * 1073741824"
         ))->pluck('username');
 
         $exhausted = 0;

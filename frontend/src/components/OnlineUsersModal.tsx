@@ -190,7 +190,7 @@ export function OnlineUsersModal({ open, onClose }: { open: boolean; onClose: ()
         )}
 
         {/* Online Sessions Table */}
-        <div className="overflow-x-auto border border-slate-200/80 rounded-2xl bg-white shadow-xs max-h-[60vh]">
+        <div className="overflow-x-auto border border-slate-200/80 rounded-2xl bg-white shadow-xs max-h-[60dvh]">
           {loading && sessions.length === 0 ? (
             <div className="py-12"><Spinner /></div>
           ) : (

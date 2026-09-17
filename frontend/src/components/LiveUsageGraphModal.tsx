@@ -93,7 +93,7 @@ export function LiveUsageGraphModal({
   username,
   sessionMeta,
 }: LiveUsageGraphModalProps) {
-  const [range, setRange] = useState<UsageRange>('35d')
+  const [range, setRange] = useState<UsageRange>('today')
   const [viewMode, setViewMode] = useState<'chart' | 'logs'>('chart')
   const [data, setData] = useState<SessionUsageData | null>(null)
   const [loading, setLoading] = useState(false)
@@ -137,6 +137,7 @@ export function LiveUsageGraphModal({
       setData(null)
       setError(null)
       setViewMode('chart')
+      setRange('today')
     }
   }, [open, username, range])
 
@@ -195,7 +196,7 @@ export function LiveUsageGraphModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 md:p-6 bg-slate-900/50 backdrop-blur-xs animate-fadeIn">
       {/* Light Mode Modal Card with Extra Width to Fit All Columns */}
       <div
-        className="w-full max-w-6xl xl:max-w-7xl 2xl:max-w-[1380px] bg-white border border-slate-200/90 rounded-2xl shadow-2xl overflow-hidden text-slate-800 flex flex-col max-h-[92vh] animate-scaleUp"
+        className="w-full max-w-6xl xl:max-w-7xl 2xl:max-w-[1380px] bg-white border border-slate-200/90 rounded-2xl shadow-2xl overflow-hidden text-slate-800 flex flex-col max-h-[92dvh] animate-scaleUp"
         role="dialog"
         aria-modal="true"
       >

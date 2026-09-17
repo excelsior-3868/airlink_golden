@@ -288,7 +288,7 @@ export function Modal({
   subtitle,
   icon,
   children,
-  bodyClassName = 'overflow-y-auto max-h-[calc(85vh-8rem)]',
+  bodyClassName = 'overflow-y-auto max-h-[calc(85dvh-8rem)]',
   widthClassName = 'max-w-2xl',
   tone = 'light'
 }: {

@@ -44,7 +44,9 @@ export default function PwaUpdater() {
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 24, scale: 0.96 }}
           transition={{ duration: 0.22, ease: 'easeOut' }}
-          className="fixed z-[9998] left-1/2 -translate-x-1/2 bottom-[calc(1rem+env(safe-area-inset-bottom))] w-[calc(100%-1.5rem)] max-w-sm"
+          /* Positioning belongs to <BottomDock>, which stacks this with the
+             install offer instead of letting the two overlap. */
+          className="pointer-events-auto w-full max-w-sm"
         >
           {needRefresh ? (
             <div className="flex items-center gap-3 bg-white border border-slate-200 rounded-2xl shadow-2xl p-3 pl-4">

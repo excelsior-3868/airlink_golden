@@ -22,7 +22,13 @@ class RadiusService
         ]];
 
         $reply = [
-            ['username' => $username, 'attribute' => 'Acct-Interim-Interval', 'op' => ':=', 'value' => '60'],
+            // Advisory only. These MikroTiks take their interim cadence from the
+            // hotspot profile and ignore this attribute unless that profile is set
+            // to radius-interim-update=received. Kept in step with the routers'
+            // own 10-minute timer so it is correct if that is ever switched on —
+            // the previous 60 would have meant one accounting packet per user per
+            // minute, on a link already dropping them.
+            ['username' => $username, 'attribute' => 'Acct-Interim-Interval', 'op' => ':=', 'value' => '600'],
         ];
 
         if ($plan->bandwidth) {

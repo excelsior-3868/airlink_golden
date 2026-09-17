@@ -359,16 +359,6 @@ export default function Vouchers() {
     }
   }
 
-  const resetMac = async (v: any) => {
-    if (!confirm(`Clear the locked device for ${v.username}? The next device to log in will be bound instead.`)) return
-    try {
-      await api.patch(`/vouchers/${v.id}/reset-mac`)
-      load()
-    } catch (e) {
-      alert(apiError(e))
-    }
-  }
-
   // Change Password state — matters most for allocated stock: it passes
   // through more hands (Reseller -> Seller -> customer) before sale, so
   // there's more chance the printed code was seen by someone other than the
@@ -402,6 +392,62 @@ export default function Vouchers() {
       setChangePwError(apiError(e))
     } finally {
       setChangingPw(false)
+    }
+  }
+
+  // Change / Edit MAC Address state
+  const [changeMacVoucher, setChangeMacVoucher] = useState<any>(null)
+  const [macBindEnabled, setMacBindEnabled] = useState(false)
+  const [macAddressInput, setMacAddressInput] = useState('')
+  const [changeMacResult, setChangeMacResult] = useState('')
+  const [changeMacError, setChangeMacError] = useState('')
+  const [changingMac, setChangingMac] = useState(false)
+
+  const openChangeMac = (v: any) => {
+    setChangeMacVoucher(v)
+    setMacBindEnabled(Boolean(v.mac_bind))
+    setMacAddressInput(v.mac_address || '')
+    setChangeMacResult('')
+    setChangeMacError('')
+    setChangingMac(false)
+  }
+
+  const confirmChangeMac = async () => {
+    if (!changeMacVoucher) return
+    setChangingMac(true)
+    setChangeMacError('')
+    try {
+      const cleanMac = macAddressInput.trim() || null
+      await api.patch(`/vouchers/${changeMacVoucher.id}/update-mac`, {
+        mac_bind: macBindEnabled,
+        mac_address: cleanMac,
+      })
+      setChangeMacResult(cleanMac ? `Locked to MAC: ${cleanMac.toUpperCase()}` : (macBindEnabled ? 'MAC lock cleared. The next device to connect will bind automatically.' : 'MAC Binding disabled.'))
+      load()
+    } catch (e) {
+      setChangeMacError(apiError(e))
+    } finally {
+      setChangingMac(false)
+    }
+  }
+
+  const clearMacAndAutoBind = async () => {
+    if (!changeMacVoucher) return
+    setChangingMac(true)
+    setChangeMacError('')
+    try {
+      await api.patch(`/vouchers/${changeMacVoucher.id}/update-mac`, {
+        mac_bind: true,
+        mac_address: null,
+      })
+      setMacAddressInput('')
+      setMacBindEnabled(true)
+      setChangeMacResult('MAC lock cleared. The next connecting device will be automatically registered.')
+      load()
+    } catch (e) {
+      setChangeMacError(apiError(e))
+    } finally {
+      setChangingMac(false)
     }
   }
 
@@ -737,10 +783,9 @@ export default function Vouchers() {
                                 onClick: () => toggleDisable(v),
                               },
                               {
-                                label: 'Reset MAC',
-                                hidden: !(v.mac_bind && v.mac_address),
+                                label: 'Change MAC Address',
                                 className: 'text-amber-600',
-                                onClick: () => resetMac(v),
+                                onClick: () => openChangeMac(v),
                               },
                               {
                                 label: 'Change Password',
@@ -1077,6 +1122,96 @@ export default function Vouchers() {
         </div>
       </Modal>
 
+      {/* Change MAC Address Modal */}
+      <Modal
+        open={!!changeMacVoucher}
+        onClose={() => setChangeMacVoucher(null)}
+        title={`Change MAC Address: ${changeMacVoucher?.username}`}
+        subtitle={!changeMacResult ? 'Configure hardware device lock and MAC address binding for this voucher.' : undefined}
+      >
+        <div className="space-y-4">
+          {changeMacResult ? (
+            <div className="bg-slate-50 dark:bg-slate-900/60 rounded-2xl p-5 text-center space-y-2 border border-slate-100 dark:border-slate-800">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Setting Updated</p>
+              <p className="text-base font-mono font-bold text-amber-600 dark:text-amber-400">{changeMacResult}</p>
+              <p className="text-xs text-slate-400 mt-2">The updated MAC lock policy is now active in FreeRADIUS.</p>
+            </div>
+          ) : (
+            <>
+              <div className="bg-slate-50 dark:bg-slate-900/60 rounded-2xl p-4 text-sm space-y-2 border border-slate-100 dark:border-slate-800">
+                <div className="flex justify-between items-center"><span className="text-muted-foreground text-xs font-semibold uppercase">Voucher Code</span><span className="font-bold font-mono text-base">{changeMacVoucher?.username}</span></div>
+                <div className="flex justify-between items-center"><span className="text-muted-foreground text-xs font-semibold uppercase">Current Status</span><span className="font-bold font-mono text-xs">{changeMacVoucher?.mac_bind ? (changeMacVoucher?.mac_address ? `Locked (${changeMacVoucher.mac_address})` : 'Auto-Bind (Waiting for Login)') : 'Disabled'}</span></div>
+              </div>
+
+              <div className="p-3 bg-slate-50/50 dark:bg-slate-900/30 rounded-2xl border border-slate-100 dark:border-slate-800/80">
+                <label className="flex items-center gap-2.5 text-sm font-semibold text-slate-700 dark:text-slate-200 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    className="w-4 h-4 rounded text-primary border-slate-300 focus:ring-primary"
+                    checked={macBindEnabled}
+                    onChange={(e) => {
+                      setMacBindEnabled(e.target.checked)
+                      if (!e.target.checked) setMacAddressInput('')
+                    }}
+                  />
+                  <span>Enable MAC Address Binding</span>
+                </label>
+                <p className="text-xs text-slate-400 mt-1 ml-6.5">
+                  When enabled, this voucher will only authenticate from its registered device.
+                </p>
+              </div>
+
+              {macBindEnabled && (
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Registered MAC Address</label>
+                    {changeMacVoucher?.mac_address && (
+                      <button
+                        type="button"
+                        onClick={clearMacAndAutoBind}
+                        disabled={changingMac}
+                        className="text-xs text-amber-600 hover:text-amber-700 font-bold hover:underline"
+                      >
+                        Reset / Clear MAC Lock
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    className="input font-mono uppercase"
+                    placeholder="e.g. F2:96:44:35:BA:EC (or leave empty to auto-bind)"
+                    value={macAddressInput}
+                    onChange={(e) => setMacAddressInput(e.target.value.toUpperCase())}
+                  />
+                  <p className="text-xs text-slate-400">
+                    Enter a specific MAC address to lock it immediately, or leave blank to bind on next login.
+                  </p>
+                </div>
+              )}
+            </>
+          )}
+
+          {changeMacError && (
+            <div className="pill danger w-full justify-center py-2 text-xs font-medium">{changeMacError}</div>
+          )}
+
+          <div className="flex justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800 mt-5">
+            <button className="btn-ghost !border-slate-200 !text-slate-700 hover:!bg-slate-50 py-2.5 px-6 rounded-2xl font-bold transition-all" onClick={() => setChangeMacVoucher(null)}>
+              {changeMacResult ? 'Done' : 'Cancel'}
+            </button>
+            {!changeMacResult && (
+              <motion.button
+                whileTap={{ scale: 0.95 }}
+                className="btn-primary py-2.5 px-6 rounded-2xl font-bold transition-all shadow-md"
+                disabled={changingMac}
+                onClick={confirmChangeMac}
+              >
+                {changingMac ? 'Saving…' : 'Save MAC Settings'}
+              </motion.button>
+            )}
+          </div>
+        </div>
+      </Modal>
+
       {/* Progress Bar Overlay */}
       {loadingAction && (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-950/45 backdrop-blur-sm select-none">
@@ -1128,7 +1263,7 @@ export default function Vouchers() {
           ) : printVouchers.length === 0 ? (
             <div className="py-12 text-center text-slate-500">No cards to display.</div>
           ) : (
-            <div className="print-cards-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 justify-items-center max-h-[60vh] overflow-y-auto p-4 bg-slate-50/50 rounded-3xl border border-slate-200/50">
+            <div className="print-cards-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 justify-items-center max-h-[60dvh] overflow-y-auto p-4 bg-slate-50/50 rounded-3xl border border-slate-200/50">
               {printVouchers.map((v) => (
                 <div key={v.id} className="print-card-wrapper">
                   <VoucherCard

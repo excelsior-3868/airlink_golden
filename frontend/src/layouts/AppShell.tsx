@@ -5,12 +5,13 @@ import {
   LayoutDashboard, Package, Users2, Store, Wallet as WalletIcon,
   Database, Ticket, LogOut, Wifi, Router, ShieldCheck, Shield,
   ChevronDown, ChevronRight, ChevronsLeft, Key, Gauge, ArrowLeftRight, Menu, X, Terminal, Calendar,
-  BookOpen, Receipt, Scale, CreditCard, UsersRound, Palette, TrendingUp
+  BookOpen, Receipt, Scale, CreditCard, UsersRound, Palette, TrendingUp, Activity
 } from 'lucide-react'
 import { Role, useAuth } from '../lib/auth'
 import { useBranding } from '../lib/branding'
 import { rs, gb } from '../lib/format'
 import ChangePasswordModal from '../components/ChangePasswordModal'
+import InstallAppButton from '../components/InstallAppButton'
 
 // The panel's two widths, and the page offsets that track them. The rail is
 // sized so a 44px logo tile and a 40px avatar both land centered while the nav
@@ -63,6 +64,7 @@ const NAV: NavItem[] = [
   { to: '/funds', label: 'Wallet / GB Allocation', icon: WalletIcon, roles: ['admin', 'reseller', 'seller'], color: 'text-emerald-500' },
   { to: '/vouchers', label: 'Voucher Sales', icon: Ticket, roles: ['admin', 'reseller', 'seller'], color: 'text-rose-500', perm: ['generate_voucher', 'reports'] },
   { to: '/diagnostics', label: 'Voucher Diagnostics', icon: Terminal, roles: ['admin', 'reseller', 'seller'], color: 'text-slate-600' },
+  { to: '/monitoring', label: 'System Monitor', icon: Activity, roles: ['admin'], color: 'text-emerald-500' },
   { to: '/ledger', label: 'Accounting & Ledger', icon: BookOpen, roles: ['admin', 'reseller', 'seller'], color: 'text-emerald-500' },
   {
     label: 'Settings',
@@ -322,6 +324,8 @@ export default function AppShell() {
                 collapsed ? 'w-56' : 'w-full'
               }`}
             >
+              <InstallAppButton onDone={() => setProfileOpen(false)} />
+
               <button
                 onClick={() => {
                   setProfileOpen(false)
@@ -473,6 +477,9 @@ export default function AppShell() {
                     <p className="text-[10px] text-slate-400 font-bold capitalize tracking-wider mt-0.5">{user.role}</p>
                   </div>
                 </div>
+                {/* Full-width row of its own: a third cell would orphan Log Out
+                    in the 2-up grid, and the labels don't fit three across. */}
+                <InstallAppButton variant="compact" onDone={() => setDrawerOpen(false)} />
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     onClick={() => { setDrawerOpen(false); setPasswordOpen(true) }}

@@ -290,6 +290,25 @@ authorize {
 	#
 	#  See policy.d/filter for the definition of the filter_username policy.
 	#
+	#  Airlink v3.0: strip leading/trailing whitespace off User-Name FIRST.
+	#  MikroTik's hotspot login page happily posts what the customer typed, and
+	#  phone keyboards append a space after an autocompleted/pasted voucher code
+	#  -- so we get "WHDEZS " instead of "WHDEZS". filter_username rejects ANY
+	#  username containing a space, before any of our lifecycle gates below run,
+	#  so the customer is told "invalid username or password" for a perfectly
+	#  good card. Trimming the ends fixes exactly that typo and nothing else:
+	#  internal spaces are left alone, so filter_username still rejects the
+	#  junk logins (people typing their SSID, "Tek Ram kulung", etc.) as before,
+	#  and a name that is nothing but whitespace doesn't match at all.
+	#
+	#  Note this must come BEFORE filter_username -- that policy rejects outright,
+	#  so nothing after it would ever get a chance to clean the name up.
+	if (&User-Name && &User-Name =~ /^[[:space:]]*(.*[^[:space:]])[[:space:]]*$/) {
+		update request {
+			&User-Name := "%{1}"
+		}
+	}
+
 	filter_username
 
 	#
@@ -364,6 +383,9 @@ authorize {
 				WHEN nas_ip IS NOT NULL AND nas_ip <> '' AND nas_ip <> '%{NAS-IP-Address}' THEN 'nas_mismatch' \
 				WHEN mac_bind = 1 AND mac_address IS NOT NULL AND mac_address <> '' \
 					AND mac_address <> '%{Calling-Station-Id}' THEN 'mac_mismatch' \
+				WHEN mac_bind = 1 AND (enforce_physical_mac IS NULL OR enforce_physical_mac = 1) \
+					AND (mac_address IS NULL OR mac_address = '') \
+					AND '%{Calling-Station-Id}' REGEXP '^[0-9a-fA-F][26aAeE]' THEN 'randomized_mac' \
 				ELSE 'ok' \
 			END \
 			FROM vouchers WHERE username = '%{User-Name}' \
@@ -373,38 +395,73 @@ authorize {
 
 	switch &control:Tmp-String-0 {
 		case "expired" {
+			update request {
+				&Module-Failure-Message += "Rejected: voucher expired or spent"
+			}
 			update reply {
 				Reply-Message := "This voucher has expired. Please purchase a new one."
 			}
 			reject
 		}
 		case "disabled" {
+			update request {
+				&Module-Failure-Message += "Rejected: voucher disabled"
+			}
 			update reply {
 				Reply-Message := "This voucher is disabled. Please contact support."
 			}
 			reject
 		}
 		case "quota" {
+			update request {
+				&Module-Failure-Message += "Rejected: voucher data quota exhausted"
+			}
 			update reply {
 				Reply-Message := "Data volume reached. Please purchase a new voucher."
 			}
 			reject
 		}
 		case "daily_quota" {
+			update request {
+				&Module-Failure-Message += "Rejected: voucher daily data quota exhausted"
+			}
 			update reply {
 				Reply-Message := "Daily data volume reached. Please try again after midnight."
 			}
 			reject
 		}
 		case "nas_mismatch" {
+			update request {
+				&Module-Failure-Message += "Rejected: voucher locked to another NAS, request came from %{NAS-IP-Address}"
+			}
 			update reply {
 				Reply-Message := "Voucher not valid on this hotspot."
 			}
 			reject
 		}
 		case "mac_mismatch" {
+			#  One lookup, used twice: the customer-facing Reply-Message and
+			#  the server log. Without the Module-Failure-Message the log line
+			#  is a bare "Invalid user"/"Login incorrect", which reads as a
+			#  wrong password and sends whoever is debugging down the wrong
+			#  path -- the card is fine, it is bound to a different device.
+			update control {
+				Tmp-String-5 := "%{sql: SELECT mac_address FROM vouchers WHERE username = '%{User-Name}' LIMIT 1}"
+			}
+			update request {
+				&Module-Failure-Message += "Rejected: voucher MAC-bound to %{control:Tmp-String-5}, device sent %{Calling-Station-Id}"
+			}
 			update reply {
-				Reply-Message := "This voucher is locked to a different device."
+				Reply-Message := "This voucher is already bound to another MAC address (%{control:Tmp-String-5})."
+			}
+			reject
+		}
+		case "randomized_mac" {
+			update request {
+				&Module-Failure-Message += "Rejected: Private/Randomized MAC (%{Calling-Station-Id}) blocked for MAC-bound voucher"
+			}
+			update reply {
+				Reply-Message := "Private MAC Detected!\n• Android: Wi-Fi Settings ➔ ⚙️ ➔ Privacy ➔ Use Phone MAC\n• iPhone: Wi-Fi Settings ➔ ⓘ ➔ Private Address OFF\nThen reconnect to Wi-Fi."
 			}
 			reject
 		}
@@ -426,6 +483,8 @@ authorize {
 				WHEN nas_ip IS NOT NULL AND nas_ip <> '' AND nas_ip <> '%{NAS-IP-Address}' THEN 'nas_mismatch' \
 				WHEN mac_bind = 1 AND mac_address IS NOT NULL AND mac_address <> '' \
 					AND mac_address <> '%{Calling-Station-Id}' THEN 'mac_mismatch' \
+				WHEN mac_bind = 1 AND (mac_address IS NULL OR mac_address = '') \
+					AND '%{Calling-Station-Id}' REGEXP '^[0-9a-fA-F][26aAeE]' THEN 'randomized_mac' \
 				ELSE 'ok' \
 			END \
 			FROM pppoe_customers WHERE username = '%{User-Name}' LIMIT 1}"
@@ -433,86 +492,59 @@ authorize {
 
 	switch &control:Tmp-String-3 {
 		case "expired" {
+			update request {
+				&Module-Failure-Message += "Rejected: PPPoE subscription expired"
+			}
 			update reply {
 				Reply-Message := "Your subscription has expired. Please recharge to continue."
 			}
 			reject
 		}
 		case "suspended" {
+			update request {
+				&Module-Failure-Message += "Rejected: PPPoE account suspended"
+			}
 			update reply {
 				Reply-Message := "Your account has been suspended. Please contact support."
 			}
 			reject
 		}
 		case "terminated" {
+			update request {
+				&Module-Failure-Message += "Rejected: PPPoE account terminated"
+			}
 			update reply {
 				Reply-Message := "This account has been terminated."
 			}
 			reject
 		}
 		case "nas_mismatch" {
+			update request {
+				&Module-Failure-Message += "Rejected: PPPoE account locked to another NAS, request came from %{NAS-IP-Address}"
+			}
 			update reply {
 				Reply-Message := "Account not valid on this router."
 			}
 			reject
 		}
 		case "mac_mismatch" {
+			update control {
+				Tmp-String-6 := "%{sql: SELECT mac_address FROM pppoe_customers WHERE username = '%{User-Name}' LIMIT 1}"
+			}
+			update request {
+				&Module-Failure-Message += "Rejected: PPPoE account MAC-bound to %{control:Tmp-String-6}, device sent %{Calling-Station-Id}"
+			}
 			update reply {
-				Reply-Message := "This account is locked to a different device."
+				Reply-Message := "This account is already bound to another MAC address (%{control:Tmp-String-6})."
 			}
 			reject
 		}
-	}
-
-	#  Airlink v3.0: PPPoE subscriber lifecycle check, same shape as the
-	#  voucher gate above but against `pppoe_customers`. Closes the up-to-
-	#  5-minute window between a subscription actually expiring and the next
-	#  pppoe:sync-status cron tick deleting its radcheck/radreply rows, and
-	#  gives the subscriber a specific reason instead of a bare reject.
-	#  Harmless no-op for voucher/non-PPPoE usernames (zero matching row).
-	update control {
-		Tmp-String-3 := "%{sql: SELECT \
-			CASE \
-				WHEN status = 'suspended' THEN 'suspended' \
-				WHEN status = 'terminated' THEN 'terminated' \
-				WHEN status = 'expired' THEN 'expired' \
-				WHEN expires_at IS NOT NULL AND expires_at < NOW() THEN 'expired' \
-				WHEN nas_ip IS NOT NULL AND nas_ip <> '' AND nas_ip <> '%{NAS-IP-Address}' THEN 'nas_mismatch' \
-				WHEN mac_bind = 1 AND mac_address IS NOT NULL AND mac_address <> '' \
-					AND mac_address <> '%{Calling-Station-Id}' THEN 'mac_mismatch' \
-				ELSE 'ok' \
-			END \
-			FROM pppoe_customers WHERE username = '%{User-Name}' LIMIT 1}"
-	}
-
-	switch &control:Tmp-String-3 {
-		case "expired" {
-			update reply {
-				Reply-Message := "Your subscription has expired. Please recharge to continue."
+		case "randomized_mac" {
+			update request {
+				&Module-Failure-Message += "Rejected: Private/Randomized MAC (%{Calling-Station-Id}) blocked for MAC-bound subscriber"
 			}
-			reject
-		}
-		case "suspended" {
 			update reply {
-				Reply-Message := "Your account has been suspended. Please contact support."
-			}
-			reject
-		}
-		case "terminated" {
-			update reply {
-				Reply-Message := "This account has been terminated."
-			}
-			reject
-		}
-		case "nas_mismatch" {
-			update reply {
-				Reply-Message := "Account not valid on this router."
-			}
-			reject
-		}
-		case "mac_mismatch" {
-			update reply {
-				Reply-Message := "This account is locked to a different device."
+				Reply-Message := "Private MAC Detected!\n• Android: Wi-Fi Settings ➔ ⚙️ ➔ Privacy ➔ Use Phone MAC\n• iPhone: Wi-Fi Settings ➔ ⓘ ➔ Private Address OFF\nThen reconnect to Wi-Fi."
 			}
 			reject
 		}
@@ -647,6 +679,38 @@ authorize {
 	#
 	#  See "Authorization Queries" in mods-available/sql
 	-sql
+
+	#  Airlink v3.0: a MAC-bound voucher or PPPoE account is already a
+	#  single-device credential --
+	#  the mac_mismatch gate above rejects every MAC but the registered one,
+	#  so Simultaneous-Use adds no protection on top of it. What it does add
+	#  is a lockout: when a phone drops off without an Accounting-Stop the
+	#  radacct row stays open (radius:close-stale-sessions only reaps it after
+	#  OnlineSession::CLOSE_AFTER_MINUTES), FreeRADIUS counts that dead session
+	#  in simul_count_query, and the customer's own device is refused with
+	#  MikroTik's "You are already logged in - access denied" for up to 12h.
+	#
+	#  So drop the check item when the card is MAC-bound AND the device asking
+	#  is the bound one. Anything else is untouched: a different MAC never gets
+	#  here (mac_mismatch rejected it), and non-MAC-bound vouchers/accounts keep
+	#  their Simultaneous-Use limit exactly as before.
+	if (&control:Simultaneous-Use && "%{sql: \
+			SELECT 1 FROM vouchers \
+				WHERE username = '%{User-Name}' \
+					AND mac_bind = 1 \
+					AND mac_address IS NOT NULL AND mac_address <> '' \
+					AND mac_address = '%{Calling-Station-Id}' \
+			UNION ALL \
+			SELECT 1 FROM pppoe_customers \
+				WHERE username = '%{User-Name}' \
+					AND mac_bind = 1 \
+					AND mac_address IS NOT NULL AND mac_address <> '' \
+					AND mac_address = '%{Calling-Station-Id}' \
+			LIMIT 1}" == "1") {
+		update control {
+			Simultaneous-Use !* ANY
+		}
+	}
 
 	#
 	#  If you are using /etc/smbpasswd, and are also doing
@@ -1098,6 +1162,20 @@ post-auth {
 			expires_at = IFNULL(expires_at, DATE_ADD(NOW(), INTERVAL validity_days DAY)), \
 			mac_address = CASE WHEN mac_bind = 1 THEN IFNULL(mac_address, NULLIF('%{Calling-Station-Id}', '')) ELSE mac_address END \
 			WHERE username = '%{User-Name}' AND status IN ('ready','active')}"
+	}
+
+	#  Airlink v3.0: same first-login MAC capture for PPPoE subscribers. The
+	#  authorize gate above already rejects a mac_bind account whose stored MAC
+	#  doesn't match, but nothing ever wrote that column -- it was only ever set
+	#  by hand from the admin form, so "Lock on First Login" in the UI never
+	#  actually locked. IFNULL-guarded exactly like the voucher capture, so the
+	#  first device to authenticate binds and every later login just compares.
+	#  No-op for voucher/non-PPPoE usernames (zero matching row), and for
+	#  accounts with mac_bind = 0.
+	update control {
+		Tmp-String-4 := "%{sql: UPDATE pppoe_customers SET \
+			mac_address = IFNULL(mac_address, NULLIF('%{Calling-Station-Id}', '')) \
+			WHERE username = '%{User-Name}' AND mac_bind = 1}"
 	}
 
 	#

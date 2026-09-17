@@ -25,6 +25,7 @@ use App\Http\Controllers\Api\PaymentMethodController;
 use App\Http\Controllers\Api\PppoeCustomerController;
 use App\Http\Controllers\Api\PppoeRechargeController;
 use App\Http\Controllers\Api\BrandingSettingController;
+use App\Http\Controllers\Api\MonitoringController;
 use Illuminate\Support\Facades\Route;
 
 // --- Public ---
@@ -146,6 +147,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::patch('/vouchers/{voucher}/disable', [VoucherController::class, 'disable']);
     Route::patch('/vouchers/{voucher}/enable', [VoucherController::class, 'enable']);
     Route::patch('/vouchers/{voucher}/reset-mac', [VoucherController::class, 'resetMac']);
+    Route::patch('/vouchers/{voucher}/update-mac', [VoucherController::class, 'updateMac']);
+    Route::patch('/vouchers/{voucher}/mac', [VoucherController::class, 'updateMac']);
     Route::patch('/vouchers/{voucher}/change-password', [VoucherController::class, 'changePassword']);
 
     // PPPoE subscribers — admin + reseller only. The role: gate is deliberate
@@ -223,6 +226,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/radius/clients-config', [RadiusController::class, 'clientsConfig']);
         Route::post('/radius/test-auth', [RadiusController::class, 'testAuth']);
         Route::post('/radius/restart', [RadiusController::class, 'restart']);
+
+        // System & Network Monitoring (admin only)
+        Route::get('/admin/monitoring/overview', [MonitoringController::class, 'overview']);
+        Route::get('/admin/monitoring/nas-status', [MonitoringController::class, 'nasStatus']);
+        Route::post('/admin/monitoring/quick-action', [MonitoringController::class, 'quickAction']);
 
         // Seasons management (admin only)
         Route::put('/seasons/{season}', [SeasonController::class, 'update']);

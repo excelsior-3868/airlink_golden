@@ -60,6 +60,51 @@ class CoaService
     }
 
     /**
+     * Ask the NAS whether one radacct session is still real, changing nothing.
+     *
+     * Wraps CoaClient::probe() with the same NAS resolution disconnect() uses.
+     * Anything that stops us reaching the router — unregistered NAS, subnet-only
+     * nasname, dead link — is reported as PROBE_UNKNOWN rather than an error,
+     * because the only safe response to "we could not ask" is to leave the row
+     * exactly as it is.
+     *
+     * @return array{status: string, session_id: ?string, nas_ip: ?string, coa_target: ?string, reason: ?string}
+     */
+    public function probeSession(string $username, ?string $acctSessionId, ?string $framedIp, ?string $nasIp): array
+    {
+        $nas = $this->resolveNas($nasIp);
+        $host = $nas ? $this->coaHost($nas) : null;
+
+        if (!$nas || !$host) {
+            return [
+                'status' => CoaClient::PROBE_UNKNOWN,
+                'session_id' => $acctSessionId,
+                'nas_ip' => $nasIp,
+                'coa_target' => null,
+                'reason' => $nas
+                    ? "NAS '{$nas->name}' has no routable CoA address; set its CoA Host."
+                    : "No active NAS device matches the session's NAS IP '{$nasIp}'.",
+            ];
+        }
+
+        $port = (int) ($nas->coa_port ?: 3799);
+
+        $status = $this->client->probe($host, $nas->secret, [
+            'username' => $username,
+            'acctSessionId' => $acctSessionId,
+            'framedIp' => $framedIp,
+        ], $port);
+
+        return [
+            'status' => $status,
+            'session_id' => $acctSessionId,
+            'nas_ip' => $nasIp,
+            'coa_target' => "{$host}:{$port}",
+            'reason' => null,
+        ];
+    }
+
+    /**
      * @return array{status: string, session_id: ?string, nas_ip: ?string, coa_target: ?string, reason: ?string}
      */
     private function disconnectSession(string $username, ?string $acctSessionId, ?string $framedIp, ?string $nasIp): array

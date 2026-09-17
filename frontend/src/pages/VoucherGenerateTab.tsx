@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Ticket, AlertTriangle, Printer, Plus, Pencil, Loader2, Wallet, Database, Layers, Sparkles, Search, X } from 'lucide-react'
+import { Ticket, AlertTriangle, Plus, Pencil, Loader2, Wallet, Database, Layers, Sparkles, Search, X, FileText, FileSpreadsheet } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { rs, gb } from '../lib/format'
 import { GlassCard, CustomSelect, SelectOption, Modal, Spinner, ConfirmModal } from '../components/ui'
-import { VoucherCard, CardTemplate } from '../components/VoucherCard'
 
 const generateDefaultBatchCode = () => {
   const now = new Date()
@@ -27,8 +26,7 @@ interface VoucherPackageCardProps {
   allSellers: any[]
   selectedOwnerId: string
   onEdit: (plan: any) => void
-  onSuccess: (result: any, plan: any) => void
-  cardTemplate: CardTemplate | null
+  onSuccess: (result: any) => void
   refreshAuth: () => void
 }
 
@@ -40,7 +38,6 @@ function VoucherPackageCard({
   selectedOwnerId,
   onEdit,
   onSuccess,
-  cardTemplate,
   refreshAuth
 }: VoucherPackageCardProps) {
   const [quantity, setQuantity] = useState<number | ''>('')
@@ -161,7 +158,7 @@ function VoucherPackageCard({
       const { data } = await api.post('/vouchers/generate', payload)
       refreshAuth()
       setBatchCode(generateDefaultBatchCode())
-      onSuccess(data.data, p)
+      onSuccess(data.data)
     } catch (e) {
       setErr(apiError(e))
     } finally {
@@ -302,7 +299,6 @@ export default function VoucherGenerateTab({ plans, plansLoading = false, refetc
 
   // Configuration resources
   const [bandwidths, setBandwidths] = useState<any[]>([])
-  const [cardTemplate, setCardTemplate] = useState<CardTemplate | null>(null)
 
   // Users lists for delegation
   const [allResellers, setAllResellers] = useState<any[]>([])
@@ -310,7 +306,6 @@ export default function VoucherGenerateTab({ plans, plansLoading = false, refetc
 
   useEffect(() => {
     api.get('/bandwidths').then((r) => setBandwidths(r.data.data))
-    api.get('/voucher-template').then((r) => setCardTemplate(r.data.data))
   }, [])
 
   useEffect(() => {
@@ -509,33 +504,22 @@ export default function VoucherGenerateTab({ plans, plansLoading = false, refetc
 
   // Success Modal State
   const [successResult, setSuccessResult] = useState<any>(null)
-  const [successPlan, setSuccessPlan] = useState<any>(null)
-  const [progress, setProgress] = useState(0)
-  const [loadingAction, setLoadingAction] = useState(false)
+  const [downloadingExport, setDownloadingExport] = useState<string | null>(null)
 
-  // Open helper for print cards
-  const openBlob = async (path: string, params?: any) => {
-    setLoadingAction(true)
-    setProgress(0)
-    const interval = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 95) return 95
-        const increment = Math.floor(Math.random() * 8) + 3
-        return Math.min(95, prev + increment)
-      })
-    }, 150)
+  const downloadBatch = async (kind: 'export' | 'export-xlsx', batchCode: string) => {
+    setDownloadingExport(kind)
     try {
-      const res = await api.get(path, { params, responseType: 'blob' })
-      clearInterval(interval)
-      setProgress(100)
-      await new Promise((r) => setTimeout(r, 200))
+      const res = await api.get(`/vouchers/${kind}`, { params: { batch: batchCode }, responseType: 'blob' })
       const url = URL.createObjectURL(res.data)
-      window.open(url, '_blank')
+      const a = document.createElement('a')
+      a.href = url
+      a.download = kind === 'export' ? `vouchers-${batchCode}.csv` : `vouchers-${batchCode}.xlsx`
+      a.click()
+      URL.revokeObjectURL(url)
     } catch (e) {
-      clearInterval(interval)
       alert(apiError(e))
     } finally {
-      setLoadingAction(false)
+      setDownloadingExport(null)
     }
   }
 
@@ -678,8 +662,7 @@ export default function VoucherGenerateTab({ plans, plansLoading = false, refetc
   }
 
   // Handle Card Generation success
-  const handleGenerationSuccess = (resData: any, planObj: any) => {
-    setSuccessPlan(planObj)
+  const handleGenerationSuccess = (resData: any) => {
     setSuccessResult(resData)
     onSuccess?.()
   }
@@ -778,7 +761,6 @@ export default function VoucherGenerateTab({ plans, plansLoading = false, refetc
             selectedOwnerId={selectedOwnerId}
             onEdit={openEditModal}
             onSuccess={handleGenerationSuccess}
-            cardTemplate={cardTemplate}
             refreshAuth={refresh}
           />
         ))}
@@ -1058,72 +1040,76 @@ export default function VoucherGenerateTab({ plans, plansLoading = false, refetc
         open={!!successResult}
         onClose={() => setSuccessResult(null)}
         title="Voucher Batch Generated"
-        widthClassName="max-w-3xl"
+        widthClassName="max-w-2xl"
       >
         {successResult && (
-          <div className="space-y-5">
-            <div className="bg-emerald-50 border border-emerald-100/60 rounded-2xl px-5 py-4 flex items-center gap-3">
-              <Ticket className="text-emerald-500 shrink-0" size={28} />
-              <div>
-                <p className="font-extrabold text-emerald-800">{successResult.message}</p>
-                <p className="text-xs text-emerald-600 mt-0.5">
-                  Batch <span className="font-mono font-bold bg-white/70 px-1.5 py-0.5 rounded-lg border border-emerald-100">{successResult.batch_code}</span> · {successResult.quantity} voucher(s) · {successResult.plan}
+          <div className="space-y-6 pt-1">
+            <div className="bg-[#f0fdf4] border border-emerald-200/80 rounded-2xl p-5 sm:p-6 flex items-center gap-4 sm:gap-5">
+              <Ticket className="text-emerald-500 shrink-0" size={32} />
+              <div className="space-y-1.5 text-sm">
+                <p className="text-emerald-900 font-semibold flex flex-wrap items-center gap-1.5 leading-relaxed">
+                  <span className="font-bold text-emerald-950">Batch</span>
+                  <span className="font-mono font-bold bg-white text-slate-900 px-2.5 py-0.5 rounded-lg border border-emerald-200/80 shadow-2xs">
+                    {successResult.batch_code}
+                  </span>
+                  <span className="text-emerald-700">·</span>
+                  <span>{successResult.quantity} voucher(s)</span>
+                  <span className="text-emerald-700">·</span>
+                  <span className="font-bold text-emerald-950">{successResult.plan}</span>
                 </p>
                 {successResult.serial_start && (
-                  <p className="text-xs text-emerald-600 mt-0.5">
-                    Serial <span className="font-mono font-bold bg-white/70 px-1.5 py-0.5 rounded-lg border border-emerald-100">{successResult.serial_start}</span> to <span className="font-mono font-bold bg-white/70 px-1.5 py-0.5 rounded-lg border border-emerald-100">{successResult.serial_end}</span>
+                  <p className="text-emerald-900 font-semibold flex flex-wrap items-center gap-1.5 leading-relaxed">
+                    <span className="font-bold text-emerald-950">Serial</span>
+                    <span className="font-mono font-bold bg-white text-slate-900 px-2.5 py-0.5 rounded-lg border border-emerald-200/80 shadow-2xs">
+                      {successResult.serial_start}
+                    </span>
+                    <span className="text-emerald-700 font-normal">to</span>
+                    <span className="font-mono font-bold bg-white text-slate-900 px-2.5 py-0.5 rounded-lg border border-emerald-200/80 shadow-2xs">
+                      {successResult.serial_end}
+                    </span>
                   </p>
                 )}
               </div>
             </div>
 
-            <div>
-              <p className="text-xs font-bold text-slate-400 mb-3 uppercase tracking-wider">Preview (first {successResult.sample?.length})</p>
-              <div className="flex gap-4 overflow-x-auto pb-3">
-                {cardTemplate && successResult.sample?.map((v: any) => (
-                  <VoucherCard
-                    key={v.code}
-                    code={v.code}
-                    serialNumber={v.serial_number}
-                    planName={successResult.plan}
-                    price={successPlan?.selling_price}
-                    size={200}
-                    template={cardTemplate}
-                  />
-                ))}
-              </div>
-            </div>
-
-            <div className="flex gap-3 justify-end pt-3 border-t border-slate-100">
+            <div className="flex flex-wrap items-center justify-end gap-3 pt-2">
               <button
-                className="btn-ghost !border-slate-200 !text-slate-700 hover:!bg-slate-50 py-2 px-5 rounded-xl font-bold flex items-center gap-2"
-                onClick={() => openBlob('/vouchers/print', { batch: successResult.batch_code })}
+                type="button"
+                className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold px-4 py-2.5 rounded-xl flex items-center gap-2 shadow-xs transition-all text-sm cursor-pointer disabled:opacity-50"
+                onClick={() => downloadBatch('export', successResult.batch_code)}
+                disabled={downloadingExport !== null}
               >
-                <Printer size={15} /> Print All Cards
+                {downloadingExport === 'export' ? (
+                  <Loader2 size={16} className="animate-spin text-slate-500" />
+                ) : (
+                  <FileText size={16} className="text-slate-500" />
+                )}
+                <span>Download CSV</span>
               </button>
-              <button className="btn-primary py-2 px-5 rounded-xl font-bold" onClick={() => setSuccessResult(null)}>Done</button>
+              <button
+                type="button"
+                className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold px-4 py-2.5 rounded-xl flex items-center gap-2 shadow-xs transition-all text-sm cursor-pointer disabled:opacity-50"
+                onClick={() => downloadBatch('export-xlsx', successResult.batch_code)}
+                disabled={downloadingExport !== null}
+              >
+                {downloadingExport === 'export-xlsx' ? (
+                  <Loader2 size={16} className="animate-spin text-emerald-600" />
+                ) : (
+                  <FileSpreadsheet size={16} className="text-emerald-600" />
+                )}
+                <span>Download Excel</span>
+              </button>
+              <button
+                type="button"
+                className="btn-primary py-2.5 px-7 rounded-xl font-bold text-sm shadow-md cursor-pointer"
+                onClick={() => setSuccessResult(null)}
+              >
+                Done
+              </button>
             </div>
           </div>
         )}
       </Modal>
-
-      {/* Progress Bar Overlay */}
-      {loadingAction && (
-        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-950/45 backdrop-blur-sm select-none animate-fade-in">
-          <div className="bg-white p-6 rounded-[24px] shadow-2xl flex flex-col items-center gap-4 border border-slate-100 max-w-xs text-center w-80">
-            <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden relative">
-              <div
-                className="absolute top-0 left-0 h-full bg-[#003164] rounded-full transition-all duration-150 ease-out"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-            <div className="mt-1">
-              <p className="text-sm font-extrabold text-slate-800">Generating Card Document ({progress}%)</p>
-              <p className="text-xs text-slate-400 font-semibold mt-1">Please wait a moment while we render your cards.</p>
-            </div>
-          </div>
-        </div>
-      )}
 
       <ConfirmModal
         open={confirmDelete}

@@ -223,9 +223,9 @@ class RadiusController extends Controller
             return $this->fail('Username is required.', 422);
         }
 
-        $range = strtolower($request->query('range', '35d'));
+        $range = strtolower($request->query('range', 'today'));
         if (!in_array($range, ['today', 'yesterday', '7d', '15d', '35d'])) {
-            $range = '35d';
+            $range = 'today';
         }
 
         $user = $request->user();
@@ -650,6 +650,8 @@ class RadiusController extends Controller
         $data = $request->validate([
             'username' => ['required', 'string'],
             'password' => ['required', 'string'],
+            'calling_station_id' => ['nullable', 'string', 'max:64'],
+            'nas_ip' => ['nullable', 'ip'],
         ]);
 
         $host = env('RADIUS_HOST', 'host.docker.internal');
@@ -660,7 +662,7 @@ class RadiusController extends Controller
         $secret = env('RADIUS_SECRET', 'testing123');
 
         try {
-            $result = $this->radiusAuthenticate($host, $port, $secret, $data['username'], $data['password']);
+            $result = $this->radiusAuthenticate($host, $port, $secret, $data['username'], $data['password'], $data['calling_station_id'] ?? null, $data['nas_ip'] ?? null);
             if ($result['accepted']) {
                 return $this->ok([
                     'status' => 'Access-Accept',
@@ -691,7 +693,7 @@ class RadiusController extends Controller
      * live probe against a never-activated voucher would burn its validity
      * window for real, so that case is skipped and explained instead.
      */
-    public function diagnoseVoucher(string $code): JsonResponse
+    public function diagnoseVoucher(Request $request, string $code): JsonResponse
     {
         $code = trim($code);
 
@@ -755,7 +757,14 @@ class RadiusController extends Controller
                 $host = env('RADIUS_HOST', 'host.docker.internal');
                 $port = (int) env('RADIUS_PORT', 1812);
                 $secret = env('RADIUS_SECRET', 'testing123');
-                $result = $this->radiusAuthenticate($host, $port, $secret, $username, $voucher->password);
+                // Probe as a real device. Default to the voucher's own bound
+                // MAC/NAS so the probe answers the question that matters —
+                // "does this card work for the device it is locked to?" — and
+                // let ?mac= override it to simulate the customer's current
+                // device. Sending nothing made every MAC-bound card fail the
+                // probe and logged "device sent )".
+                $probeMac = $request->query('mac') ?: $voucher->mac_address;
+                $result = $this->radiusAuthenticate($host, $port, $secret, $username, $voucher->password, $probeMac, $voucher->nas_ip);
 
                 $liveTest['ran'] = true;
                 $liveTest['accepted'] = $result['accepted'];
@@ -770,8 +779,8 @@ class RadiusController extends Controller
                     $reasons[] = "Live test just now: RADIUS REJECTED this voucher — \"{$msg}\".";
                     if (($voucher->mac_bind || $voucher->nas_ip)
                         && $result['reply_message']
-                        && (str_contains($result['reply_message'], 'different device') || str_contains($result['reply_message'], 'not valid on this hotspot'))) {
-                        $reasons[] = 'Note: this voucher is locked to a specific device/NAS, and this diagnostic probe doesn\'t send a real MAC address or NAS IP — the customer\'s actual device may authenticate fine even though this specific test didn\'t.';
+                        && (str_contains($result['reply_message'], 'bound to another MAC address') || str_contains($result['reply_message'], 'not valid on this hotspot'))) {
+                        $reasons[] = 'Note: this voucher is locked to a specific device/NAS. The probe was sent as MAC '.($probeMac ?: 'none on record').' — if the customer is on a different device (phones rotate their Wi-Fi MAC), re-run with ?mac=<their MAC> to confirm.';
                     }
                 }
             } catch (Exception $e) {
@@ -850,7 +859,7 @@ class RadiusController extends Controller
     /**
      * @return array{accepted: bool, code: int, reply_message: ?string}
      */
-    private function radiusAuthenticate(string $host, int $port, string $secret, string $username, string $password): array
+    private function radiusAuthenticate(string $host, int $port, string $secret, string $username, string $password, ?string $callingStationId = null, ?string $nasIpAddress = null): array
     {
         $server = "udp://$host:$port";
         $fp = @stream_socket_client($server, $errno, $errstr, 2);
@@ -886,7 +895,31 @@ class RadiusController extends Controller
         // Message-Authenticator (Type 80, length 18, 16 bytes HMAC-MD5 value)
         $msgAuthAttr = pack('CC', 80, 18) . str_repeat("\0", 16);
 
-        $attrs = $userNameAttr . $userPasswordAttr . $msgAuthAttr;
+        $attrs = $userNameAttr . $userPasswordAttr;
+
+        // Calling-Station-Id (Type 31) — the client device's MAC. Without it
+        // %{Calling-Station-Id} expands to an empty string in
+        // sites-enabled/default, so the mac_bind gate compares the stored MAC
+        // against '' and *always* reports mac_mismatch — the log line reads
+        // "device sent )" and the probe condemns a card that the customer's
+        // real device would authenticate on just fine.
+        if ($callingStationId !== null && $callingStationId !== '') {
+            $attrs .= pack('CC', 31, 2 + strlen($callingStationId)) . $callingStationId;
+        }
+
+        // NAS-IP-Address (Type 4) — same failure, and worse: the nas_mismatch
+        // gate is evaluated BEFORE the MAC one, so an absent NAS IP masks the
+        // real reason behind "Voucher not valid on this hotspot."
+        if ($nasIpAddress !== null && $nasIpAddress !== '') {
+            $packedNasIp = @inet_pton($nasIpAddress);
+            if ($packedNasIp !== false && strlen($packedNasIp) === 4) {
+                $attrs .= pack('CC', 4, 6) . $packedNasIp;
+            }
+        }
+
+        // Message-Authenticator MUST stay last: the HMAC below is written back
+        // over the final 16 bytes of the packet.
+        $attrs .= $msgAuthAttr;
         $length = 20 + strlen($attrs);
 
         // Access-Request Code is 1
@@ -1003,7 +1036,7 @@ class RadiusController extends Controller
         $type = 'info';
         if (str_contains($statusMsg, 'Login OK') || str_contains($statusMsg, 'OK')) {
             $type = 'success';
-        } elseif (str_contains($statusMsg, 'Login incorrect') || str_contains($statusMsg, 'Reject') || str_contains($statusMsg, 'mismatch') || str_contains($statusMsg, 'not found')) {
+        } elseif (str_contains($statusMsg, 'Login incorrect') || str_contains($statusMsg, 'Invalid user') || str_contains($statusMsg, 'Reject') || str_contains($statusMsg, 'mismatch') || str_contains($statusMsg, 'not found')) {
             $type = 'reject';
         }
 

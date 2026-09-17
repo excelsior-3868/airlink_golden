@@ -160,6 +160,7 @@ class VoucherService
                     'daily_data_gb' => $plan->plan_type === 'daily_data' ? ($plan->daily_data_gb ?: null) : null,
                     'nas_ip' => $plan->nasDevice?->nasname ?: null,
                     'mac_bind' => (bool) $plan->mac_bind,
+                    'enforce_physical_mac' => (bool) ($plan->enforce_physical_mac ?? true),
                     'validity_days' => $validity,
                     'simultaneous_use' => (int) ($plan->simultaneous_use ?: 1),
                     'price' => $pricePer,

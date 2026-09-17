@@ -19,15 +19,35 @@ export default defineConfig({
         start_url: '/',
         scope: '/',
         display: 'standalone',
-        orientation: 'portrait-primary',
+        // Desktop (Windows/Mac) installs get a real app window; 'minimal-ui'
+        // is the fallback for browsers that don't do standalone, and 'browser'
+        // is the last resort so launching never dead-ends.
+        display_override: ['standalone', 'minimal-ui', 'browser'],
+        // No `orientation` lock: it pins the app to portrait, which is wrong on
+        // an installed desktop window and on a landscape tablet. Letting the
+        // device decide is what makes the same install work on phone and PC.
         background_color: '#f8fafc',
         theme_color: '#003164',
         lang: 'en',
         categories: ['business', 'productivity', 'finance'],
+        // Absolute paths so the icons resolve from any route the manifest is
+        // first seen on, not relative to it.
         icons: [
-          { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
-          { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
-          { src: 'icons/maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: '/icons/maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+        ],
+        // Focus the window that's already open instead of spawning a second
+        // one — the desktop install otherwise duplicates itself on every click.
+        launch_handler: { client_mode: ['navigate-existing', 'auto'] },
+        // This is a web app, not a shim for a store listing.
+        prefer_related_applications: false,
+        // Taskbar jump list (Windows), dock menu (Mac), long-press (Android).
+        shortcuts: [
+          { name: 'Dashboard', short_name: 'Dashboard', url: '/' },
+          { name: 'Voucher Sales', short_name: 'Vouchers', url: '/vouchers' },
+          { name: 'Online Users', short_name: 'Online', url: '/online-users' },
+          { name: 'Wallet / GB Allocation', short_name: 'Wallet', url: '/funds' },
         ],
       },
       workbox: {

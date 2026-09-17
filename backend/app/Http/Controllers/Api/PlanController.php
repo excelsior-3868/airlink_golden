@@ -404,6 +404,7 @@ class PlanController extends Controller
             'bandwidth' => ['nullable', 'string', 'max:255'],
             'nas_device_id' => ['nullable', 'exists:nas_devices,id'],
             'mac_bind' => ['nullable', 'boolean'],
+            'enforce_physical_mac' => ['nullable', 'boolean'],
             'data_gb' => ['nullable', 'numeric', 'min:0'],
             'daily_data_gb' => ['nullable', 'numeric', 'min:0'],
             'time_limit' => ['nullable', 'integer', 'min:0'],

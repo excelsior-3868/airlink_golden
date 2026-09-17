@@ -30,6 +30,7 @@ import OnlineUsers from './pages/OnlineUsers'
 import PppoeCustomers from './pages/PppoeCustomers'
 import BrandingSettings from './pages/BrandingSettings'
 import PppoeSalesSummary from './pages/PppoeSalesSummary'
+import Monitoring from './pages/Monitoring'
 
 function Protected({ children }: { children: JSX.Element }) {
   const { user, loading } = useAuth()
@@ -103,6 +104,7 @@ export default function App() {
         <Route path="/vouchers/generate" element={<Guard perm="generate_voucher"><VoucherGenerator /></Guard>} />
         <Route path="/reports" element={<Navigate to="/vouchers?tab=vouchers" replace />} />
         <Route path="/diagnostics" element={<Guard roles={['admin', 'reseller', 'seller']}><RadiusLogs /></Guard>} />
+        <Route path="/monitoring" element={<Guard roles={['admin']}><Monitoring /></Guard>} />
         <Route path="/nas" element={<Guard perm="view_settings" roles={['admin']}><Nas /></Guard>} />
         <Route path="/logs" element={<Guard perm="view_settings" roles={['admin']}><LoginLogs /></Guard>} />
         <Route path="/permissions" element={<Guard perm="view_settings" roles={['admin']}><Permissions /></Guard>} />

@@ -450,6 +450,47 @@ class VoucherController extends Controller
     }
 
     /**
+     * Set, update, or toggle MAC address binding for a voucher.
+     */
+    public function updateMac(Request $request, Voucher $voucher): JsonResponse
+    {
+        if (! $request->user()->tokenCan('vouchers.enable')) {
+            return $this->fail("This API token does not have the 'vouchers.enable' ability.", 403);
+        }
+
+        if (! $this->canAccess($request->user(), $voucher)) {
+            return $this->fail('You do not have permission to modify this voucher.', 403);
+        }
+
+        $validated = $request->validate([
+            'mac_bind' => ['nullable', 'boolean'],
+            'mac_address' => [
+                'nullable',
+                'string',
+                'regex:/^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/'
+            ],
+        ]);
+
+        $updates = [];
+        if (array_key_exists('mac_bind', $validated)) {
+            $updates['mac_bind'] = (bool) $validated['mac_bind'];
+        }
+        if (array_key_exists('mac_address', $validated)) {
+            $mac = $validated['mac_address'] ? strtoupper(str_replace('-', ':', trim($validated['mac_address']))) : null;
+            $updates['mac_address'] = $mac;
+            if ($mac && !isset($updates['mac_bind'])) {
+                $updates['mac_bind'] = true;
+            }
+        }
+
+        if (!empty($updates)) {
+            $voucher->update($updates);
+        }
+
+        return $this->ok($voucher->fresh(), 'MAC address settings updated successfully.');
+    }
+
+    /**
      * Regenerate — or explicitly set — a voucher's password. Deliberately not
      * gated to any particular status: works whether the card is still 'ready'
      * (most useful there — before its printed code reaches a customer) or

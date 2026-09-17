@@ -5,6 +5,8 @@ import App from './App'
 import { AuthProvider } from './lib/auth'
 import { BrandingProvider } from './lib/branding'
 import PwaUpdater from './components/PwaUpdater'
+import InstallPrompt from './components/InstallPrompt'
+import BottomDock from './components/BottomDock'
 import './index.css'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
@@ -13,7 +15,10 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <AuthProvider>
         <BrandingProvider>
           <App />
-          <PwaUpdater />
+          <BottomDock>
+            <InstallPrompt />
+            <PwaUpdater />
+          </BottomDock>
         </BrandingProvider>
       </AuthProvider>
     </BrowserRouter>
