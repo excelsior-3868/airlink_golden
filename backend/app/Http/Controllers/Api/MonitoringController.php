@@ -414,7 +414,7 @@ class MonitoringController extends Controller
                 ['name' => 'airlink-mera-prod-app', 'role' => 'Laravel Application Backend', 'state' => 'running', 'status' => 'Up'],
                 ['name' => 'airlink-mera-prod-web', 'role' => 'Nginx Reverse Proxy & Web Frontend', 'state' => 'running', 'status' => 'Up'],
                 ['name' => 'airlink-mera-prod-mariadb', 'role' => 'MariaDB Primary Database', 'state' => 'running', 'status' => 'Healthy'],
-                ['name' => 'airlink-mera-prod-freeradius', 'role' => 'FreeRADIUS AAA Daemon', 'state' => 'running', 'status' => 'Healthy'],
+                ['name' => 'airlink-prod-freeradius', 'role' => 'FreeRADIUS AAA Daemon', 'state' => 'running', 'status' => 'Healthy'],
                 ['name' => 'airlink-mera-prod-queue', 'role' => 'Background Job Queue Worker', 'state' => 'running', 'status' => 'Up'],
                 ['name' => 'airlink-mera-prod-scheduler', 'role' => 'Automated Tasks & Cron Scheduler', 'state' => 'running', 'status' => 'Up'],
             ];

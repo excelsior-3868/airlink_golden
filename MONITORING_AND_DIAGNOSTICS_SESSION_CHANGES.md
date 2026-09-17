@@ -86,4 +86,4 @@ In this session, we expanded the system health and operational observability of 
 ## 5. Build and Deployment Verification
 
 - **TypeScript / Vite Compilation**: `npm run build` executed successfully with 0 errors across 2,608 modules.
-- **Docker Production Stack**: Production containers (`airlink-mera-prod-web`, `airlink-mera-prod-app`, `airlink-mera-prod-freeradius`, `airlink-mera-prod-mariadb`, `airlink-mera-prod-queue`, `airlink-mera-prod-scheduler`) built and started healthy.
+- **Docker Production Stack**: Production containers (`airlink-mera-prod-web`, `airlink-mera-prod-app`, `airlink-prod-freeradius`, `airlink-mera-prod-mariadb`, `airlink-mera-prod-queue`, `airlink-mera-prod-scheduler`) built and started healthy.

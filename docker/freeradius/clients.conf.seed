@@ -16,7 +16,7 @@
 # Docker bridge network. Always sends Message-Authenticator.
 #
 # MUST match RADIUS_DOCKER_NETWORKS_SECRET / RADIUS_SECRET in .env and
-# docker-compose.prod.yml — rotate both together if you change this.
+# docker-compose.mera.yml — rotate both together if you change this.
 client docker_networks {
 	ipaddr = 172.16.0.0/12
 	secret = "testing123"

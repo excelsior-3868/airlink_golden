@@ -1,0 +1,212 @@
+name: airlink3-annapurna
+
+# Production stack for the ANNAPURNA tenant.
+#
+# Deliberately has NO freeradius service. Annapurna shares the single
+# FreeRADIUS that ships with the Mera stack (container
+# airlink-prod-freeradius, host ports 1812/1813). That server decides
+# which database to use per request, from the NAS the request arrived from:
+#
+#   Annapurna NAS ──▶ client{} in clients-annapurna.conf
+#                     (carries `virtual_server = annapurna`)
+#                     ──▶ `annapurna` virtual server
+#                     ──▶ `sql_annapurna` module
+#                     ──▶ this stack's airlink_annapurna schema
+#
+#   Mera NAS ───────▶ client{} in clients.conf (no virtual_server)
+#                     ──▶ `default` virtual server ──▶ `sql` ──▶ airlink_mera
+#
+# So a NAS is registered in exactly one tenant's UI, and that registration is
+# what binds it to that tenant's data.
+#
+# This is a SEPARATE compose file, not a modified docker-compose.mera.yml.
+# Both tenants run the same repo from different checkouts, so this file is
+# additive: docker-compose.mera.yml stays byte-identical to upstream and
+# keeps deploying Mera, while this one deploys Annapurna beside it. Editing
+# the shared file per tenant would conflict on every pull.
+#
+#   docker compose -f docker-compose.annapurna.yml up -d --build
+#
+# The `name:` above, not the filename, is what ties these containers and
+# volumes together. The Mera stack must already be up — it owns the shared
+# FreeRADIUS, and the tenant_link network must exist (see SHARED_RADIUS_TENANTS.md).
+
+services:
+  # Annapurna's own database server — a separate container and volume from
+  # Mera's, so backups, restarts and crashes are independent. Named
+  # `annapurna-mariadb` rather than `mariadb` on purpose: it shares the
+  # tenant_link network with the FreeRADIUS container, and a second host
+  # answering to `mariadb` there would make FreeRADIUS's own `mariadb`
+  # lookup ambiguous — it could resolve Mera's SQL instance to this server.
+  annapurna-mariadb:
+    image: mariadb:11
+    container_name: airlink-mariadb-annapurna
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root_secret}
+      MARIADB_DATABASE: airlink_annapurna
+      MARIADB_USER: airlink
+      MARIADB_PASSWORD: ${DB_PASSWORD:-airlink_pass}
+    ports:
+      - "127.0.0.1:3309:3306"
+    volumes:
+      - mariadb_annapurna_data:/var/lib/mysql
+      # No nalrd_backup.sql mount — this tenant starts empty.
+      - ./docker/mariadb/initdb.annapurna:/docker-entrypoint-initdb.d:ro
+    networks:
+      - default
+      # Reachable by the shared FreeRADIUS as host `annapurna-mariadb`,
+      # which is exactly what mods-enabled/sql_annapurna connects to.
+      - tenant_link
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
+  app:
+    build:
+      context: .
+      dockerfile: docker/backend/Dockerfile.prod
+    container_name: airlink-backend-annapurna
+    restart: unless-stopped
+    environment:
+      DB_CONNECTION: mysql
+      DB_HOST: annapurna-mariadb
+      DB_PORT: 3306
+      DB_DATABASE: airlink_annapurna
+      DB_USERNAME: airlink
+      DB_PASSWORD: ${DB_PASSWORD:-airlink_pass}
+      LEGACY_DB_HOST: annapurna-mariadb
+      LEGACY_DB_PORT: 3306
+      LEGACY_DB_DATABASE: ${LEGACY_DB_DATABASE:-airlink_annapurna_legacy}
+      LEGACY_DB_USERNAME: airlink
+      LEGACY_DB_PASSWORD: ${DB_PASSWORD:-airlink_pass}
+      APP_KEY: ${APP_KEY}
+      APP_ENV: production
+      APP_DEBUG: "false"
+      # Creates the whole schema on first boot and seeds the default admin
+      # + permission matrix. Nothing else is imported: this tenant is empty.
+      RUN_MIGRATIONS: 1
+      # --- Shared FreeRADIUS wiring ------------------------------------
+      # Reached by container name across tenant_link (the `freeradius`
+      # service alias belongs to the Mera compose project).
+      RADIUS_HOST: airlink-prod-freeradius
+      RADIUS_PORT: 1812
+      RADIUS_SECRET: ${RADIUS_DOCKER_NETWORKS_SECRET}
+      # This tenant writes its OWN clients file. Both files are $INCLUDEd by
+      # the shared server; keeping them separate means the two apps never
+      # write the same file and their block names cannot collide.
+      RADIUS_CLIENTS_CONF_PATH: /var/lib/airlink-radius/clients-annapurna.conf
+      RADIUS_RESTART_TRIGGER_PATH: /var/lib/airlink-radius/.restart-trigger
+      # Stamped into every client{} block this app writes — the line that
+      # actually routes this tenant's NAS traffic to this tenant's database.
+      RADIUS_VIRTUAL_SERVER: annapurna
+      # Namespaces this tenant's client block names (both tenants number
+      # their devices from id 1).
+      RADIUS_CLIENT_PREFIX: ann_
+    volumes:
+      - radius_shared:/var/lib/airlink-radius
+      # Only the per-NAS detail logs, NOT the whole log directory. The
+      # shared server writes one radius.log for BOTH tenants, and the app's
+      # "RADIUS Log" tab tails it verbatim (RadiusController::serverLog) —
+      # mounting it here would show Mera's usernames to Annapurna admins.
+      # radacct/ is already partitioned into one directory per NAS IP, and
+      # this tenant only ever looks up its own NAS addresses, so NAS
+      # activity keeps working while the shared log stays out of reach.
+      - type: volume
+        source: radius_logs
+        target: /var/log/freeradius/radacct
+        read_only: true
+        volume:
+          subpath: radacct
+    networks:
+      - default
+      - tenant_link
+    depends_on:
+      annapurna-mariadb:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/web/Dockerfile
+    container_name: airlink-frontend-annapurna
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8091}:80"
+    depends_on:
+      - app
+
+  queue:
+    build:
+      context: .
+      dockerfile: docker/backend/Dockerfile.prod
+    container_name: airlink-queue-annapurna
+    restart: unless-stopped
+    environment:
+      DB_CONNECTION: mysql
+      DB_HOST: annapurna-mariadb
+      DB_PORT: 3306
+      DB_DATABASE: airlink_annapurna
+      DB_USERNAME: airlink
+      DB_PASSWORD: ${DB_PASSWORD:-airlink_pass}
+      LEGACY_DB_HOST: annapurna-mariadb
+      LEGACY_DB_PORT: 3306
+      LEGACY_DB_DATABASE: ${LEGACY_DB_DATABASE:-airlink_annapurna_legacy}
+      LEGACY_DB_USERNAME: airlink
+      LEGACY_DB_PASSWORD: ${DB_PASSWORD:-airlink_pass}
+      APP_KEY: ${APP_KEY}
+      APP_ENV: production
+      APP_DEBUG: "false"
+      RUN_MIGRATIONS: 0
+    command: ["php", "artisan", "queue:work", "--tries=3", "--timeout=120"]
+    depends_on:
+      - app
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: docker/backend/Dockerfile.prod
+    container_name: airlink-scheduler-annapurna
+    restart: unless-stopped
+    environment:
+      DB_CONNECTION: mysql
+      DB_HOST: annapurna-mariadb
+      DB_PORT: 3306
+      DB_DATABASE: airlink_annapurna
+      DB_USERNAME: airlink
+      DB_PASSWORD: ${DB_PASSWORD:-airlink_pass}
+      LEGACY_DB_HOST: annapurna-mariadb
+      LEGACY_DB_PORT: 3306
+      LEGACY_DB_DATABASE: ${LEGACY_DB_DATABASE:-airlink_annapurna_legacy}
+      LEGACY_DB_USERNAME: airlink
+      LEGACY_DB_PASSWORD: ${DB_PASSWORD:-airlink_pass}
+      APP_KEY: ${APP_KEY}
+      APP_ENV: production
+      APP_DEBUG: "false"
+      RUN_MIGRATIONS: 0
+    command: ["php", "artisan", "schedule:work"]
+    depends_on:
+      - app
+
+networks:
+  default:
+  # Owned by the Mera stack (docker-compose.mera.yml there), because that is
+  # where the shared FreeRADIUS lives. Bring Mera up first.
+  tenant_link:
+    name: airlink_tenant_link
+    external: true
+
+volumes:
+  mariadb_annapurna_data:
+  # The shared FreeRADIUS's volumes, created by the Mera stack. This app
+  # needs them to write its clients file / restart trigger, and to read the
+  # server log for the RADIUS Log tab.
+  radius_shared:
+    name: airlink3-prod_radius_shared
+    external: true
+  radius_logs:
+    name: airlink3-prod_radius_logs
+    external: true

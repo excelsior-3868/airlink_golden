@@ -15,12 +15,27 @@ COPY sites-enabled/default /etc/freeradius/sites-enabled/default
 COPY sites-enabled/inner-tunnel /etc/freeradius/sites-enabled/inner-tunnel
 COPY mods-enabled/sql /etc/freeradius/mods-enabled/sql
 COPY clients.conf.seed /etc/freeradius/clients.conf.seed
+COPY clients-annapurna.conf.seed /etc/freeradius/clients-annapurna.conf.seed
+
+# ---- Second tenant: Annapurna ----------------------------------------
+# One shared FreeRADIUS serves both tenants. Annapurna gets its own SQL
+# instance (its own MariaDB container and schema) plus its own virtual
+# server, generated from the Mera policy above so the two cannot drift.
+# Routing is per-NAS: Annapurna's client{} stanzas carry
+# `virtual_server = annapurna`, which is what selects the DB connection.
+COPY mods-enabled/sql_annapurna /etc/freeradius/mods-enabled/sql_annapurna
+COPY gen-tenant-site.sh /usr/local/bin/gen-tenant-site.sh
+RUN chmod +x /usr/local/bin/gen-tenant-site.sh \
+    && /usr/local/bin/gen-tenant-site.sh annapurna sql_annapurna \
+         /etc/freeradius/sites-enabled/default \
+         /etc/freeradius/sites-enabled/annapurna
 
 # The real, admin-editable client list lives on the shared volume (seeded
 # from clients.conf.seed at first boot — see entrypoint.sh) so the app's
 # ClientsConfService can edit it live. Stock clients.conf keeps only the
 # base loopback entries and pulls the rest in via $INCLUDE.
-RUN echo '$INCLUDE /var/lib/airlink-radius/clients.conf' >> /etc/freeradius/clients.conf
+RUN echo '$INCLUDE /var/lib/airlink-radius/clients.conf' >> /etc/freeradius/clients.conf \
+    && echo '$INCLUDE /var/lib/airlink-radius/clients-annapurna.conf' >> /etc/freeradius/clients.conf
 
 # Custom dictionary attribute used by the voucher lifecycle policy.
 RUN echo '' >> /etc/freeradius/dictionary \

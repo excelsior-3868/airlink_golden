@@ -1,7 +1,7 @@
 name: airlink3-prod
 
 # Production stack — optimized builds, code baked into images, no dev bind mounts.
-#   docker compose -f docker-compose.prod.yml up -d --build
+#   docker compose -f docker-compose.mera.yml up -d --build
 # Serves the SPA + API on http://localhost:${WEB_PORT:-8090} (nginx → php-fpm).
 # Uses its own DB volume and internal-only DB/RADIUS ports so it can run
 # alongside the dev stack.
@@ -140,7 +140,7 @@ services:
   freeradius:
     build:
       context: ./docker/freeradius
-    container_name: airlink-mera-prod-freeradius
+    container_name: airlink-prod-freeradius
     restart: unless-stopped
     environment:
       TZ: Asia/Kathmandu
@@ -152,6 +152,16 @@ services:
       - radius_logs:/var/log/freeradius
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
+    networks:
+      # `default` must be listed explicitly — naming any network here opts
+      # the service out of joining the stack default implicitly, and app/
+      # mariadb reach freeradius over it.
+      - default
+      # Shared with the Annapurna stack: lets this one FreeRADIUS reach
+      # Annapurna's own MariaDB, and lets Annapurna's backend reach this
+      # server. Fixed subnet so the `annapurna_docker` client stanza can
+      # match Annapurna's containers by address.
+      - tenant_link
     healthcheck:
       test: ["CMD", "pgrep", "-x", "freeradius"]
       interval: 15s
@@ -161,6 +171,23 @@ services:
     depends_on:
       mariadb:
         condition: service_healthy
+
+networks:
+  default:
+  # Cross-tenant link network. Owned by this stack (it holds the shared
+  # FreeRADIUS); the Annapurna stack declares it `external: true`.
+  # 172.31.0.0/16 sits inside the 172.16.0.0/12 that Mera's
+  # `client docker_networks` covers, and FreeRADIUS matches clients by
+  # longest prefix, so the /16 `annapurna_docker` entry wins for Annapurna.
+  # Shared infrastructure, owned by NEITHER stack — the Annapurna stack
+  # attaches to the same network, so whichever stack came down last must not
+  # be able to delete it. Create it once, by hand:
+  #
+  #   docker network create airlink_tenant_link --subnet 172.31.0.0/16
+  #
+  tenant_link:
+    name: airlink_tenant_link
+    external: true
 
 volumes:
   mariadb_prod_data:

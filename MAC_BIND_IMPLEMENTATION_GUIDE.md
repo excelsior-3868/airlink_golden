@@ -546,5 +546,5 @@ Run on the target tenant:
 docker exec <tenant-freeradius-container> freeradius -CX
 
 # 2. Build and restart production containers
-docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.mera.yml up -d --build
 ```

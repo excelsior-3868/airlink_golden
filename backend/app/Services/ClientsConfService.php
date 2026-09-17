@@ -79,7 +79,16 @@ class ClientsConfService
         $base = preg_replace('/[^a-z0-9_]+/', '_', $base);
         $base = trim($base, '_') ?: 'nas';
 
-        return "{$base}_{$device->id}";
+        // On a shared FreeRADIUS the clients of every tenant land in the same
+        // server, and each tenant numbers its devices from id 1 — so an
+        // unprefixed "{shortname}_{id}" will eventually collide with another
+        // tenant's block and FreeRADIUS refuses to start on a duplicate
+        // client name. RADIUS_CLIENT_PREFIX keeps each tenant's namespace
+        // distinct. Empty for single-tenant installs (Mera), so names there
+        // are unchanged.
+        $prefix = (string) env('RADIUS_CLIENT_PREFIX', '');
+
+        return "{$prefix}{$base}_{$device->id}";
     }
 
     /** Upsert this device's client{} stanza, then request a FreeRADIUS restart. */
@@ -121,8 +130,25 @@ class ClientsConfService
             "\tsecret = \"{$secret}\"",
         ];
 
-        if ($device->require_message_authenticator !== 'auto') {
+        // Only 'yes' and 'no' are worth emitting — 'auto' is already the
+        // server-wide default. The strict whitelist matters because the field
+        // is `nullable` in NasController::validateData: a device created
+        // programmatically, or through the API by a client that omits it,
+        // leaves the attribute unset. Emitting the directive with an empty
+        // value makes FreeRADIUS fail to parse clients.conf and refuse to
+        // start — which on a shared server takes every tenant down, not just
+        // the one whose NAS was saved.
+        if (in_array($device->require_message_authenticator, ['yes', 'no'], true)) {
             $lines[] = "\trequire_message_authenticator = {$device->require_message_authenticator}";
+        }
+
+        // This single line is what binds a NAS to a tenant's database. It
+        // routes the request into that tenant's virtual server, which calls
+        // that tenant's sql instance. Without it the request falls through to
+        // the default (Mera) server and would write this tenant's sessions
+        // into Mera's schema. Unset for Mera itself, which owns `default`.
+        if ($vs = env('RADIUS_VIRTUAL_SERVER')) {
+            $lines[] = "\tvirtual_server = {$vs}";
         }
 
         $lines[] = '}';

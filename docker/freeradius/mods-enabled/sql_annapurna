@@ -1,0 +1,67 @@
+# Airlink v3.0 — FreeRADIUS SQL module, ANNAPURNA tenant.
+#
+# Second SQL instance on the SHARED FreeRADIUS server. Identical in shape to
+# `sql` (the Mera instance) but pointed at Annapurna's own MariaDB container
+# and schema, so the two tenants never share a row.
+#
+# Which instance a request uses is decided by the NAS it came from: Annapurna
+# client{} stanzas in /var/lib/airlink-radius/clients-annapurna.conf carry
+#   virtual_server = annapurna
+# which routes them into the `annapurna` virtual server (sites-enabled/
+# annapurna, generated at build time from sites-enabled/default), and that
+# server calls THIS instance instead of `sql`.
+#
+# Keep the option set in sync with mods-enabled/sql — the generator only
+# rewrites instance *names*, it does not reconcile settings.
+sql sql_annapurna {
+	dialect = "mysql"
+	driver = "rlm_sql_mysql"
+
+	mysql {
+		warnings = auto
+	}
+
+	# Annapurna's own MariaDB container, reachable on the shared
+	# airlink3-prod_default network under this alias.
+	server = "annapurna-mariadb"
+	port = 3306
+	login = "airlink"
+	password = "airlink_pass"
+	radius_db = "airlink_annapurna"
+
+	acct_table1 = "radacct"
+	acct_table2 = "radacct"
+	postauth_table = "radpostauth"
+	authcheck_table = "radcheck"
+	groupcheck_table = "radgroupcheck"
+	authreply_table = "radreply"
+	groupreply_table = "radgroupreply"
+	usergroup_table = "radusergroup"
+	delete_stale_sessions = yes
+
+	pool {
+		# start = 0 (Mera's instance uses 1) is deliberate and important:
+		# this is a SHARED server. If Annapurna's MariaDB is down or still
+		# booting, opening a connection at instantiate time would abort
+		# FreeRADIUS startup and take MERA's live authentication down with
+		# it. With start = 0 no connection is attempted until an Annapurna
+		# NAS actually sends a request; Mera is unaffected either way.
+		start = 0
+		min = 0
+		max = 5
+		spare = 1
+		uses = 0
+		retry_delay = 30
+		lifetime = 0
+		idle_timeout = 60
+	}
+
+	# Same rationale as the Mera instance: NAS clients live in clients.conf
+	# (written by the Annapurna app's ClientsConfService), not the `nas` table.
+	read_clients = no
+	client_table = "nas"
+
+	group_attribute = "SQL-Group"
+
+	$INCLUDE ${modconfdir}/sql/main/${dialect}/queries.conf
+}

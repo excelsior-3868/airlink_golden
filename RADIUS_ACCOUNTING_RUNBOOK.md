@@ -109,9 +109,9 @@ fingerprint 1, definitively.
 
 ```bash
 APP=airlink-mera-prod-app          # Laravel app container
-FR=airlink-mera-prod-freeradius    # FreeRADIUS container
+FR=airlink-prod-freeradius    # FreeRADIUS container
 APP_DEV=airlink-backend            # container that mounts the repo (tests only)
-COMPOSE=docker-compose.prod.yml    # prod compose file
+COMPOSE=docker-compose.mera.yml    # prod compose file
 NAS_IP=110.34.1.63                 # discovered in §3.1
 ```
 

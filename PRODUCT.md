@@ -25,7 +25,7 @@ The dual-balance credit model: **Wallet (Rs)** and **GB quota** are two parallel
 
 ## Operating Context
 
-- Runs fully in Docker: `mariadb` (app schema `airlink` + read-only legacy schema `airlink_legacy`), `backend` (Laravel API), `queue`, `scheduler` (voucher-expiry sweep), `frontend` (Vite SPA), `freeradius`, `phpmyadmin`. A separate `docker-compose.prod.yml` profile bakes code into images (nginx + php-fpm) instead of bind-mounting it.
+- Runs fully in Docker: `mariadb` (app schema `airlink` + read-only legacy schema `airlink_legacy`), `backend` (Laravel API), `queue`, `scheduler` (voucher-expiry sweep), `frontend` (Vite SPA), `freeradius`, `phpmyadmin`. A separate `docker-compose.mera.yml` profile bakes code into images (nginx + php-fpm) instead of bind-mounting it.
 - Voucher auth path is unchanged from legacy v2.0: Customer → MikroTik captive portal → FreeRADIUS (`radcheck`/`radreply`/`radacct` in the shared MariaDB) → Access-Accept/Reject. A voucher's `code` is simultaneously its RADIUS username and password.
 - Roles are gated by a granular, admin-configurable permission table (`SystemPermission`: feature × role → allowed), not just a hardcoded role check — sidebar and route access both follow it.
 - Terminology: "GB Package"/"GB voucher" (data quota, deducts from GB balance) vs. "Wallet Package"/"Wallet voucher" (time/unlimited packs, deducts from Wallet balance) are the two voucher families threaded through dashboards, stats, and reports.

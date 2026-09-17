@@ -65,7 +65,7 @@ SPA served by nginx which proxies `/api` to php-fpm. Own DB volume + internal-on
 DB/RADIUS, so it can run alongside dev.
 
 ```bash
-docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.mera.yml up -d --build
 # → SPA + API on http://localhost:8090   (login admin / admin123)
 ```
 

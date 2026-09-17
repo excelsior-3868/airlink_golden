@@ -1,0 +1,36 @@
+# Airlink v3.0 — RADIUS clients (NAS) for the ANNAPURNA tenant.
+#
+# SEED content for /var/lib/airlink-radius/clients-annapurna.conf — written
+# once, the first time the volume lacks that file (see entrypoint.sh). After
+# that the Annapurna app's ClientsConfService owns this file and appends/edits
+# client{} blocks below the marker as NAS devices are added in its UI.
+#
+# EVERY client in this file must carry `virtual_server = annapurna`. That line
+# is the entire tenant-routing mechanism: it sends the request into the
+# `annapurna` virtual server, which talks to the `sql_annapurna` module
+# instance, which is bound to the airlink_annapurna schema. A client here
+# WITHOUT that line silently falls through to the Mera virtual server and
+# writes Annapurna sessions into Mera's database.
+#
+# Block names are prefixed `ann_` by the app so they can never collide with a
+# Mera block — both apps number their devices from id 1, so an unprefixed
+# `{shortname}_{id}` would eventually produce a duplicate client name and
+# FreeRADIUS would refuse to start.
+
+# Lets the Annapurna backend's built-in RADIUS test-auth tool reach this
+# server. The /16 is deliberate: Mera's `client docker_networks` covers
+# 172.16.0.0/12, which contains this range, and FreeRADIUS resolves
+# overlapping clients by longest prefix — so this more specific entry wins
+# for Annapurna's containers while Mera's keeps matching its own.
+#
+# MUST match RADIUS_SECRET in the annapurna stack's .env.
+client annapurna_docker {
+	ipaddr = 172.31.0.0/16
+	secret = "testing123"
+	require_message_authenticator = yes
+	virtual_server = annapurna
+}
+
+# Admin-managed NAS devices below this line are written/updated by the
+# Annapurna app (app/Services/ClientsConfService.php). Manual edits will be
+# overwritten the next time the matching device is saved from the frontend.
