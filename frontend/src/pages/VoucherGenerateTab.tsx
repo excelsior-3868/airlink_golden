@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Ticket, AlertTriangle, Plus, Pencil, Loader2, Wallet, Database, Layers, Sparkles, Search, X, FileText, FileSpreadsheet } from 'lucide-react'
+import { Ticket, AlertTriangle, Plus, Pencil, Loader2, Wallet, Database, Layers, Sparkles, Search, X, FileText, FileSpreadsheet, Printer } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { rs, gb } from '../lib/format'
@@ -516,6 +516,19 @@ export default function VoucherGenerateTab({ plans, plansLoading = false, refetc
       a.download = kind === 'export' ? `vouchers-${batchCode}.csv` : `vouchers-${batchCode}.xlsx`
       a.click()
       URL.revokeObjectURL(url)
+    } catch (e) {
+      alert(apiError(e))
+    } finally {
+      setDownloadingExport(null)
+    }
+  }
+
+  const printBatch = async (batchCode: string) => {
+    setDownloadingExport('print')
+    try {
+      const res = await api.get('/vouchers/print', { params: { batch: batchCode }, responseType: 'blob' })
+      const url = URL.createObjectURL(res.data)
+      window.open(url, '_blank')
     } catch (e) {
       alert(apiError(e))
     } finally {
@@ -1098,6 +1111,19 @@ export default function VoucherGenerateTab({ plans, plansLoading = false, refetc
                   <FileSpreadsheet size={16} className="text-emerald-600" />
                 )}
                 <span>Download Excel</span>
+              </button>
+              <button
+                type="button"
+                className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold px-4 py-2.5 rounded-xl flex items-center gap-2 shadow-xs transition-all text-sm cursor-pointer disabled:opacity-50"
+                onClick={() => printBatch(successResult.batch_code)}
+                disabled={downloadingExport !== null}
+              >
+                {downloadingExport === 'print' ? (
+                  <Loader2 size={16} className="animate-spin text-slate-500" />
+                ) : (
+                  <Printer size={16} className="text-slate-500" />
+                )}
+                <span>Print Cards</span>
               </button>
               <button
                 type="button"
