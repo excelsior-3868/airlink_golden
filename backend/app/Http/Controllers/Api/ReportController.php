@@ -685,4 +685,101 @@ class ReportController extends Controller
             'performer_breakdown' => $performerBreakdown,
         ]);
     }
+
+    /**
+     * Commission split per reseller from the share snapshot stored on each
+     * PPPoE recharge. admin_share is what the reseller owes the admin;
+     * reseller_share is what the reseller keeps.
+     */
+    public function pppoeCommissionSummary(Request $request): JsonResponse
+    {
+        $actor = $request->user();
+        $from = $request->query('from');
+        $to = $request->query('to');
+        $resellerId = $request->query('reseller_id');
+
+        $base = function () use ($actor, $from, $to, $resellerId) {
+            $q = DB::table('pppoe_recharges as pr');
+
+            if ($actor->isReseller()) {
+                $q->where('pr.reseller_id', $actor->id);
+            } elseif ($resellerId) {
+                $q->where('pr.reseller_id', $resellerId);
+            }
+            if ($from) {
+                $q->whereDate('pr.created_at', '>=', $from);
+            }
+            if ($to) {
+                $q->whereDate('pr.created_at', '<=', $to);
+            }
+
+            return $q;
+        };
+
+        $rows = $base()
+            ->leftJoin('users as u', 'u.id', '=', 'pr.reseller_id')
+            ->select(
+                'pr.reseller_id',
+                DB::raw("COALESCE(NULLIF(u.name, ''), u.username) as reseller_name"),
+                DB::raw('count(*) as recharges'),
+                DB::raw('COALESCE(sum(pr.price), 0) as total_sales'),
+                DB::raw('COALESCE(sum(CASE WHEN pr.reseller_id IS NULL THEN pr.price ELSE pr.admin_share END), 0) as admin_share'),
+                DB::raw('COALESCE(sum(CASE WHEN pr.reseller_id IS NULL THEN 0 ELSE pr.reseller_share END), 0) as reseller_share')
+            )
+            ->groupBy('pr.reseller_id', 'u.name', 'u.username')
+            ->orderByDesc('total_sales')
+            ->get()
+            ->map(function ($r) {
+                $sales = (float) $r->total_sales;
+                $admin = (float) $r->admin_share;
+
+                return [
+                    'reseller_id' => $r->reseller_id !== null ? (int) $r->reseller_id : null,
+                    'reseller_name' => $r->reseller_name ?: 'Direct (no reseller)',
+                    'recharges' => (int) $r->recharges,
+                    'total_sales' => round($sales, 2),
+                    'commission_percent' => ($r->reseller_id !== null && $sales > 0) ? round($admin / $sales * 100, 2) : 0.0,
+                    'admin_share' => round($admin, 2),
+                    'reseller_share' => round((float) $r->reseller_share, 2),
+                ];
+            })
+            ->values();
+
+        $recharges = $base()
+            ->join('pppoe_customers as pc', 'pc.id', '=', 'pr.customer_id')
+            ->join('internet_plans as p', 'p.id', '=', 'pr.plan_id')
+            ->select(
+                'pr.id', 'pr.reference', 'pr.reseller_id', 'pc.full_name', 'pc.username',
+                'p.name as plan_name', 'pr.price', 'pr.created_at',
+                DB::raw('CASE WHEN pr.reseller_id IS NULL THEN pr.price ELSE pr.admin_share END as admin_share'),
+                DB::raw('CASE WHEN pr.reseller_id IS NULL THEN 0 ELSE pr.reseller_share END as reseller_share')
+            )
+            ->orderByDesc('pr.created_at')
+            ->limit(500)
+            ->get()
+            ->map(fn ($r) => [
+                'id' => (int) $r->id,
+                'reference' => $r->reference,
+                'reseller_id' => $r->reseller_id !== null ? (int) $r->reseller_id : null,
+                'subscriber_name' => $r->full_name ?: $r->username,
+                'username' => $r->username,
+                'plan_name' => $r->plan_name,
+                'price' => round((float) $r->price, 2),
+                'admin_share' => round((float) $r->admin_share, 2),
+                'reseller_share' => round((float) $r->reseller_share, 2),
+                'created_at' => $r->created_at,
+            ])
+            ->values();
+
+        return $this->ok([
+            'rows' => $rows,
+            'totals' => [
+                'recharges' => (int) $rows->sum('recharges'),
+                'total_sales' => round((float) $rows->sum('total_sales'), 2),
+                'admin_share' => round((float) $rows->sum('admin_share'), 2),
+                'reseller_share' => round((float) $rows->sum('reseller_share'), 2),
+            ],
+            'recharges' => $recharges,
+        ]);
+    }
 }

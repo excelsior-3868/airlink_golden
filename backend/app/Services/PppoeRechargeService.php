@@ -112,7 +112,8 @@ class PppoeRechargeService
             $reseller = $resellerId ? User::find($resellerId) : null;
             $percent = $reseller ? (float) $reseller->commission_percent : 0.0;
             $adminShare = round($totalPrice * $percent / 100, 2);
-            $resellerShare = round($totalPrice - $adminShare, 2);
+            // Direct (admin-created) subscribers have no reseller: no commission split at all.
+            $resellerShare = $reseller ? round($totalPrice - $adminShare, 2) : 0.0;
 
             if ($adminShare > 0 && $reseller && $reseller->parent_id) {
                 $admin = User::find($reseller->parent_id);
