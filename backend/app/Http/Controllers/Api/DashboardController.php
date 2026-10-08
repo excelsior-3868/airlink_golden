@@ -9,6 +9,7 @@ use App\Models\PppoeCustomer;
 use App\Models\User;
 use App\Models\Voucher;
 use App\Models\WalletTransaction;
+use App\Services\PppoeDashboardMetrics;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -45,6 +46,7 @@ class DashboardController extends Controller
             'wallet_distributed' => (float) WalletTransaction::where('type', 'load')->sum('amount'),
             'gb_distributed' => (float) DB::table('gb_transactions')->where('type', 'allocate')->where('from_user_id', $admin->id)->sum('gb_amount'),
             'pppoe' => $this->pppoeBreakdown(PppoeCustomer::query()),
+            'pppoe_metrics' => app(PppoeDashboardMetrics::class)->for($admin),
             'vouchers' => $this->voucherBreakdown(Voucher::query()),
             'gb_vouchers' => $this->voucherBreakdown(Voucher::whereHas('plan', fn($q) => $q->where('package_type', 'gb'))),
             'wallet_vouchers' => $this->voucherBreakdown(Voucher::whereHas('plan', fn($q) => $q->where('package_type', 'wallet'))),
@@ -235,6 +237,7 @@ class DashboardController extends Controller
             'pppoe' => $this->pppoeBreakdown(
                 PppoeCustomer::where(fn ($q) => $q->where('owner_id', $reseller->id)->orWhere('reseller_id', $reseller->id))
             ),
+            'pppoe_metrics' => app(PppoeDashboardMetrics::class)->for($reseller),
             'vouchers' => $this->voucherBreakdown(Voucher::where('reseller_id', $reseller->id)->whereNull('seller_id')),
             'gb_vouchers' => $this->voucherBreakdown(Voucher::where('reseller_id', $reseller->id)->whereNull('seller_id')->whereHas('plan', fn($q) => $q->where('package_type', 'gb'))),
             'wallet_vouchers' => $this->voucherBreakdown(Voucher::where('reseller_id', $reseller->id)->whereNull('seller_id')->whereHas('plan', fn($q) => $q->where('package_type', 'wallet'))),

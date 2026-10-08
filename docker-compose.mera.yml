@@ -170,6 +170,11 @@ services:
       # server. Fixed subnet so the `annapurna_docker` client stanza can
       # match Annapurna's containers by address.
       - tenant_link
+      # Shared with the Golden stack. Separate from tenant_link on purpose:
+      # `annapurna_docker` claims all of 172.31.0.0/16 for the annapurna
+      # virtual server, so Golden's containers need their own subnet
+      # (172.30.0.0/16, matched by `golden_docker`) to reach the right DB.
+      - golden_link
     healthcheck:
       test: ["CMD", "pgrep", "-x", "freeradius"]
       interval: 15s
@@ -213,6 +218,11 @@ networks:
   #
   tenant_link:
     name: airlink_tenant_link
+    external: true
+  # Golden tenant link. Create once, by hand:
+  #   docker network create airlink_golden_link --subnet 172.30.0.0/16
+  golden_link:
+    name: airlink_golden_link
     external: true
 
 volumes:

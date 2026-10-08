@@ -3,7 +3,7 @@ import { motion } from 'framer-motion'
 import {
   Users2, Plus, Zap, Pencil, Trash2, PauseCircle, PlayCircle, Unplug,
   Eye, Search, RotateCcw, Download, Router, Shield, Clock,
-  AlertTriangle, CheckCircle, Activity
+  AlertTriangle, CheckCircle, Activity, CheckCircle2, XCircle, Loader2
 } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useQuery, invalidateCache } from '../lib/cache'
@@ -14,6 +14,7 @@ import {
   Spinner, CustomSelect, Combobox, Pagination, SelectOption, ToastState
 } from '../components/ui'
 import PppoeRechargeModal from '../components/PppoeRechargeModal'
+import SubscriberDetailModal from '../components/SubscriberDetailModal'
 
 const PER_PAGE = 15
 
@@ -58,11 +59,11 @@ export default function PppoeCustomers() {
   const [rechargeModalOpen, setRechargeModalOpen] = useState(false)
   const [selectedForRecharge, setSelectedForRecharge] = useState<any>(null)
 
-  const [detailModalOpen, setDetailModalOpen] = useState(false)
-  const [selectedForDetail, setSelectedForDetail] = useState<any>(null)
-  const [detailTab, setDetailTab] = useState<'info' | 'sessions' | 'recharges'>('info')
-  const [detailSessions, setDetailSessions] = useState<any[]>([])
-  const [detailLoading, setDetailLoading] = useState(false)
+  // Real-time Username Duplication Check State
+  const [usernameChecking, setUsernameChecking] = useState(false)
+  const [usernameStatus, setUsernameStatus] = useState<{ available: boolean; message: string } | null>(null)
+
+  const [detailCustomerId, setDetailCustomerId] = useState<number | null>(null)
 
   const [confirmModal, setConfirmModal] = useState<{
     open: boolean
@@ -79,6 +80,38 @@ export default function PppoeCustomers() {
     const t = setTimeout(() => setToast(null), 4000)
     return () => clearTimeout(t)
   }, [toast])
+
+  // Real-time username duplication check with debounce
+  useEffect(() => {
+    if (!createModalOpen) {
+      setUsernameStatus(null)
+      setUsernameChecking(false)
+      return
+    }
+
+    const uname = (form.username || '').trim()
+    if (!uname || uname.length < 3) {
+      setUsernameStatus(null)
+      setUsernameChecking(false)
+      return
+    }
+
+    const timer = setTimeout(async () => {
+      setUsernameChecking(true)
+      try {
+        const res = await api.get('/pppoe/customers/check-username', { params: { username: uname } })
+        if (res.data?.data) {
+          setUsernameStatus(res.data.data)
+        }
+      } catch {
+        // Silently ignore transient network errors
+      } finally {
+        setUsernameChecking(false)
+      }
+    }, 350)
+
+    return () => clearTimeout(timer)
+  }, [form.username, createModalOpen])
 
   // Data fetching. /pppoe/customers is server-paginated AND server-filtered, so
   // the filters travel with the request rather than being applied to one page's
@@ -200,6 +233,8 @@ export default function PppoeCustomers() {
     })
     setModalTab('identity')
     setErr('')
+    setUsernameStatus(null)
+    setUsernameChecking(false)
     setCreateModalOpen(true)
   }
 
@@ -228,14 +263,47 @@ export default function PppoeCustomers() {
   // Handle Save Create
   const handleSaveCreate = async () => {
     setErr('')
-    if (!form.username.trim()) {
-      setErr('Username is required.')
+    const currentUsername = form.username.trim()
+    const currentPassword = form.password.trim()
+    const currentPhone = form.phone.trim()
+
+    if (!currentUsername) {
+      setErr('Username / Login ID is required.')
       return
     }
-    if (!form.password.trim()) {
-      setErr('Password is required.')
+
+    if (currentUsername.length < 3) {
+      setErr('Username must be at least 3 characters.')
       return
     }
+
+    if (!/^[A-Za-z0-9._@-]{3,64}$/.test(currentUsername)) {
+      setErr('Username can only contain letters, numbers, and . _ @ -')
+      return
+    }
+
+    if (usernameStatus && !usernameStatus.available) {
+      setErr(usernameStatus.message || 'This username is already taken.')
+      return
+    }
+
+    if (!currentPassword) {
+      setErr('PPPoE Password is required.')
+      return
+    }
+
+    if (!currentPhone) {
+      setErr('Mobile Number is required.')
+      return
+    }
+
+    const cleanPhone = currentPhone.replace(/[\s-]/g, '')
+    const nepaliMobileRegex = /^(?:\+?977[- ]?)?9[6-8]\d{8}$/
+    if (!nepaliMobileRegex.test(cleanPhone)) {
+      setErr('Please enter a valid 10-digit Mobile Number (e.g. 98XXXXXXXX, 97XXXXXXXX).')
+      return
+    }
+
     if (!form.plan_id) {
       setErr('Internet Plan is required.')
       return
@@ -244,8 +312,8 @@ export default function PppoeCustomers() {
     setBusy(true)
     try {
       const payload: any = {
-        username: form.username.trim(),
-        password: form.password.trim(),
+        username: currentUsername || undefined,
+        password: currentPassword || undefined,
         full_name: form.full_name.trim() || null,
         phone: form.phone.trim() || null,
         address: form.address.trim() || null,
@@ -283,6 +351,18 @@ export default function PppoeCustomers() {
       return
     }
 
+    if (!form.phone.trim()) {
+      setErr('Mobile Number is required.')
+      return
+    }
+
+    const cleanPhone = form.phone.trim().replace(/[\s-]/g, '')
+    const nepaliMobileRegex = /^(?:\+?977[- ]?)?9[6-8]\d{8}$/
+    if (!nepaliMobileRegex.test(cleanPhone)) {
+      setErr('Please enter a valid 10-digit Mobile Number (e.g. 98XXXXXXXX, 97XXXXXXXX).')
+      return
+    }
+
     setBusy(true)
     try {
       const payload: any = {
@@ -308,29 +388,7 @@ export default function PppoeCustomers() {
   }
 
   // Open Detail
-  const openDetail = async (c: any) => {
-    setSelectedForDetail(c)
-    setDetailTab('info')
-    setDetailSessions([])
-    setDetailModalOpen(true)
-    setDetailLoading(true)
-    try {
-      // The list row carries no recharge history — only show() eager-loads it —
-      // so fetch the full record, or the Recharge History tab always reads empty.
-      // The sessions endpoint is paginated, so its rows sit one level deeper.
-      const [full, res] = await Promise.all([
-        api.get(`/pppoe/customers/${c.id}`),
-        api.get(`/pppoe/customers/${c.id}/sessions`),
-      ])
-      if (full.data?.data) setSelectedForDetail(full.data.data)
-      const rows = res.data.data?.data
-      setDetailSessions(Array.isArray(rows) ? rows : [])
-    } catch (e) {
-      // ignore
-    } finally {
-      setDetailLoading(false)
-    }
-  }
+  const openDetail = (c: any) => setDetailCustomerId(c.id)
 
   // Handle Actions (Suspend / Resume / Disconnect / Delete)
   const handleConfirmAction = async () => {
@@ -554,7 +612,7 @@ export default function PppoeCustomers() {
                     {paginatedCustomers.map((c) => {
                       const isExpired = c.expires_at && new Date(c.expires_at) < new Date()
                       return (
-                        <tr key={c.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition">
+                        <tr key={c.id} onClick={() => openDetail(c)} title="Click to view subscriber details" className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition cursor-pointer">
                           <td className="py-3 px-4">
                             <div className="font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
                               <span>{c.username}</span>
@@ -598,7 +656,20 @@ export default function PppoeCustomers() {
                           <td className="py-3 px-4">
                             <div className="space-y-0.5">
                               {c.current_ip && (
-                                <div className="font-mono text-slate-700 dark:text-slate-300">{c.current_ip}</div>
+                                /^\d{1,3}(\.\d{1,3}){3}$/.test(c.current_ip) ? (
+                                  <a
+                                    href={`http://${c.current_ip}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={(e) => e.stopPropagation()}
+                                    title={`Open http://${c.current_ip} in a new tab`}
+                                    className="font-mono text-indigo-600 dark:text-indigo-400 hover:underline underline-offset-2"
+                                  >
+                                    {c.current_ip}
+                                  </a>
+                                ) : (
+                                  <div className="font-mono text-slate-700 dark:text-slate-300">{c.current_ip}</div>
+                                )
                               )}
                               {c.mac_bind ? (
                                 <div className="text-[10px] bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 px-1.5 py-0.5 rounded font-medium border border-amber-200/50 truncate max-w-[130px]">
@@ -614,7 +685,7 @@ export default function PppoeCustomers() {
                               {c.status}
                             </Pill>
                           </td>
-                          <td className="py-3 px-4 text-right">
+                          <td className="py-3 px-4 text-right" onClick={(e) => e.stopPropagation()}>
                             <div className="flex items-center justify-end gap-1.5">
                               {/* Recharge Button — only rendered when subscriber is expired */}
                               {can('recharge_pppoe_customer') && (c.status === 'expired' || (c.expires_at && new Date(c.expires_at) < new Date())) && (
@@ -754,13 +825,49 @@ export default function PppoeCustomers() {
                   <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
                     Username / Login ID <span className="text-rose-500">*</span>
                   </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. john_doe"
-                    value={form.username}
-                    onChange={(e) => setForm({ ...form, username: e.target.value })}
-                    className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
-                  />
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="e.g. user_pokhara_01"
+                      value={form.username}
+                      onChange={(e) => setForm({ ...form, username: e.target.value })}
+                      className={`w-full pl-3 pr-9 py-2 text-sm bg-white dark:bg-slate-800 border rounded-xl outline-none font-mono transition ${
+                        usernameStatus
+                          ? usernameStatus.available
+                            ? 'border-emerald-500/80 focus:ring-2 focus:ring-emerald-500/20'
+                            : 'border-rose-500/80 focus:ring-2 focus:ring-rose-500/20'
+                          : 'border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500'
+                      }`}
+                    />
+                    <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center pointer-events-none">
+                      {usernameChecking && <Loader2 className="w-4 h-4 text-indigo-500 animate-spin" />}
+                      {!usernameChecking && usernameStatus && usernameStatus.available && (
+                        <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                      )}
+                      {!usernameChecking && usernameStatus && !usernameStatus.available && (
+                        <XCircle className="w-4 h-4 text-rose-500" />
+                      )}
+                    </div>
+                  </div>
+                  {usernameChecking && (
+                    <p className="text-[11px] text-indigo-500 mt-1 flex items-center gap-1">
+                      Checking availability...
+                    </p>
+                  )}
+                  {!usernameChecking && usernameStatus && (
+                    <p
+                      className={`text-[11px] mt-1 flex items-center gap-1 font-medium ${
+                        usernameStatus.available ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500'
+                      }`}
+                    >
+                      {usernameStatus.message}
+                    </p>
+                  )}
+                  {!usernameChecking && !usernameStatus && (
+                    <p className="text-[11px] text-slate-400 mt-1">
+                      Letters, numbers, and . _ @ - (at least 3 characters)
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -769,7 +876,7 @@ export default function PppoeCustomers() {
                   </label>
                   <input
                     type="text"
-                    placeholder="e.g. secret123"
+                    placeholder="Enter PPPoE password"
                     value={form.password}
                     onChange={(e) => setForm({ ...form, password: e.target.value })}
                     className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none font-mono"
@@ -793,15 +900,30 @@ export default function PppoeCustomers() {
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
-                    Phone Number
+                    Mobile Number <span className="text-rose-500">*</span>
                   </label>
                   <input
-                    type="text"
+                    type="tel"
                     placeholder="e.g. 98XXXXXXXX"
                     value={form.phone}
-                    onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                    className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
+                    onChange={(e) => setForm({ ...form, phone: e.target.value.replace(/\D/g, '').slice(0, 13) })}
+                    inputMode="numeric"
+                    maxLength={13}
+                    className={`w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border rounded-xl outline-none transition ${
+                      form.phone && !/^(?:\+?977[- ]?)?9[6-8]\d{8}$/.test(form.phone.trim().replace(/[\s-]/g, ''))
+                        ? 'border-amber-400 focus:ring-2 focus:ring-amber-400/20'
+                        : 'border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500'
+                    }`}
                   />
+                  {form.phone && !/^(?:\+?977[- ]?)?9[6-8]\d{8}$/.test(form.phone.trim().replace(/[\s-]/g, '')) ? (
+                    <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1">
+                      Please enter a valid 10-digit mobile number (e.g. 98XXXXXXXX, 97XXXXXXXX).
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-slate-400 mt-1">
+                      Valid 10-digit mobile number starting with 98, 97, or 96
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -1061,14 +1183,30 @@ export default function PppoeCustomers() {
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
-                    Phone Number
+                    Mobile Number <span className="text-rose-500">*</span>
                   </label>
                   <input
-                    type="text"
+                    type="tel"
+                    placeholder="e.g. 98XXXXXXXX"
                     value={form.phone}
-                    onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                    className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
+                    onChange={(e) => setForm({ ...form, phone: e.target.value.replace(/\D/g, '').slice(0, 13) })}
+                    inputMode="numeric"
+                    maxLength={13}
+                    className={`w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border rounded-xl outline-none transition ${
+                      form.phone && !/^(?:\+?977[- ]?)?9[6-8]\d{8}$/.test(form.phone.trim().replace(/[\s-]/g, ''))
+                        ? 'border-amber-400 focus:ring-2 focus:ring-amber-400/20'
+                        : 'border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500'
+                    }`}
                   />
+                  {form.phone && !/^(?:\+?977[- ]?)?9[6-8]\d{8}$/.test(form.phone.trim().replace(/[\s-]/g, '')) ? (
+                    <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1">
+                      Please enter a valid 10-digit mobile number (e.g. 98XXXXXXXX, 97XXXXXXXX).
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-slate-400 mt-1">
+                      Valid 10-digit mobile number starting with 98, 97, or 96
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -1210,184 +1348,8 @@ export default function PppoeCustomers() {
         onSuccess={loadAll}
       />
 
-      {/* Subscriber Detail Drawer / Modal */}
-      <Modal
-        open={detailModalOpen}
-        onClose={() => setDetailModalOpen(false)}
-        title={`Subscriber Details: ${selectedForDetail?.username}`}
-        widthClassName="max-w-2xl"
-      >
-        {selectedForDetail && (
-          <div className="space-y-4">
-            <div className="flex items-center border-b border-slate-200 dark:border-slate-800">
-              <button
-                type="button"
-                onClick={() => setDetailTab('info')}
-                className={`px-4 py-2 text-xs font-semibold border-b-2 transition ${detailTab === 'info' ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500'}`}
-              >
-                Profile & Service
-              </button>
-              <button
-                type="button"
-                onClick={() => setDetailTab('sessions')}
-                className={`px-4 py-2 text-xs font-semibold border-b-2 transition ${detailTab === 'sessions' ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500'}`}
-              >
-                Session History ({detailSessions.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setDetailTab('recharges')}
-                className={`px-4 py-2 text-xs font-semibold border-b-2 transition ${detailTab === 'recharges' ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500'}`}
-              >
-                Recharge History ({selectedForDetail?.recharges?.length || 0})
-              </button>
-            </div>
-
-            {detailTab === 'info' && (
-              <div className="space-y-4 text-xs">
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-4 bg-slate-50/80 dark:bg-slate-800/40 rounded-2xl border border-slate-200/60 dark:border-slate-700/60">
-                  <div>
-                    <div className="text-slate-400 font-medium">Username</div>
-                    <div className="font-semibold text-slate-800 dark:text-slate-100 mt-0.5">{selectedForDetail.username}</div>
-                  </div>
-                  <div>
-                    <div className="text-slate-400 font-medium">Cleartext Password</div>
-                    <div className="font-mono font-semibold text-indigo-600 dark:text-indigo-400 mt-0.5">{selectedForDetail.password || '—'}</div>
-                  </div>
-                  <div>
-                    <div className="text-slate-400 font-medium">Status</div>
-                    <div className="mt-0.5">
-                      <Pill tone={(statusPill[selectedForDetail.status] as any) || 'info'} className="capitalize">
-                        {selectedForDetail.status}
-                      </Pill>
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-slate-400 font-medium">Full Name</div>
-                    <div className="font-medium text-slate-800 dark:text-slate-200 mt-0.5">{selectedForDetail.full_name || '—'}</div>
-                  </div>
-                  <div>
-                    <div className="text-slate-400 font-medium">Phone</div>
-                    <div className="font-mono text-slate-800 dark:text-slate-200 mt-0.5">{selectedForDetail.phone || '—'}</div>
-                  </div>
-                  <div>
-                    <div className="text-slate-400 font-medium">Address</div>
-                    <div className="text-slate-800 dark:text-slate-200 mt-0.5 truncate">{selectedForDetail.address || '—'}</div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-4 bg-slate-50/80 dark:bg-slate-800/40 rounded-2xl border border-slate-200/60 dark:border-slate-700/60">
-                  <div>
-                    <div className="text-slate-400 font-medium">Plan Name</div>
-                    <div className="font-semibold text-slate-800 dark:text-slate-100 mt-0.5">{selectedForDetail.plan?.name || '—'}</div>
-                  </div>
-                  <div>
-                    <div className="text-slate-400 font-medium">Bandwidth Speed</div>
-                    <div className="font-medium text-slate-800 dark:text-slate-200 mt-0.5">{selectedForDetail.plan?.bandwidth || 'Unlimited'}</div>
-                  </div>
-                  <div>
-                    <div className="text-slate-400 font-medium">Contract Price</div>
-                    <div className="font-bold text-slate-900 dark:text-white mt-0.5">
-                      {rs(selectedForDetail.contract_price !== null && selectedForDetail.contract_price !== undefined ? selectedForDetail.contract_price : (selectedForDetail.plan?.selling_price || 0))}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-slate-400 font-medium">Subscription Expiry</div>
-                    <div className="font-medium text-slate-800 dark:text-slate-200 mt-0.5">
-                      {selectedForDetail.expires_at ? date(selectedForDetail.expires_at) : 'Not Activated'}
-                    </div>
-                    <div className="text-[10px] text-slate-400">{selectedForDetail.expires_at ? bsDate(selectedForDetail.expires_at) : '—'}</div>
-                  </div>
-                  <div>
-                    <div className="text-slate-400 font-medium">Static IP Address</div>
-                    <div className="font-mono text-slate-800 dark:text-slate-200 mt-0.5">{selectedForDetail.current_ip || 'Not connected'}</div>
-                  </div>
-                  <div>
-                    <div className="text-slate-400 font-medium">Locked MAC Address</div>
-                    <div className="font-mono text-slate-800 dark:text-slate-200 mt-0.5">{selectedForDetail.mac_address || (selectedForDetail.mac_bind ? 'Pending Login' : 'Disabled')}</div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {detailTab === 'sessions' && (
-              <div className="space-y-3">
-                {detailLoading ? (
-                  <Spinner />
-                ) : detailSessions.length === 0 ? (
-                  <div className="py-10 text-center text-xs text-slate-400">
-                    No RADIUS accounting sessions recorded for this subscriber yet.
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto max-h-80">
-                    <table className="w-full text-left text-xs border-collapse">
-                      <thead>
-                        <tr className="border-b border-slate-200/80 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-800/50 text-slate-500 font-semibold">
-                          <th className="py-2.5 px-3">Session IP</th>
-                          <th className="py-2.5 px-3">Caller MAC</th>
-                          <th className="py-2.5 px-3">Start Time</th>
-                          <th className="py-2.5 px-3">Stop Time</th>
-                          <th className="py-2.5 px-3">Terminate Cause</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                        {detailSessions.map((s, idx) => (
-                          <tr key={s.radacctid || idx} className="hover:bg-slate-50/50">
-                            <td className="py-2 px-3 font-mono">{s.framedipaddress || '—'}</td>
-                            <td className="py-2 px-3 font-mono">{s.callingstationid || '—'}</td>
-                            <td className="py-2 px-3">{datet(s.acctstarttime)}</td>
-                            <td className="py-2 px-3">{s.acctstoptime ? datet(s.acctstoptime) : <span className="text-emerald-500 font-bold">Active Live</span>}</td>
-                            <td className="py-2 px-3">{s.acctterminatecause || '—'}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {detailTab === 'recharges' && (
-              <div className="space-y-3">
-                {(!selectedForDetail.recharges || selectedForDetail.recharges.length === 0) ? (
-                  <div className="py-10 text-center text-xs text-slate-400">
-                    No recharge history records found.
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto max-h-80">
-                    <table className="w-full text-left text-xs border-collapse">
-                      <thead>
-                        <tr className="border-b border-slate-200/80 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-800/50 text-slate-500 font-semibold">
-                          <th className="py-2.5 px-3">Reference</th>
-                          <th className="py-2.5 px-3">Plan</th>
-                          <th className="py-2.5 px-3">Price Paid</th>
-                          <th className="py-2.5 px-3">Validity Days</th>
-                          <th className="py-2.5 px-3">Period Range</th>
-                          <th className="py-2.5 px-3">Date</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                        {selectedForDetail.recharges.map((r: any) => (
-                          <tr key={r.id} className="hover:bg-slate-50/50">
-                            <td className="py-2 px-3 font-mono font-medium">{r.reference}</td>
-                            <td className="py-2 px-3">{r.plan?.name || '—'}</td>
-                            <td className="py-2 px-3 font-bold">{rs(r.price)}</td>
-                            <td className="py-2 px-3">{r.validity_days} Days</td>
-                            <td className="py-2 px-3 text-[11px] text-slate-500">
-                              {date(r.period_start)} → {date(r.period_end)}
-                            </td>
-                            <td className="py-2 px-3">{datet(r.created_at)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-      </Modal>
+      {/* Subscriber details (profile, sessions, recharges) */}
+      <SubscriberDetailModal customerId={detailCustomerId} onClose={() => setDetailCustomerId(null)} />
 
       {/* Confirmation Modals for Actions */}
       <ConfirmModal

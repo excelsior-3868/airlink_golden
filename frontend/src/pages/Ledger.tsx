@@ -12,6 +12,7 @@ import { api, apiError } from '../lib/api'
 import { useQuery, invalidateCache } from '../lib/cache'
 import { useAuth } from '../lib/auth'
 import { rs, gb, datet, date } from '../lib/format'
+import { useBranding } from '../lib/branding'
 import { GlassCard, PageTitle, Pill, Pagination, EmptyState, Spinner, Modal, Combobox, SelectOption, ConfirmModal, CustomSelect, renderPaymentMethodIcon } from '../components/ui'
 import { DualDatePicker } from '../components/DualDatePicker'
 import RadiusLogs from './RadiusLogs'
@@ -43,10 +44,12 @@ export default function Ledger() {
   const [confirmDeleteExpenseId, setConfirmDeleteExpenseId] = useState<number | null>(null)
   const { user } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
+  // PPPoE-only: Sales and Commission are GB/voucher accounting, so they are not offered.
+  const pppoeOnly = useBranding().branding.pppoe_only
 
   // Active Tab from URL query or default to 'sales'
   const currentTabParam = (searchParams.get('tab') as LedgerTab) || 'sales'
-  const [activeTab, setActiveTab] = useState<LedgerTab>(
+  const [activeTabState, setActiveTab] = useState<LedgerTab>(
     ['sales', 'expenses', 'commission', 'transactions'].includes(currentTabParam) ? currentTabParam : 'sales'
   )
 
@@ -56,6 +59,11 @@ export default function Ledger() {
       setActiveTab(tabParam)
     }
   }, [searchParams])
+
+  const activeTab: LedgerTab =
+    pppoeOnly && (activeTabState === 'sales' || activeTabState === 'commission')
+      ? (user?.role === 'admin' || user?.role === 'reseller' ? 'expenses' : 'transactions')
+      : activeTabState
 
   const handleTabChange = (tab: LedgerTab) => {
     setActiveTab(tab)
@@ -82,6 +90,7 @@ export default function Ledger() {
       />
 
       <div className="inline-flex items-center gap-1.5 p-1.5 bg-slate-100/90 border border-slate-200/70 rounded-2xl shadow-inner select-none overflow-x-auto max-w-full mb-2">
+        {!pppoeOnly && (
         <button
           type="button"
           onClick={() => handleTabChange('sales')}
@@ -94,6 +103,7 @@ export default function Ledger() {
           <BookOpen size={16} className={activeTab === 'sales' ? 'text-blue-600' : 'text-slate-400'} />
           <span>Sales & Revenue Ledger</span>
         </button>
+        )}
 
         {(user?.role === 'admin' || user?.role === 'reseller') && (
           <button
@@ -110,7 +120,7 @@ export default function Ledger() {
           </button>
         )}
 
-        {(user?.role === 'admin' || user?.role === 'reseller') && (
+        {!pppoeOnly && (user?.role === 'admin' || user?.role === 'reseller') && (
           <button
             type="button"
             onClick={() => handleTabChange('commission')}
@@ -1028,6 +1038,7 @@ const FILTERS: { key: SourceFilter; label: string; icon: any }[] = [
 
 function TransactionsAuditView() {
   const { user } = useAuth()
+  const pppoeOnly = useBranding().branding.pppoe_only
   const [page, setPage] = useState(1)
   const [source, setSource] = useState<SourceFilter>('')
 
@@ -1040,7 +1051,7 @@ function TransactionsAuditView() {
     <div className="space-y-4">
       {/* Source Filter Pills */}
       <div className="flex flex-wrap gap-2">
-        {FILTERS.map((f) => {
+        {FILTERS.filter((f) => !(pppoeOnly && f.key === 'gb')).map((f) => {
           const active = source === f.key
           return (
             <button
@@ -1081,7 +1092,7 @@ function TransactionsAuditView() {
                 </tr>
               </thead>
               <tbody>
-                {(data?.data || []).map((t: any, idx: number) => (
+                {(data?.data || []).filter((t: any) => !(pppoeOnly && t.source === 'gb')).map((t: any, idx: number) => (
                   <motion.tr
                     key={`${t.source}-${t.source_id}-${idx}`}
                     initial={{ opacity: 0, x: -10 }}

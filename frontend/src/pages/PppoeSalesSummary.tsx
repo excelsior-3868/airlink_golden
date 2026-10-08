@@ -342,10 +342,10 @@ export default function PppoeSalesSummary() {
             <div className="bg-white rounded-3xl p-5 border border-slate-100 shadow-sm flex items-start justify-between">
               <div>
                 <p className="text-slate-500 text-xs font-semibold">New Subscribers</p>
-                <p className="text-xl font-extrabold text-purple-600 mt-1">{rs(summary?.new_subscribers?.revenue || 0)}</p>
+                <p className="text-xl font-extrabold text-amber-600 mt-1">{rs(summary?.new_subscribers?.revenue || 0)}</p>
                 <p className="text-[11px] text-slate-400 font-medium mt-1">New Registrations: {num(summary?.new_subscribers?.count || 0)}</p>
               </div>
-              <div className="w-9 h-9 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
+              <div className="w-9 h-9 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
                 <Users2 size={18} />
               </div>
             </div>
@@ -353,10 +353,10 @@ export default function PppoeSalesSummary() {
             <div className="bg-white rounded-3xl p-5 border border-slate-100 shadow-sm flex items-start justify-between">
               <div>
                 <p className="text-slate-500 text-xs font-semibold">Recharges</p>
-                <p className="text-xl font-extrabold text-indigo-600 mt-1">{rs(summary?.recharges?.revenue || 0)}</p>
+                <p className="text-xl font-extrabold text-blue-600 mt-1">{rs(summary?.recharges?.revenue || 0)}</p>
                 <p className="text-[11px] text-slate-400 font-medium mt-1">Recharges: {num(summary?.recharges?.count || 0)}</p>
               </div>
-              <div className="w-9 h-9 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+              <div className="w-9 h-9 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
                 <RefreshCw size={18} />
               </div>
             </div>
@@ -370,7 +370,7 @@ export default function PppoeSalesSummary() {
                   <BarChart3 size={18} />
                 </div>
                 <div>
-                  <h3 className="font-extrabold text-slate-800 text-base leading-snug">PPPoE Create & Recharge Graph</h3>
+                  <h3 className="font-extrabold text-primary text-base leading-snug">PPPoE Create & Recharge Graph</h3>
                   <p className="text-xs text-slate-400">Performance metrics and trends for PPPoE subscriber creations and recharges</p>
                 </div>
               </div>
@@ -439,12 +439,12 @@ export default function PppoeSalesSummary() {
                       <AreaChart data={dailyTrend} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                         <defs>
                           <linearGradient id="gradNewSub" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.4} />
-                            <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0.0} />
+                            <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.4} />
+                            <stop offset="95%" stopColor="#f59e0b" stopOpacity={0.0} />
                           </linearGradient>
                           <linearGradient id="gradRecharge" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4} />
-                            <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.0} />
+                            <stop offset="5%" stopColor="#2563eb" stopOpacity={0.4} />
+                            <stop offset="95%" stopColor="#2563eb" stopOpacity={0.0} />
                           </linearGradient>
                         </defs>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
@@ -452,8 +452,8 @@ export default function PppoeSalesSummary() {
                         <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#94a3b8' }} tickFormatter={(val) => `NPR ${val}`} />
                         <Tooltip content={<CustomChartTooltip isRevenue={true} />} />
                         <Legend wrapperStyle={{ paddingTop: 10, fontSize: 12, fontWeight: 700 }} />
-                        <Area type="monotone" dataKey="new_subscribers_revenue" name="New Subscribers Revenue" stroke="#8b5cf6" strokeWidth={2.5} fill="url(#gradNewSub)" />
-                        <Area type="monotone" dataKey="recharges_revenue" name="Recharges Revenue" stroke="#3b82f6" strokeWidth={2.5} fill="url(#gradRecharge)" />
+                        <Area type="monotone" dataKey="new_subscribers_revenue" name="New Subscribers Revenue" stroke="#f59e0b" strokeWidth={2.5} fill="url(#gradNewSub)" />
+                        <Area type="monotone" dataKey="recharges_revenue" name="Recharges Revenue" stroke="#2563eb" strokeWidth={2.5} fill="url(#gradRecharge)" />
                       </AreaChart>
                     ) : (
                       <BarChart data={dailyTrend} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
@@ -462,8 +462,8 @@ export default function PppoeSalesSummary() {
                         <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#94a3b8' }} allowDecimals={false} />
                         <Tooltip content={<CustomChartTooltip isRevenue={false} />} />
                         <Legend wrapperStyle={{ paddingTop: 10, fontSize: 12, fontWeight: 700 }} />
-                        <Bar dataKey="new_subscribers_count" name="New Subscribers" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
-                        <Bar dataKey="recharges_count" name="Recharges" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="new_subscribers_count" name="New Subscribers" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="recharges_count" name="Recharges" fill="#2563eb" radius={[4, 4, 0, 0]} />
                       </BarChart>
                     )
                   ) : (
@@ -480,13 +480,13 @@ export default function PppoeSalesSummary() {
                       <Legend wrapperStyle={{ paddingTop: 10, fontSize: 12, fontWeight: 700 }} />
                       {chartMetric === 'revenue' ? (
                         <>
-                          <Bar dataKey="created_revenue" name="Creation Revenue" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
-                          <Bar dataKey="recharged_revenue" name="Recharge Revenue" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                          <Bar dataKey="created_revenue" name="Creation Revenue" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                          <Bar dataKey="recharged_revenue" name="Recharge Revenue" fill="#2563eb" radius={[4, 4, 0, 0]} />
                         </>
                       ) : (
                         <>
-                          <Bar dataKey="created_count" name="Subscribers Created" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
-                          <Bar dataKey="recharged_count" name="Recharges Handled" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                          <Bar dataKey="created_count" name="Subscribers Created" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                          <Bar dataKey="recharged_count" name="Recharges Handled" fill="#2563eb" radius={[4, 4, 0, 0]} />
                         </>
                       )}
                     </BarChart>
@@ -509,7 +509,7 @@ export default function PppoeSalesSummary() {
                   <Users2 size={20} />
                 </div>
                 <div>
-                  <h3 className="font-extrabold text-slate-800 text-base leading-snug">PPPoE Subscriber Summary</h3>
+                  <h3 className="font-extrabold text-primary text-base leading-snug">PPPoE Subscriber Summary</h3>
                   <p className="text-xs text-slate-400">New subscriber registrations and active renewals during the selected date range</p>
                 </div>
               </div>

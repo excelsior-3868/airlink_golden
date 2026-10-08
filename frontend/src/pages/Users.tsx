@@ -6,6 +6,7 @@ import { api, apiError } from '../lib/api'
 import { useQuery, invalidateCache } from '../lib/cache'
 import { useAuth } from '../lib/auth'
 import { rs, gb, date, datet } from '../lib/format'
+import { useBranding } from '../lib/branding'
 import { GlassCard, PageTitle, Modal, Pill, Pagination, EmptyState, Spinner, CustomSelect, SelectOption, renderPaymentMethodIcon } from '../components/ui'
 
 // Live-typing display formatter for a numeric amount input: inserts Indian-style
@@ -60,6 +61,8 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
     }
   }, [location.search])
 
+  // PPPoE-only: the GB / commission / voucher billing model does not apply.
+  const pppoeOnly = useBranding().branding.pppoe_only
   const [form, setForm] = useState<any>({ name: '', username: '', email: '', phone: '', password: '', confirm_password: '', gb_rate: '', commission_percent: '' })
   const [showPw, setShowPw] = useState(false)
   const [showConfirmPw, setShowConfirmPw] = useState(false)
@@ -320,7 +323,7 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
       setErr('Passwords do not match.')
       return
     }
-    if (role === 'reseller' && user?.role === 'admin' && (!form.commission_percent || String(form.commission_percent).trim() === '')) {
+    if (!pppoeOnly && role === 'reseller' && user?.role === 'admin' && (!form.commission_percent || String(form.commission_percent).trim() === '')) {
       setErr('Commission % is required for resellers.')
       return
     }
@@ -433,16 +436,18 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
               <span className="p-1 rounded-md bg-sky-50 text-sky-600 inline-flex"><Edit3 size={12} /></span>
               <span>Edit {label}</span>
             </span>
-            {can('wallet_load') && (
+            {!pppoeOnly && can('wallet_load') && (
               <span className="flex items-center gap-1.5">
                 <span className="p-1 rounded-md bg-emerald-50 text-emerald-600 inline-flex"><CreditCard size={12} /></span>
                 <span>Collect Payment</span>
               </span>
             )}
-            <span className="flex items-center gap-1.5">
-              <span className="p-1 rounded-md bg-slate-100 text-primary inline-flex"><Wallet size={12} /></span>
-              <span>{user?.role === 'admin' && role !== 'seller' ? 'Load Wallet/GB' : 'Allocate GB'}</span>
-            </span>
+            {!(pppoeOnly && user?.role !== 'admin') && (
+              <span className="flex items-center gap-1.5">
+                <span className="p-1 rounded-md bg-slate-100 text-primary inline-flex"><Wallet size={12} /></span>
+                <span>{user?.role === 'admin' && role !== 'seller' ? (pppoeOnly ? 'Load Wallet' : 'Load Wallet/GB') : 'Allocate GB'}</span>
+              </span>
+            )}
             <span className="flex items-center gap-1.5">
               <span className="p-1 rounded-md bg-rose-50 text-rose-500 inline-flex"><UserMinus size={12} /></span>
               <span>Enable/Disable</span>
@@ -553,13 +558,18 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
                 <th>Username</th>
                 {role === 'seller' && user?.role === 'admin' && <th>Parent Reseller</th>}
                 {role === 'reseller' && <th>Wallet Balance</th>}
-                <th>GB Balance</th>
-                <th>GB Rate</th>
-                {role === 'reseller' && <th>Commission %</th>}
-                <th>GB Allocation Due</th>
-                {role === 'reseller' && <th>Commission Due</th>}
-                <th>Vouchers Generated</th>
-                {role === 'reseller' && <th>Sellers</th>}
+                {pppoeOnly && role === 'reseller' && <th>Commission %</th>}
+                {!pppoeOnly && (
+                  <>
+                    <th>GB Balance</th>
+                    <th>GB Rate</th>
+                    {role === 'reseller' && <th>Commission %</th>}
+                    <th>GB Allocation Due</th>
+                    {role === 'reseller' && <th>Commission Due</th>}
+                    <th>Vouchers Generated</th>
+                  </>
+                )}
+                {role === 'reseller' && !pppoeOnly && <th>Sellers</th>}
                 <th>Status</th>
                 <th></th>
               </tr>
@@ -590,13 +600,18 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
                         </td>
                       )}
                       {role === 'reseller' && <td className="font-semibold text-emerald-700">{rs(u.wallet_balance)}</td>}
-                      <td>{gb(u.gb_balance)}</td>
-                      <td>{rs(u.gb_rate)}/GB</td>
-                      {role === 'reseller' && <td>{u.commission_percent ?? 0}%</td>}
-                      <td className="text-amber-700 font-semibold">{rs(u.wallet_due)}</td>
-                      {role === 'reseller' && <td className="text-rose-600 font-semibold">{rs(u.commission_due)}</td>}
-                      <td className="font-semibold text-slate-700">{u.vouchers_count ?? 0}</td>
-                      {role === 'reseller' && <td>{u.children_count ?? 0}</td>}
+                      {pppoeOnly && role === 'reseller' && <td>{u.commission_percent ?? 0}%</td>}
+                      {!pppoeOnly && (
+                        <>
+                          <td>{gb(u.gb_balance)}</td>
+                          <td>{rs(u.gb_rate)}/GB</td>
+                          {role === 'reseller' && <td>{u.commission_percent ?? 0}%</td>}
+                          <td className="text-amber-700 font-semibold">{rs(u.wallet_due)}</td>
+                          {role === 'reseller' && <td className="text-rose-600 font-semibold">{rs(u.commission_due)}</td>}
+                          <td className="font-semibold text-slate-700">{u.vouchers_count ?? 0}</td>
+                        </>
+                      )}
+                      {role === 'reseller' && !pppoeOnly && <td>{u.children_count ?? 0}</td>}
                       <td><Pill tone={u.status === 'active' ? 'success' : 'danger'}>{u.status === 'active' ? 'Active' : 'Disabled'}</Pill></td>
                       <td className="text-right pr-6 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                         {!(role === 'seller' && user?.role === 'admin') && (
@@ -604,14 +619,14 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
                             <button className="text-sky-600 hover:text-sky-800 p-1.5 rounded-lg hover:bg-sky-50 transition-all inline-flex items-center justify-center mr-1" title={`Edit ${label}`} onClick={() => openEditUser(u)}>
                               <Edit3 size={14} />
                             </button>
-                            {(+u.wallet_due > 0 || +u.commission_due > 0) && can('wallet_load') && (
+                            {!pppoeOnly && (+u.wallet_due > 0 || +u.commission_due > 0) && can('wallet_load') && (
                               <button className="text-emerald-600 hover:text-emerald-800 p-1.5 rounded-lg hover:bg-emerald-50 transition-all inline-flex items-center justify-center mr-1" title="Payment" onClick={() => { setCollectUser(u); setCollectType(+u.commission_due > 0 && !(+u.wallet_due > 0) ? 'commission' : 'gb'); setErr(''); setCollectAmount(''); setCollectNote(''); setCollectMethod('CASH'); }}>
                                 <CreditCard size={14} />
                               </button>
                             )}
                             {/* An admin funds resellers only — a seller's GB comes
                                 from their own reseller. */}
-                            {!(user?.role === 'admin' && role === 'seller') && (
+                            {!(user?.role === 'admin' && role === 'seller') && !(pppoeOnly && user?.role !== 'admin') && (
                               <button className="text-primary hover:text-indigo-800 p-1.5 rounded-lg hover:bg-slate-100/80 transition-all inline-flex items-center justify-center mr-1" title={user?.role === 'admin' && role !== 'seller' ? 'Load Wallet/GB' : 'Allocate GB'} onClick={() => { setFundUser(u); setErr(''); setFund({ amount: '', gb_amount: '', gb_paid: '' }); }}>
                                 <Wallet size={14} />
                               </button>
@@ -628,7 +643,7 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
                     </motion.tr>
                     {isExpanded && (
                       <tr className="bg-slate-50/40">
-                        <td colSpan={role === 'reseller' ? 12 : (user?.role === 'admin' ? 10 : 9)} className="py-4 px-6 border-b border-slate-200/60">
+                        <td colSpan={pppoeOnly ? 8 : role === 'reseller' ? 12 : (user?.role === 'admin' ? 10 : 9)} className="py-4 px-6 border-b border-slate-200/60">
                           <div className="mb-3 flex items-center justify-between">
                             <div className="flex items-center gap-3">
                               <div className="w-10 h-10 rounded-full bg-purple-100 text-purple-700 flex items-center justify-center font-bold text-lg shadow-sm border border-purple-200/50 shrink-0">
@@ -637,7 +652,7 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
                               <div>
                                 <h4 className="font-bold text-slate-800 text-sm">{u.name}</h4>
                                 <p className="text-xs text-slate-500 font-medium mt-0.5">
-                                  {u.phone || 'No phone'} · {u.username} · Rate: Rs {u.gb_rate}/GB
+                                  {u.phone || 'No phone'} · {u.username}{!pppoeOnly && ` · Rate: Rs ${u.gb_rate}/GB`}
                                 </p>
                               </div>
                             </div>
@@ -788,7 +803,7 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
               )}
             </div>
 
-            {user?.role === 'admin' && (
+            {!pppoeOnly && user?.role === 'admin' && (
               <div className="md:col-span-2">
                 <label className="text-xs font-bold text-slate-500 block mb-1.5">GB Rate (Rs. Per GB)</label>
                 <input
@@ -804,7 +819,9 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
 
             {user?.role === 'admin' && role === 'reseller' && (
               <div className="md:col-span-2">
-                <label className="text-xs font-bold text-slate-500 block mb-1.5">Commission % (Admin's cut of each voucher sale)</label>
+                <label className="text-xs font-bold text-slate-500 block mb-1.5">
+                  {pppoeOnly ? "Commission % (Admin's cut of each PPPoE recharge, optional)" : "Commission % (Admin's cut of each voucher sale)"}
+                </label>
                 <input
                   className="input no-spinners"
                   type="text"
@@ -887,7 +904,7 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
         </div>
       </Modal>
 
-      <Modal open={!!fundUser} onClose={() => setFundUser(null)} title={user?.role === 'admin' && role !== 'seller' ? `Load Wallet/GB — ${fundUser?.name || ''}` : `Allocate GB — ${fundUser?.name || ''}`}>
+      <Modal open={!!fundUser} onClose={() => setFundUser(null)} title={user?.role === 'admin' && role !== 'seller' ? `${pppoeOnly ? 'Load Wallet' : 'Load Wallet/GB'} — ${fundUser?.name || ''}` : `Allocate GB — ${fundUser?.name || ''}`}>
         <div className="space-y-3">
           <div className="flex items-center justify-between pb-1 flex-wrap gap-2">
             <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Your Balance:</span>
@@ -898,10 +915,12 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
                   Wallet: {rs(user!.wallet_balance)}
                 </span>
               )}
-              <span className="px-3 py-1 rounded-full bg-purple-50 text-purple-700 border border-purple-100/80 text-xs font-bold shadow-sm flex items-center gap-1">
-                <Database size={12} />
-                GB Balance: {gb(user!.gb_balance)}
-              </span>
+              {!pppoeOnly && (
+                <span className="px-3 py-1 rounded-full bg-purple-50 text-purple-700 border border-purple-100/80 text-xs font-bold shadow-sm flex items-center gap-1">
+                  <Database size={12} />
+                  GB Balance: {gb(user!.gb_balance)}
+                </span>
+              )}
             </div>
           </div>
           {user?.role === 'admin' && role !== 'seller' && (
@@ -910,13 +929,15 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
               <input className="input pl-10 no-spinners" type="number" placeholder="Wallet amount (Rs)" value={fund.amount} onChange={(e) => setFund({ ...fund, amount: e.target.value })} />
             </div>
           )}
-          <div className="relative">
-            <Database size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input className="input pl-10 pr-28 no-spinners" type="number" placeholder="GB amount" value={fund.gb_amount} onChange={(e) => setFund({ ...fund, gb_amount: e.target.value })} />
-            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 pointer-events-none">
-              @ {rs(fundUser?.gb_rate || 0)}/GB
-            </span>
-          </div>
+          {!pppoeOnly && (
+            <div className="relative">
+              <Database size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input className="input pl-10 pr-28 no-spinners" type="number" placeholder="GB amount" value={fund.gb_amount} onChange={(e) => setFund({ ...fund, gb_amount: e.target.value })} />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 pointer-events-none">
+                @ {rs(fundUser?.gb_rate || 0)}/GB
+              </span>
+            </div>
+          )}
 
           {+fund.amount > 0 && +fund.amount > +(user?.wallet_balance || 0) && (
             <div className="text-xs font-medium text-rose-600 bg-rose-50 border border-rose-100 p-2.5 rounded-xl">
@@ -1056,7 +1077,7 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
               </div>
             )}
 
-            {user?.role === 'admin' && (
+            {!pppoeOnly && user?.role === 'admin' && (
               <div className="md:col-span-2">
                 <label className="text-xs font-bold text-slate-500 block mb-1.5">GB Rate (Rs. Per GB)</label>
                 <input
@@ -1072,7 +1093,9 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
 
             {user?.role === 'admin' && role === 'reseller' && (
               <div className="md:col-span-2">
-                <label className="text-xs font-bold text-slate-500 block mb-1.5">Commission % (Admin's cut of each voucher sale)</label>
+                <label className="text-xs font-bold text-slate-500 block mb-1.5">
+                  {pppoeOnly ? "Commission % (Admin's cut of each PPPoE recharge, optional)" : "Commission % (Admin's cut of each voucher sale)"}
+                </label>
                 <input
                   className="input no-spinners"
                   type="text"

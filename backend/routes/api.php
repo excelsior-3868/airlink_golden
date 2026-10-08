@@ -67,7 +67,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/users/{user}', [UserController::class, 'update']);
     Route::patch('/users/{user}/status', [UserController::class, 'setStatus'])->middleware('role:admin,reseller');
     Route::post('/resellers', [UserController::class, 'storeReseller'])->middleware('permission:create_reseller');
-    Route::post('/sellers', [UserController::class, 'storeSeller'])->middleware('permission:create_seller');
+    Route::post('/sellers', [UserController::class, 'storeSeller'])->middleware(['hotspot', 'permission:create_seller']);
 
     // Wallet — load/transfer admin+reseller; refund admin-only.
     Route::get('/wallet/transactions', [WalletController::class, 'transactions']);
@@ -75,8 +75,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/wallet/refund', [WalletController::class, 'refund'])->middleware('role:admin');
 
     // GB allocation — admin+reseller.
-    Route::get('/gb/transactions', [GbController::class, 'transactions']);
-    Route::post('/gb/allocate', [GbController::class, 'allocate'])->middleware('permission:allocate_gb');
+    Route::get('/gb/transactions', [GbController::class, 'transactions'])->middleware('hotspot');
+    Route::post('/gb/allocate', [GbController::class, 'allocate'])->middleware(['hotspot', 'permission:allocate_gb']);
 
     // Unified transaction feed (wallet + GB + invoices + payments), role-scoped.
     Route::get('/transactions', [TransactionController::class, 'index']);
@@ -84,8 +84,8 @@ Route::middleware('auth:sanctum')->group(function () {
     // Billing & Invoices
     Route::get('/billing/invoices', [BillingController::class, 'invoices']);
     Route::get('/billing/payments', [BillingController::class, 'payments']);
-    Route::post('/billing/payments/collect', [BillingController::class, 'collect'])->middleware('permission:wallet_load');
-    Route::post('/billing/commission/collect', [BillingController::class, 'collectCommission'])->middleware('permission:wallet_load');
+    Route::post('/billing/payments/collect', [BillingController::class, 'collect'])->middleware(['hotspot', 'permission:wallet_load']);
+    Route::post('/billing/commission/collect', [BillingController::class, 'collectCommission'])->middleware(['hotspot', 'permission:wallet_load']);
 
     // Accounts Module (Sales Ledger, Financial Dashboard, COA & Expenses)
     Route::get('/accounts/financial-dashboard', [AccountController::class, 'financialDashboard']);
@@ -98,8 +98,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/accounts/chart-of-accounts/{account}', [AccountController::class, 'chartOfAccountsDestroy']);
     });
 
-    Route::get('/accounts/sales-ledger', [AccountController::class, 'salesLedger']);
-    Route::get('/accounts/commission-report', [AccountController::class, 'commissionReport']);
+    Route::get('/accounts/sales-ledger', [AccountController::class, 'salesLedger'])->middleware('hotspot');
+    Route::get('/accounts/commission-report', [AccountController::class, 'commissionReport'])->middleware('hotspot');
     Route::get('/accounts/expenses', [AccountController::class, 'expensesIndex']);
     Route::post('/accounts/expenses', [AccountController::class, 'expenseStore']);
     Route::put('/accounts/expenses/{expense}', [AccountController::class, 'expenseUpdate']);
@@ -124,32 +124,35 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/parties/{party}', [AccountController::class, 'partyUpdate']);
     Route::delete('/parties/{party}', [AccountController::class, 'partyDestroy']);
 
-    // Vouchers — generate, list/show scoped, export; lifecycle.
-    Route::get('/vouchers', [VoucherController::class, 'index']);
-    Route::get('/vouchers/export', [VoucherController::class, 'exportCsv']);
-    Route::get('/vouchers/export-xlsx', [VoucherController::class, 'exportXlsx']);
-    Route::get('/vouchers/print', [VoucherController::class, 'printSheet']);
-    Route::get('/vouchers/next-serial', [VoucherController::class, 'nextSerial']);
-    Route::post('/vouchers/generate', [VoucherController::class, 'generate'])->middleware('permission:generate_voucher');
-    Route::post('/vouchers/redeem', [VoucherController::class, 'redeem']);
+    // Hotspot (vouchers) — rejected when the system is set to PPPoE only.
+    Route::middleware('hotspot')->group(function () {
+        // Vouchers — generate, list/show scoped, export; lifecycle.
+        Route::get('/vouchers', [VoucherController::class, 'index']);
+        Route::get('/vouchers/export', [VoucherController::class, 'exportCsv']);
+        Route::get('/vouchers/export-xlsx', [VoucherController::class, 'exportXlsx']);
+        Route::get('/vouchers/print', [VoucherController::class, 'printSheet']);
+        Route::get('/vouchers/next-serial', [VoucherController::class, 'nextSerial']);
+        Route::post('/vouchers/generate', [VoucherController::class, 'generate'])->middleware('permission:generate_voucher');
+        Route::post('/vouchers/redeem', [VoucherController::class, 'redeem']);
 
-    // Voucher distribution — Reseller hands off already-generated "ready" stock to a
-    // Seller. Reseller-only to create (not relevant for an Admin account, which only
-    // views the resulting history below); the role: gate is deliberate belt-and-braces
-    // on top of permission:, matching the PPPoE routes' pattern.
-    Route::get('/vouchers/transfers', [VoucherTransferController::class, 'index']);
-    Route::post('/vouchers/transfers', [VoucherTransferController::class, 'store'])->middleware(['role:reseller', 'permission:transfer_voucher']);
-    Route::post('/vouchers/{voucher}/sell', [VoucherController::class, 'sell']);
-    Route::get('/vouchers/{voucher}', [VoucherController::class, 'show']);
-    Route::get('/vouchers/{voucher}/card', [VoucherController::class, 'card']);
-    Route::get('/vouchers/{voucher}/usage', [VoucherController::class, 'usage']);
-    Route::delete('/vouchers/{voucher}', [VoucherController::class, 'destroy'])->middleware('permission:delete_voucher');
-    Route::patch('/vouchers/{voucher}/disable', [VoucherController::class, 'disable']);
-    Route::patch('/vouchers/{voucher}/enable', [VoucherController::class, 'enable']);
-    Route::patch('/vouchers/{voucher}/reset-mac', [VoucherController::class, 'resetMac']);
-    Route::patch('/vouchers/{voucher}/update-mac', [VoucherController::class, 'updateMac']);
-    Route::patch('/vouchers/{voucher}/mac', [VoucherController::class, 'updateMac']);
-    Route::patch('/vouchers/{voucher}/change-password', [VoucherController::class, 'changePassword']);
+        // Voucher distribution — Reseller hands off already-generated "ready" stock to a
+        // Seller. Reseller-only to create (not relevant for an Admin account, which only
+        // views the resulting history below); the role: gate is deliberate belt-and-braces
+        // on top of permission:, matching the PPPoE routes' pattern.
+        Route::get('/vouchers/transfers', [VoucherTransferController::class, 'index']);
+        Route::post('/vouchers/transfers', [VoucherTransferController::class, 'store'])->middleware(['role:reseller', 'permission:transfer_voucher']);
+        Route::post('/vouchers/{voucher}/sell', [VoucherController::class, 'sell']);
+        Route::get('/vouchers/{voucher}', [VoucherController::class, 'show']);
+        Route::get('/vouchers/{voucher}/card', [VoucherController::class, 'card']);
+        Route::get('/vouchers/{voucher}/usage', [VoucherController::class, 'usage']);
+        Route::delete('/vouchers/{voucher}', [VoucherController::class, 'destroy'])->middleware('permission:delete_voucher');
+        Route::patch('/vouchers/{voucher}/disable', [VoucherController::class, 'disable']);
+        Route::patch('/vouchers/{voucher}/enable', [VoucherController::class, 'enable']);
+        Route::patch('/vouchers/{voucher}/reset-mac', [VoucherController::class, 'resetMac']);
+        Route::patch('/vouchers/{voucher}/update-mac', [VoucherController::class, 'updateMac']);
+        Route::patch('/vouchers/{voucher}/mac', [VoucherController::class, 'updateMac']);
+        Route::patch('/vouchers/{voucher}/change-password', [VoucherController::class, 'changePassword']);
+    });
 
     // PPPoE subscribers — admin + reseller only. The role: gate is deliberate
     // belt-and-braces on top of permission:, so a well-meaning flip of a
@@ -161,9 +164,13 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get   ('/pppoe/sessions',                         [PppoeCustomerController::class, 'liveSessions']) ->middleware('permission:view_pppoe');
         Route::get   ('/pppoe/recharges',                        [PppoeRechargeController::class, 'index'])       ->middleware('permission:view_pppoe');
         Route::get   ('/reports/pppoe-sales-summary',            [ReportController::class, 'pppoeSalesSummary'])  ->middleware('permission:view_pppoe');
+        Route::get   ('/reports/pppoe-commission-summary',       [ReportController::class, 'pppoeCommissionSummary'])->middleware('permission:view_pppoe');
+        Route::get   ('/pppoe/customers/check-username',         [PppoeCustomerController::class, 'checkUsername'])->middleware('permission:view_pppoe,create_pppoe_customer');
+        Route::get   ('/pppoe/customers/next-credentials',        [PppoeCustomerController::class, 'nextCredentials'])->middleware('permission:view_pppoe,create_pppoe_customer');
         Route::post  ('/pppoe/customers',                        [PppoeCustomerController::class, 'store'])       ->middleware('permission:create_pppoe_customer');
         Route::get   ('/pppoe/customers/{customer}',             [PppoeCustomerController::class, 'show'])        ->middleware('permission:view_pppoe');
         Route::get   ('/pppoe/customers/{customer}/sessions',    [PppoeCustomerController::class, 'sessions'])    ->middleware('permission:view_pppoe');
+        Route::get   ('/pppoe/customers/{customer}/usage',       [PppoeCustomerController::class, 'usage'])       ->middleware('permission:view_pppoe');
         Route::put   ('/pppoe/customers/{customer}',             [PppoeCustomerController::class, 'update'])      ->middleware('permission:create_pppoe_customer');
         Route::patch ('/pppoe/customers/{customer}/plan',        [PppoeCustomerController::class, 'changePlan'])  ->middleware('permission:create_pppoe_customer');
         Route::patch ('/pppoe/customers/{customer}/suspend',     [PppoeCustomerController::class, 'suspend'])     ->middleware('permission:suspend_pppoe_customer');
@@ -182,9 +189,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/permissions', [PermissionController::class, 'update'])->middleware('role:admin');
 
     // Voucher card design template — read, save, and reset.
-    Route::get('/voucher-template', [VoucherTemplateController::class, 'index']);
-    Route::post('/voucher-template', [VoucherTemplateController::class, 'save']);
-    Route::delete('/voucher-template', [VoucherTemplateController::class, 'reset']);
+    Route::middleware('hotspot')->group(function () {
+        Route::get('/voucher-template', [VoucherTemplateController::class, 'index']);
+        Route::post('/voucher-template', [VoucherTemplateController::class, 'save']);
+        Route::delete('/voucher-template', [VoucherTemplateController::class, 'reset']);
+    });
 
     // Branding Settings — update.
     Route::post('/settings/branding', [BrandingSettingController::class, 'update']);

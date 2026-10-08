@@ -5,10 +5,12 @@ import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, L
 import { api } from '../lib/api'
 import { useQuery } from '../lib/cache'
 import { useAuth } from '../lib/auth'
+import { useBranding } from '../lib/branding'
 import { rs, gb, num, date, statusPill } from '../lib/format'
 import { StatCard, DualStatCard, PageTitle, GlassCard, EmptyState, Modal, Spinner, VoucherStatCard, CustomSelect, SelectOption, renderPaymentMethodIcon, Pill } from '../components/ui'
 import { motion } from 'framer-motion'
 import FundModal from '../components/FundModal'
+import PppoeInsights from '../components/PppoeInsights'
 
 /**
  * PPPoE subscribers at a glance. The headline is every subscriber on the books
@@ -59,6 +61,7 @@ function PppoeStatCard({ pppoe, onClick }: { pppoe?: any; onClick?: () => void }
 export default function Dashboard() {
   const navigate = useNavigate()
   const { user, can } = useAuth()
+  const pppoeOnly = useBranding().branding.pppoe_only
   const { data: d, loading, setData: setD } = useQuery<any>(
     'dashboard',
     () => api.get('/dashboard').then((r) => r.data.data),
@@ -148,8 +151,8 @@ export default function Dashboard() {
   // (FundModal hides the allocation-type switch for non-admins).
   const isDownlineManager = d.role === 'admin' || d.role === 'reseller'
   const showCollect = isDownlineManager && can('wallet_load')
-  const showQuickFund = isDownlineManager && (can('allocate_gb') || (d.role === 'admin' && can('wallet_load')))
-  const showVoucherSales = can('generate_voucher') || can('reports')
+  const showQuickFund = isDownlineManager && ((!pppoeOnly && can('allocate_gb')) || (d.role === 'admin' && can('wallet_load')))
+  const showVoucherSales = !pppoeOnly && (can('generate_voucher') || can('reports'))
 
   // Segmented-pill toolbar for every quick action. Quick Fund is the primary
   // action (bold, navy) since it's what most operators reach for first; the
@@ -199,7 +202,7 @@ export default function Dashboard() {
               className={toolbarItemClass}
               onClick={() => navigate('/diagnostics')}
             >
-              <Terminal size={16} className="text-slate-400" /> Voucher Diagnostics
+              <Terminal size={16} className="text-slate-400" /> PPPoE User Diagnostics
             </motion.button>
           </div>
         }
@@ -210,69 +213,88 @@ export default function Dashboard() {
       {/* Admin Dashboard */}
       {d.role === 'admin' && (
         <div className="space-y-6">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatCard label="Total Wallet Voucher" value={<span className="text-emerald-600">{num(d.wallet_vouchers?.total || 0)}</span>} icon={<Wallet size={22} />} iconColorClass="text-emerald-600 bg-emerald-50 border border-emerald-100/50" />
-            <StatCard label="Total Wallet Voucher Used" value={<span className="text-cyan-600">{num(d.wallet_vouchers?.used ?? d.wallet_vouchers?.by_status?.used ?? 0)}</span>} icon={<Ticket size={22} />} iconColorClass="text-cyan-600 bg-cyan-50 border border-cyan-100/50" />
-            {/* One row, two columns: the two distribution figures read as a
-                single fact, so they share a label and sit side by side rather
-                than stacking into two half-height rows. flex-wrap keeps large
-                amounts from overflowing the tile on narrow columns. */}
-            <StatCard
-              label="Wallet / GB Distributed"
-              value={
-                <span className="flex items-baseline gap-1.5 flex-wrap">
-                  <span className="text-blue-600">{rs(d.wallet_distributed)}</span>
-                  <span className="text-slate-300 dark:text-slate-600 font-normal">/</span>
-                  <span className="text-purple-600">{gb(d.gb_distributed)}</span>
-                </span>
-              }
-              icon={<Wallet size={22} />}
-              iconColorClass="text-blue-600 bg-blue-50 border border-blue-100/50"
+          {pppoeOnly && d.pppoe_metrics ? (
+            <PppoeInsights
+              metrics={d.pppoe_metrics}
+              role="admin"
+              subscribersCard={<PppoeStatCard pppoe={d.pppoe} onClick={() => navigate('/pppoe/customers')} />}
             />
-            <PppoeStatCard pppoe={d.pppoe} onClick={() => navigate('/pppoe/customers')} />
-            <DualStatCard
-              top={{
-                label: 'Commission Earned',
-                value: rs(d.commission_earned),
-                valueColorClass: 'text-amber-600',
-                icon: <Coins size={22} />,
-                iconColorClass: 'text-amber-600 bg-amber-50 border border-amber-100/50',
-                sub: <span>Today: <strong className="text-slate-700">{rs(d.commission_today)}</strong></span>,
-              }}
-              bottom={{
-                label: 'Commission Due',
-                value: rs(d.commission_due),
-                valueColorClass: 'text-orange-600',
-                icon: <Receipt size={22} />,
-                iconColorClass: 'text-orange-600 bg-orange-50 border border-orange-100/50',
-                sub: <span>Owed by resellers</span>,
-              }}
-            />
-            <DualStatCard
-              top={{
-                label: 'GB Wallet Payment',
-                value: rs(d.collected_from_resellers),
-                valueColorClass: 'text-emerald-600',
-                icon: <TrendingUp size={22} />,
-                iconColorClass: 'text-emerald-600 bg-emerald-50 border border-emerald-100/50',
-              }}
-              bottom={{
-                label: 'GB Wallet Pending Payment',
-                value: rs(d.pending_from_resellers),
-                valueColorClass: 'text-teal-600',
-                icon: <CreditCard size={22} />,
-                iconColorClass: 'text-teal-600 bg-teal-50 border border-teal-100/50',
-                sub: <span>Owed for allocated GB</span>,
-              }}
-            />
-            <VoucherStatCard title="GB Vouchers" vouchers={d.gb_vouchers || d.vouchers} icon={<Ticket size={22} />} iconColorClass="text-rose-600 bg-rose-50 border border-rose-100/50" valueColorClass="text-rose-600" />
-            <VoucherStatCard title="Card Vouchers" vouchers={d.wallet_vouchers || d.vouchers} icon={<Wallet size={22} />} iconColorClass="text-purple-600 bg-purple-50 border border-purple-100/50" valueColorClass="text-purple-600" />
-          </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {!pppoeOnly && <StatCard label="Total Wallet Voucher" value={<span className="text-emerald-600">{num(d.wallet_vouchers?.total || 0)}</span>} icon={<Wallet size={22} />} iconColorClass="text-emerald-600 bg-emerald-50 border border-emerald-100/50" />}
+              {!pppoeOnly && <StatCard label="Total Wallet Voucher Used" value={<span className="text-cyan-600">{num(d.wallet_vouchers?.used ?? d.wallet_vouchers?.by_status?.used ?? 0)}</span>} icon={<Ticket size={22} />} iconColorClass="text-cyan-600 bg-cyan-50 border border-cyan-100/50" />}
+              {/* One row, two columns: the two distribution figures read as a
+                  single fact, so they share a label and sit side by side rather
+                  than stacking into two half-height rows. flex-wrap keeps large
+                  amounts from overflowing the tile on narrow columns. */}
+              {!pppoeOnly && (
+              <StatCard
+                label={pppoeOnly ? 'Wallet Distributed' : 'Wallet / GB Distributed'}
+                value={
+                  <span className="flex items-baseline gap-1.5 flex-wrap">
+                    <span className="text-blue-600">{rs(d.wallet_distributed)}</span>
+                    {!pppoeOnly && (
+                      <>
+                        <span className="text-slate-300 dark:text-slate-600 font-normal">/</span>
+                        <span className="text-purple-600">{gb(d.gb_distributed)}</span>
+                      </>
+                    )}
+                  </span>
+                }
+                icon={<Wallet size={22} />}
+                iconColorClass="text-blue-600 bg-blue-50 border border-blue-100/50"
+              />
+              )}
+              <PppoeStatCard pppoe={d.pppoe} onClick={() => navigate('/pppoe/customers')} />
+              {!pppoeOnly && (
+              <DualStatCard
+                top={{
+                  label: 'Commission Earned',
+                  value: rs(d.commission_earned),
+                  valueColorClass: 'text-amber-600',
+                  icon: <Coins size={22} />,
+                  iconColorClass: 'text-amber-600 bg-amber-50 border border-amber-100/50',
+                  sub: <span>Today: <strong className="text-slate-700">{rs(d.commission_today)}</strong></span>,
+                }}
+                bottom={{
+                  label: 'Commission Due',
+                  value: rs(d.commission_due),
+                  valueColorClass: 'text-orange-600',
+                  icon: <Receipt size={22} />,
+                  iconColorClass: 'text-orange-600 bg-orange-50 border border-orange-100/50',
+                  sub: <span>Owed by resellers</span>,
+                }}
+              />
+              )}
+              {!pppoeOnly && (
+              <DualStatCard
+                top={{
+                  label: 'GB Wallet Payment',
+                  value: rs(d.collected_from_resellers),
+                  valueColorClass: 'text-emerald-600',
+                  icon: <TrendingUp size={22} />,
+                  iconColorClass: 'text-emerald-600 bg-emerald-50 border border-emerald-100/50',
+                }}
+                bottom={{
+                  label: 'GB Wallet Pending Payment',
+                  value: rs(d.pending_from_resellers),
+                  valueColorClass: 'text-teal-600',
+                  icon: <CreditCard size={22} />,
+                  iconColorClass: 'text-teal-600 bg-teal-50 border border-teal-100/50',
+                  sub: <span>Owed for allocated GB</span>,
+                }}
+              />
+              )}
+              {!pppoeOnly && <VoucherStatCard title="GB Vouchers" vouchers={d.gb_vouchers || d.vouchers} icon={<Ticket size={22} />} iconColorClass="text-rose-600 bg-rose-50 border border-rose-100/50" valueColorClass="text-rose-600" />}
+              {!pppoeOnly && <VoucherStatCard title="Card Vouchers" vouchers={d.wallet_vouchers || d.vouchers} icon={<Wallet size={22} />} iconColorClass="text-purple-600 bg-purple-50 border border-purple-100/50" valueColorClass="text-purple-600" />}
+            </div>
+          )}
 
           {/* Charts Row — system-wide, across all resellers & sellers */}
           {d.daily_trend && d.daily_trend.length > 0 && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {/* Daily Sales Trend */}
+              {!pppoeOnly && (
               <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
                 <GlassCard>
                   <h3 className="font-bold mb-4 flex items-center gap-2 text-primary">
@@ -308,8 +330,10 @@ export default function Dashboard() {
                   )}
                 </GlassCard>
               </motion.div>
+              )}
 
               {/* No. of Vouchers Sold — split by GB vs Wallet */}
+              {!pppoeOnly && (
               <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.1 }}>
                 <GlassCard>
                   <h3 className="font-bold mb-4 flex items-center gap-2 text-primary">
@@ -335,12 +359,13 @@ export default function Dashboard() {
                   )}
                 </GlassCard>
               </motion.div>
+              )}
             </div>
           )}
 
-          {/* Seller & Reseller Performance */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {d.top_resellers && (
+          {/* Voucher-sales leaderboards — PPPoE-only installs use the PppoeInsights top resellers instead */}
+          <div className={`grid grid-cols-1 gap-4 lg:grid-cols-2 ${pppoeOnly ? 'hidden' : ''}`}>
+            {d.top_resellers && !pppoeOnly && (
               <GlassCard>
                 <h3 className="font-bold mb-3 flex items-center gap-2 text-primary">
                   <Users2 size={18} /> Top Resellers
@@ -363,7 +388,7 @@ export default function Dashboard() {
               </GlassCard>
             )}
 
-            {d.top_sellers && (
+            {d.top_sellers && !pppoeOnly && (
               <GlassCard>
                 <h3 className="font-bold mb-3 flex items-center gap-2 text-primary">
                   <Store size={18} /> Top Sellers
@@ -421,6 +446,9 @@ export default function Dashboard() {
       {d.role === 'reseller' && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {pppoeOnly ? (
+              <StatCard label="Wallet Balance" value={<span className="text-emerald-600">{rs(d.balances.wallet)}</span>} icon={<Wallet size={22} />} iconColorClass="text-emerald-600 bg-emerald-50 border border-emerald-100/50" />
+            ) : (
             <DualStatCard
               top={{
                 label: 'Wallet Balance',
@@ -436,6 +464,8 @@ export default function Dashboard() {
                 sub: <span>Purchased: <strong className="text-slate-700">{gb(d.gb_purchased)}</strong></span>,
               }}
             />
+            )}
+            {!pppoeOnly && (
             <StatCard
               label="Allowable GB Balance"
               value={<span className="text-indigo-600">{gb(d.balances.gb_allowable ?? d.balances.gb)}</span>}
@@ -443,6 +473,8 @@ export default function Dashboard() {
               iconColorClass="text-indigo-600 bg-indigo-50 border border-indigo-100/50"
               sub={<span>Reserved by Vouchers: <strong className="text-slate-700">{gb(d.balances.gb_reserved ?? 0)}</strong></span>}
             />
+            )}
+            {!pppoeOnly && (
             <StatCard
               label="GB Allocated to Sellers"
               value={<span className="text-purple-600">{gb(d.gb_allocated)}</span>}
@@ -450,12 +482,16 @@ export default function Dashboard() {
               iconColorClass="text-purple-600 bg-purple-50 border border-purple-100/50"
               sub={<span>Sellers: <strong className="text-slate-700">{num(d.counts.sellers)}</strong></span>}
             />
+            )}
             {can('view_pppoe') && (
               <PppoeStatCard pppoe={d.pppoe} onClick={() => navigate('/pppoe/customers')} />
             )}
           </div>
 
+          {pppoeOnly && d.pppoe_metrics && <PppoeInsights metrics={d.pppoe_metrics} role="reseller" />}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            {!pppoeOnly && (
             <motion.div
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
@@ -482,9 +518,11 @@ export default function Dashboard() {
                 </div>
               </div>
             </motion.div>
+            )}
 
-            <VoucherStatCard title="GB Vouchers" vouchers={d.gb_vouchers || d.vouchers} icon={<Ticket size={22} />} iconColorClass="text-rose-600 bg-rose-50 border border-rose-100/50" valueColorClass="text-rose-600" />
-            <VoucherStatCard title="Card Vouchers" vouchers={d.wallet_vouchers || d.vouchers} icon={<Wallet size={22} />} iconColorClass="text-purple-600 bg-purple-50 border border-purple-100/50" valueColorClass="text-purple-600" />
+            {!pppoeOnly && <VoucherStatCard title="GB Vouchers" vouchers={d.gb_vouchers || d.vouchers} icon={<Ticket size={22} />} iconColorClass="text-rose-600 bg-rose-50 border border-rose-100/50" valueColorClass="text-rose-600" />}
+            {!pppoeOnly && <VoucherStatCard title="Card Vouchers" vouchers={d.wallet_vouchers || d.vouchers} icon={<Wallet size={22} />} iconColorClass="text-purple-600 bg-purple-50 border border-purple-100/50" valueColorClass="text-purple-600" />}
+            {!pppoeOnly && (
             <motion.div
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
@@ -511,6 +549,8 @@ export default function Dashboard() {
                 </div>
               </div>
             </motion.div>
+            )}
+            {!pppoeOnly && (
             <motion.div
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
@@ -539,12 +579,14 @@ export default function Dashboard() {
                 </div>
               </div>
             </motion.div>
+            )}
           </div>
 
           {/* Charts Row */}
           {d.daily_trend && d.daily_trend.length > 0 && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {/* Daily Sales Trend */}
+              {!pppoeOnly && (
               <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
                 <GlassCard>
                   <h3 className="font-bold mb-4 flex items-center gap-2 text-primary">
@@ -580,8 +622,10 @@ export default function Dashboard() {
                   )}
                 </GlassCard>
               </motion.div>
+              )}
 
               {/* No. of Vouchers Sold — split by GB vs Wallet */}
+              {!pppoeOnly && (
               <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.1 }}>
                 <GlassCard>
                   <h3 className="font-bold mb-4 flex items-center gap-2 text-primary">
@@ -607,11 +651,12 @@ export default function Dashboard() {
                   )}
                 </GlassCard>
               </motion.div>
+              )}
             </div>
           )}
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {d.top_sellers && (
+          <div className={`grid grid-cols-1 gap-4 ${pppoeOnly ? '' : 'lg:grid-cols-2'}`}>
+            {d.top_sellers && !pppoeOnly && (
               <GlassCard>
                 <h3 className="font-bold mb-3 flex items-center gap-2 text-primary">
                   <Store size={18} /> Top Sellers
@@ -672,7 +717,8 @@ export default function Dashboard() {
               Allocated Voucher sit side by side, each spanning both matrix rows so
               their status chart and pills get room to breathe. */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatCard label="GB Balance (Stock)" value={<span className="text-cyan-600">{gb(d.balances.gb)}</span>} icon={<Database size={22} />} iconColorClass="text-cyan-600 bg-cyan-50 border border-cyan-100/50" />
+            {!pppoeOnly && <StatCard label="GB Balance (Stock)" value={<span className="text-cyan-600">{gb(d.balances.gb)}</span>} icon={<Database size={22} />} iconColorClass="text-cyan-600 bg-cyan-50 border border-cyan-100/50" />}
+            {!pppoeOnly && (
             <StatCard
               label="Allowable GB Balance"
               value={<span className="text-indigo-600">{gb(d.balances.gb_allowable ?? d.balances.gb)}</span>}
@@ -680,9 +726,11 @@ export default function Dashboard() {
               iconColorClass="text-indigo-600 bg-indigo-50 border border-indigo-100/50"
               sub={<span>Reserved by Vouchers: <strong className="text-slate-700">{gb(d.balances.gb_reserved ?? 0)}</strong></span>}
             />
-            <VoucherStatCard title="GB Vouchers" vouchers={d.gb_vouchers || d.vouchers} icon={<Ticket size={22} />} iconColorClass="text-rose-600 bg-rose-50 border border-rose-100/50" valueColorClass="text-rose-600" className="lg:row-span-2" />
-            <VoucherStatCard title="Allocated Voucher" vouchers={d.allocated_vouchers} icon={<Send size={22} />} iconColorClass="text-indigo-600 bg-indigo-50 border border-indigo-100/50" valueColorClass="text-indigo-600" className="lg:row-span-2" />
-            <StatCard label="Due Payable" value={<span className="text-rose-600">{rs(d.balances.wallet_due)}</span>} icon={<Wallet size={22} />} iconColorClass="text-rose-600 bg-rose-50 border border-rose-100/50" sub={d.reseller_name ? <span className="text-xs text-slate-500">To: <span className="font-semibold text-slate-700">{d.reseller_name}</span></span> : undefined} />
+            )}
+            {!pppoeOnly && <VoucherStatCard title="GB Vouchers" vouchers={d.gb_vouchers || d.vouchers} icon={<Ticket size={22} />} iconColorClass="text-rose-600 bg-rose-50 border border-rose-100/50" valueColorClass="text-rose-600" className="lg:row-span-2" />}
+            {!pppoeOnly && <VoucherStatCard title="Allocated Voucher" vouchers={d.allocated_vouchers} icon={<Send size={22} />} iconColorClass="text-indigo-600 bg-indigo-50 border border-indigo-100/50" valueColorClass="text-indigo-600" className="lg:row-span-2" />}
+            {!pppoeOnly && <StatCard label="Due Payable" value={<span className="text-rose-600">{rs(d.balances.wallet_due)}</span>} icon={<Wallet size={22} />} iconColorClass="text-rose-600 bg-rose-50 border border-rose-100/50" sub={d.reseller_name ? <span className="text-xs text-slate-500">To: <span className="font-semibold text-slate-700">{d.reseller_name}</span></span> : undefined} />}
+            {!pppoeOnly && (
             <StatCard
               label="Voucher Sales"
               value={<span className="text-blue-600">{rs(d.voucher_sales_to_date ?? 0)}</span>}
@@ -696,12 +744,14 @@ export default function Dashboard() {
                 </span>
               }
             />
+            )}
           </div>
 
           {/* Charts Row */}
           {d.daily_trend && d.daily_trend.length > 0 && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {/* Daily Sales Trend */}
+              {!pppoeOnly && (
               <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
                 <GlassCard>
                   <h3 className="font-bold mb-4 flex items-center gap-2 text-primary">
@@ -731,8 +781,10 @@ export default function Dashboard() {
                   )}
                 </GlassCard>
               </motion.div>
+              )}
 
               {/* No. of Vouchers Sold */}
+              {!pppoeOnly && (
               <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.1 }}>
                 <GlassCard>
                   <h3 className="font-bold mb-4 flex items-center gap-2 text-primary">
@@ -762,6 +814,7 @@ export default function Dashboard() {
                   )}
                 </GlassCard>
               </motion.div>
+              )}
             </div>
           )}
 

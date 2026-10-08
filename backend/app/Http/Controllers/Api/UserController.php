@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\SystemLoad;
+use App\Models\BrandingSetting;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -72,9 +73,15 @@ class UserController extends Controller
     public function storeReseller(Request $request): JsonResponse
     {
         $data = $this->validateNewUser($request);
-        $data['commission_percent'] = $request->validate([
-            'commission_percent' => ['required', 'numeric', 'min:0', 'max:100'],
-        ])['commission_percent'];
+        // PPPoE-only installs have no voucher commission to set up front, so the
+        // percent is optional there (it defaults to 0 on the users table).
+        $pppoeOnly = (bool) BrandingSetting::find(1)?->pppoe_only;
+        $validated = $request->validate([
+            'commission_percent' => [$pppoeOnly ? 'nullable' : 'required', 'numeric', 'min:0', 'max:100'],
+        ]);
+        if (isset($validated['commission_percent'])) {
+            $data['commission_percent'] = $validated['commission_percent'];
+        }
         $admin = $request->user();
 
         $reseller = User::create($data + [

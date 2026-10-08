@@ -3,8 +3,12 @@ import { motion } from 'framer-motion'
 import { Shield, Save, CheckCircle } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { GlassCard, PageTitle, EmptyState } from '../components/ui'
+import { useBranding } from '../lib/branding'
 
 export default function Permissions() {
+  const pppoeOnly = useBranding().branding.pppoe_only
+  // Voucher and GB permissions have no effect when the system is PPPoE only.
+  const isHotspotRow = (r: any) => ['Voucher', 'GB Allocation'].includes(r.category) || /voucher|_gb$/.test(String(r.feature || ''))
   const [rows, setRows] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -96,7 +100,7 @@ export default function Permissions() {
               </thead>
               <tbody>
                 {rows.map((row, idx) => (
-                  <tr key={row.id} className="hover:bg-secondary/30 transition-colors">
+                  <tr key={row.id} className={`hover:bg-secondary/30 transition-colors ${pppoeOnly && isHotspotRow(row) ? 'hidden' : ''}`}>
                     <td className="font-semibold text-slate-800 flex items-center gap-2">
                       <Shield size={14} className="text-primary" /> {row.display_name}
                     </td>

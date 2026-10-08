@@ -5,6 +5,7 @@ import { api } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { PageTitle, GlassCard, CustomSelect } from '../components/ui'
 import { rs, gb, datet } from '../lib/format'
+import { useBranding } from '../lib/branding'
 
 interface SystemLoadRecord {
   id: number
@@ -31,6 +32,7 @@ interface SystemLoadRecord {
 }
 
 export default function SystemLoad() {
+  const pppoeOnly = useBranding().branding.pppoe_only
   const { refresh } = useAuth()
   const [walletAmount, setWalletAmount] = useState('')
   const [gbAmount, setGbAmount] = useState('')
@@ -157,6 +159,7 @@ export default function SystemLoad() {
               />
             </div>
 
+            {!pppoeOnly && (
             <div className="md:col-span-3">
               <div className="flex items-center justify-between mb-1">
                 <label className="text-[11px] font-bold text-slate-500 uppercase flex items-center gap-1.5">
@@ -179,6 +182,7 @@ export default function SystemLoad() {
                 onChange={(e) => setGbAmount(e.target.value)}
               />
             </div>
+            )}
 
             <div className="md:col-span-4">
               <label className="text-[11px] font-bold text-slate-500 uppercase block mb-1 flex items-center gap-1.5">
@@ -272,7 +276,7 @@ export default function SystemLoad() {
                 <th className="py-3 px-4">Loaded By</th>
                 <th className="py-3 px-4">Target Account</th>
                 <th className="py-3 px-4 text-right">Wallet Load (Rs.)</th>
-                <th className="py-3 px-4 text-right">GB Load (Quota)</th>
+                {!pppoeOnly && <th className="py-3 px-4 text-right">GB Load (Quota)</th>}
                 <th className="py-3 px-4">Balances After</th>
                 <th className="py-3 px-4">Note / Reference</th>
               </tr>
@@ -342,6 +346,7 @@ export default function SystemLoad() {
                           <span className="text-slate-400 font-normal">—</span>
                         )}
                       </td>
+                      {!pppoeOnly && (
                       <td className="py-3.5 px-4 text-right whitespace-nowrap font-bold text-purple-600">
                         {gbVal > 0 ? (
                           <span className="inline-flex items-center gap-1 bg-purple-50 px-2 py-0.5 rounded-md border border-purple-100/60">
@@ -351,10 +356,11 @@ export default function SystemLoad() {
                           <span className="text-slate-400 font-normal">—</span>
                         )}
                       </td>
+                      )}
                       <td className="py-3.5 px-4 whitespace-nowrap text-slate-600">
                         <div className="flex flex-col text-[11px]">
                           <span><strong className="text-slate-700">Wallet:</strong> {rs(record.wallet_balance_after)}</span>
-                          <span><strong className="text-slate-700">GB:</strong> {gb(record.gb_balance_after)}</span>
+                          {!pppoeOnly && <span><strong className="text-slate-700">GB:</strong> {gb(record.gb_balance_after)}</span>}
                         </div>
                       </td>
                       <td className="py-3.5 px-4 text-slate-600">

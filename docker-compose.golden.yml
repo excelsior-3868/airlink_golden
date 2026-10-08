@@ -1,0 +1,240 @@
+name: airlink3-golden
+
+# Production stack for the GOLDEN tenant.
+#
+# Deliberately has NO freeradius service. Golden shares the single
+# FreeRADIUS that ships with the Mera stack (container
+# airlink-prod-freeradius, host ports 1812/1813). That server decides
+# which database to use per request, from the NAS the request arrived from:
+#
+#   Golden NAS ──▶ client{} in clients-golden.conf
+#                     (carries `virtual_server = golden`)
+#                     ──▶ `golden` virtual server
+#                     ──▶ `sql_golden` module
+#                     ──▶ this stack's airlink_golden schema
+#
+#   Mera NAS ───────▶ client{} in clients.conf (no virtual_server)
+#                     ──▶ `default` virtual server ──▶ `sql` ──▶ airlink_mera
+#
+# So a NAS is registered in exactly one tenant's UI, and that registration is
+# what binds it to that tenant's data.
+#
+# This is a SEPARATE compose file, not a modified docker-compose.mera.yml.
+# Both tenants run the same repo from different checkouts, so this file is
+# additive: docker-compose.mera.yml stays byte-identical to upstream and
+# keeps deploying Mera, while this one deploys Golden beside it. Editing
+# the shared file per tenant would conflict on every pull.
+#
+#   docker compose -f docker-compose.golden.yml up -d --build
+#
+# The `name:` above, not the filename, is what ties these containers and
+# volumes together. The Mera stack must already be up — it owns the shared
+# FreeRADIUS, and the golden_link network must exist (see SHARED_RADIUS_TENANTS.md).
+
+services:
+  # Golden's own database server — a separate container and volume from
+  # Mera's, so backups, restarts and crashes are independent. Named
+  # `golden-mariadb` rather than `mariadb` on purpose: it shares the
+  # golden_link network with the FreeRADIUS container, and a second host
+  # answering to `mariadb` there would make FreeRADIUS's own `mariadb`
+  # lookup ambiguous — it could resolve Mera's SQL instance to this server.
+  golden-mariadb:
+    image: mariadb:11
+    container_name: airlink-mariadb-golden
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root_secret}
+      MARIADB_DATABASE: airlink_golden
+      MARIADB_USER: airlink
+      MARIADB_PASSWORD: ${DB_PASSWORD:-airlink_pass}
+    ports:
+      - "127.0.0.1:3310:3306"
+    volumes:
+      - mariadb_golden_data:/var/lib/mysql
+      # No nalrd_backup.sql mount — this tenant starts empty.
+      - ./docker/mariadb/initdb.golden:/docker-entrypoint-initdb.d:ro
+    networks:
+      - default
+      # Reachable by the shared FreeRADIUS as host `golden-mariadb`,
+      # which is exactly what mods-enabled/sql_golden connects to.
+      - golden_link
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
+  app:
+    build:
+      context: .
+      dockerfile: docker/backend/Dockerfile.prod
+    container_name: airlink-backend-golden
+    restart: unless-stopped
+    environment:
+      DB_CONNECTION: mysql
+      DB_HOST: golden-mariadb
+      DB_PORT: 3306
+      DB_DATABASE: airlink_golden
+      DB_USERNAME: airlink
+      DB_PASSWORD: ${DB_PASSWORD:-airlink_pass}
+      LEGACY_DB_HOST: golden-mariadb
+      LEGACY_DB_PORT: 3306
+      LEGACY_DB_DATABASE: ${LEGACY_DB_DATABASE:-airlink_golden_legacy}
+      LEGACY_DB_USERNAME: airlink
+      LEGACY_DB_PASSWORD: ${DB_PASSWORD:-airlink_pass}
+      APP_KEY: ${APP_KEY}
+      APP_ENV: production
+      APP_DEBUG: "false"
+      # Creates the whole schema on first boot and seeds the default admin
+      # + permission matrix. Nothing else is imported: this tenant is empty.
+      RUN_MIGRATIONS: 1
+      # --- System Monitor ------------------------------------------------
+      # Read-only Docker API, and the compose project whose containers this
+      # tenant's System Monitor may list — the `name:` at the top of this
+      # file. One socket sees every stack on the host, so this label is what
+      # keeps Golden's topology out of Mera's UI and vice versa.
+      DOCKER_PROXY_HOST: docker-proxy
+      DOCKER_PROXY_PORT: 2375
+      MONITOR_COMPOSE_PROJECT: airlink3-golden
+      # Owned by the Mera stack, used by this one. Named here so it still
+      # appears in this tenant's topology, flagged as shared, not owned.
+      MONITOR_SHARED_CONTAINERS: airlink-prod-freeradius
+      # --- Shared FreeRADIUS wiring ------------------------------------
+      # Reached by container name across golden_link (the `freeradius`
+      # service alias belongs to the Mera compose project).
+      RADIUS_HOST: airlink-prod-freeradius
+      RADIUS_PORT: 1812
+      RADIUS_SECRET: ${RADIUS_DOCKER_NETWORKS_SECRET}
+      # This tenant writes its OWN clients file. Both files are $INCLUDEd by
+      # the shared server; keeping them separate means the two apps never
+      # write the same file and their block names cannot collide.
+      RADIUS_CLIENTS_CONF_PATH: /var/lib/airlink-radius/clients-golden.conf
+      RADIUS_RESTART_TRIGGER_PATH: /var/lib/airlink-radius/.restart-trigger
+      # Stamped into every client{} block this app writes — the line that
+      # actually routes this tenant's NAS traffic to this tenant's database.
+      RADIUS_VIRTUAL_SERVER: golden
+      # Namespaces this tenant's client block names (both tenants number
+      # their devices from id 1).
+      RADIUS_CLIENT_PREFIX: gol_
+    volumes:
+      - radius_shared:/var/lib/airlink-radius
+      # Whole FreeRADIUS log directory, read-only (same as the Mera stack).
+      # Backs the "RADIUS Log" tab (RadiusController::serverLog) and the
+      # per-NAS radacct/ lookups. NOTE: the shared server writes one
+      # radius.log for ALL tenants, so Golden admins can see other tenants'
+      # usernames in that tab. A per-tenant linelog would fix that.
+      - radius_logs:/var/log/freeradius:ro
+    networks:
+      - default
+      - golden_link
+    depends_on:
+      golden-mariadb:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/web/Dockerfile
+    container_name: airlink-frontend-golden
+    restart: unless-stopped
+    ports:
+      # Deliberately NOT ${WEB_PORT}. Both tenants run this repo from their
+      # own checkout, and each checkout has its own .env — Mera's sets
+      # WEB_PORT=8090. A set variable beats the `:-8092` default, so running
+      # this file from the Mera checkout used to make Golden's web tier
+      # try to bind Mera's port: it failed to start rather than erroring out
+      # anywhere visible. A distinct name makes that impossible.
+      - "${GOLDEN_WEB_PORT:-8092}:80"
+    depends_on:
+      - app
+
+  queue:
+    build:
+      context: .
+      dockerfile: docker/backend/Dockerfile.prod
+    container_name: airlink-queue-golden
+    restart: unless-stopped
+    environment:
+      DB_CONNECTION: mysql
+      DB_HOST: golden-mariadb
+      DB_PORT: 3306
+      DB_DATABASE: airlink_golden
+      DB_USERNAME: airlink
+      DB_PASSWORD: ${DB_PASSWORD:-airlink_pass}
+      LEGACY_DB_HOST: golden-mariadb
+      LEGACY_DB_PORT: 3306
+      LEGACY_DB_DATABASE: ${LEGACY_DB_DATABASE:-airlink_golden_legacy}
+      LEGACY_DB_USERNAME: airlink
+      LEGACY_DB_PASSWORD: ${DB_PASSWORD:-airlink_pass}
+      APP_KEY: ${APP_KEY}
+      APP_ENV: production
+      APP_DEBUG: "false"
+      RUN_MIGRATIONS: 0
+    command: ["php", "artisan", "queue:work", "--tries=3", "--timeout=120"]
+    depends_on:
+      - app
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: docker/backend/Dockerfile.prod
+    container_name: airlink-scheduler-golden
+    restart: unless-stopped
+    environment:
+      DB_CONNECTION: mysql
+      DB_HOST: golden-mariadb
+      DB_PORT: 3306
+      DB_DATABASE: airlink_golden
+      DB_USERNAME: airlink
+      DB_PASSWORD: ${DB_PASSWORD:-airlink_pass}
+      LEGACY_DB_HOST: golden-mariadb
+      LEGACY_DB_PORT: 3306
+      LEGACY_DB_DATABASE: ${LEGACY_DB_DATABASE:-airlink_golden_legacy}
+      LEGACY_DB_USERNAME: airlink
+      LEGACY_DB_PASSWORD: ${DB_PASSWORD:-airlink_pass}
+      APP_KEY: ${APP_KEY}
+      APP_ENV: production
+      APP_DEBUG: "false"
+      RUN_MIGRATIONS: 0
+    command: ["php", "artisan", "schedule:work"]
+    depends_on:
+      - app
+
+  # Read-only window onto the host's Docker API, for the System Monitor's
+  # container list. A per-stack proxy rather than a shared one: this tenant's
+  # monitor has to keep working when the other tenant's stack — or the dev
+  # stack, which owns airlink-docker-proxy — is down or rebuilding.
+  # CONTAINERS alone: the FreeRADIUS restart action goes through the shared
+  # restart-trigger file, not the Docker API, so nothing here needs POST.
+  #
+  # The socket still sees every container on the host. The tenant boundary is
+  # MONITOR_COMPOSE_PROJECT on the app, not this proxy.
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    container_name: airlink-docker-proxy-golden
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+networks:
+  default:
+  # Owned by the Mera stack (docker-compose.mera.yml there), because that is
+  # where the shared FreeRADIUS lives. Bring Mera up first.
+  golden_link:
+    name: airlink_golden_link
+    external: true
+
+volumes:
+  mariadb_golden_data:
+  # The shared FreeRADIUS's volumes, created by the Mera stack. This app
+  # needs them to write its clients file / restart trigger, and to read the
+  # server log for the RADIUS Log tab.
+  radius_shared:
+    name: airlink3-prod_radius_shared
+    external: true
+  radius_logs:
+    name: airlink3-prod_radius_logs
+    external: true

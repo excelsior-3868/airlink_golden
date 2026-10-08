@@ -12,6 +12,7 @@ CLIENTS_CONF="${SHARED_DIR}/clients.conf"
 # apps never write the same file, and their block-name sequences (which
 # both start at device id 1) can never collide.
 CLIENTS_CONF_ANNAPURNA="${SHARED_DIR}/clients-annapurna.conf"
+CLIENTS_CONF_GOLDEN="${SHARED_DIR}/clients-golden.conf"
 TRIGGER_FILE="${SHARED_DIR}/.restart-trigger"
 
 mkdir -p "${SHARED_DIR}"
@@ -24,9 +25,13 @@ if [ ! -f "${CLIENTS_CONF_ANNAPURNA}" ]; then
     echo "[freeradius] Seeding ${CLIENTS_CONF_ANNAPURNA} (first run on this volume)..."
     cp /etc/freeradius/clients-annapurna.conf.seed "${CLIENTS_CONF_ANNAPURNA}"
 fi
+if [ ! -f "${CLIENTS_CONF_GOLDEN}" ]; then
+    echo "[freeradius] Seeding ${CLIENTS_CONF_GOLDEN} (first run on this volume)..."
+    cp /etc/freeradius/clients-golden.conf.seed "${CLIENTS_CONF_GOLDEN}"
+fi
 touch "${TRIGGER_FILE}"
 chown -R freerad:radiusweb "${SHARED_DIR}"
-chmod 660 "${CLIENTS_CONF}" "${CLIENTS_CONF_ANNAPURNA}" "${TRIGGER_FILE}"
+chmod 660 "${CLIENTS_CONF}" "${CLIENTS_CONF_ANNAPURNA}" "${CLIENTS_CONF_GOLDEN}" "${TRIGGER_FILE}"
 
 echo "[freeradius] Waiting for MariaDB at mariadb:3306 ..."
 # The fd only ever exists inside this subshell — it's closed automatically

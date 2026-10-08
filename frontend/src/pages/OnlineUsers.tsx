@@ -3,9 +3,11 @@ import { motion } from 'framer-motion'
 import { Wifi, RefreshCw, Power, Search, Database, Clock, Laptop, ShieldAlert, CheckCircle2, AlertTriangle, Activity, Router, Users } from 'lucide-react'
 import { api } from '../lib/api'
 import { useAuth } from '../lib/auth'
+import { useBranding } from '../lib/branding'
 import { formatBytes, gb, num, date, datet } from '../lib/format'
 import { GlassCard, PageTitle, Spinner, EmptyState, StatCard, Pagination, CustomSelect, ConfirmModal } from '../components/ui'
 import { LiveUsageGraphModal } from '../components/LiveUsageGraphModal'
+import SubscriberDetailModal from '../components/SubscriberDetailModal'
 
 interface OnlineSession {
   radacctid: number
@@ -37,10 +39,12 @@ interface OnlineSession {
 
 export default function OnlineUsers() {
   const { user } = useAuth()
+  const pppoeOnly = useBranding().branding.pppoe_only
   const isSeller = user?.role === 'seller'
 
   const [sessions, setSessions] = useState<OnlineSession[]>([])
   const [loading, setLoading] = useState(true)
+  const [detailCustomerId, setDetailCustomerId] = useState<number | null>(null)
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState<'all' | 'hotspot' | 'pppoe'>('all')
   const [nasFilter, setNasFilter] = useState('all')
@@ -156,6 +160,7 @@ export default function OnlineUsers() {
   const pppoeCount = sessions.filter((s) => s.connection_type === 'pppoe').length
   const visibleSessions = sessions
     .filter((s) => {
+      if (pppoeOnly) return s.connection_type === 'pppoe'
       if (isSeller) return true
       if (typeFilter !== 'all' && (s.connection_type ?? 'hotspot') !== typeFilter) return false
       return true
@@ -192,11 +197,13 @@ export default function OnlineUsers() {
   // manually disconnect rather than assuming "online" means "entitled".
   const staleCount = sessions.filter((s) => s.is_stale_session).length
 
-  const typeTabs: { key: 'all' | 'hotspot' | 'pppoe'; label: string; count: number }[] = [
-    { key: 'all', label: 'All', count: sessions.length },
-    { key: 'hotspot', label: 'Hotspot', count: hotspotCount },
-    { key: 'pppoe', label: 'PPPoE', count: pppoeCount },
-  ]
+  const typeTabs: { key: 'all' | 'hotspot' | 'pppoe'; label: string; count: number }[] = pppoeOnly
+    ? []
+    : [
+        { key: 'all', label: 'All', count: sessions.length },
+        { key: 'hotspot', label: 'Hotspot', count: hotspotCount },
+        { key: 'pppoe', label: 'PPPoE', count: pppoeCount },
+      ]
 
   return (
     <div className="space-y-6">
@@ -232,13 +239,15 @@ export default function OnlineUsers() {
           icon={<Users size={22} />}
           iconColorClass="text-cyan-600 bg-cyan-50 border border-cyan-100/50"
         />
+        {!pppoeOnly && (
         <StatCard
-          label="Hotspot Users Online"
-          value={<span className="text-sky-600">{num(hotspotCount)}</span>}
-          sub={`${formatBytes(hotspotVolumeBytes)} consumed`}
-          icon={<Wifi size={22} />}
-          iconColorClass="text-sky-600 bg-sky-50 border border-sky-100/50"
-        />
+            label="Hotspot Users Online"
+            value={<span className="text-sky-600">{num(hotspotCount)}</span>}
+            sub={`${formatBytes(hotspotVolumeBytes)} consumed`}
+            icon={<Wifi size={22} />}
+            iconColorClass="text-sky-600 bg-sky-50 border border-sky-100/50"
+          />
+        )}
         {!isSeller && (
           <StatCard
             label="PPPoE Subscribers Online"
@@ -394,7 +403,9 @@ export default function OnlineUsers() {
                     key={s.radacctid}
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
-                    className={s.is_stale_session ? 'bg-amber-50/60 hover:bg-amber-50' : 'hover:bg-slate-50/70'}
+                    onClick={() => { if (s.pppoe_customer_id) setDetailCustomerId(s.pppoe_customer_id) }}
+                    title={s.pppoe_customer_id ? 'Click to view subscriber details' : undefined}
+                    className={`${s.is_stale_session ? 'bg-amber-50/60 hover:bg-amber-50' : 'hover:bg-slate-50/70'} ${s.pppoe_customer_id ? 'cursor-pointer' : ''}`}
                   >
                     <td className="font-semibold text-slate-800">
                       <div className="flex items-center gap-1.5">
@@ -435,7 +446,22 @@ export default function OnlineUsers() {
                         )}
                       </td>
                     )}
-                    <td className="font-mono text-slate-600 text-xs">{s.ip_address || 'Dynamic'}</td>
+                    <td className="font-mono text-slate-600 text-xs">
+                      {s.ip_address && /^\d{1,3}(\.\d{1,3}){3}$/.test(s.ip_address) ? (
+                        <a
+                          href={`http://${s.ip_address}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          title={`Open http://${s.ip_address} in a new tab`}
+                          className="text-indigo-600 hover:text-indigo-800 hover:underline underline-offset-2"
+                        >
+                          {s.ip_address}
+                        </a>
+                      ) : (
+                        s.ip_address || 'Dynamic'
+                      )}
+                    </td>
                     <td className="font-mono text-xs text-slate-500">{s.mac_address || 'Active'}</td>
                     {/* Which router the session came in on. Registered NAS
                         devices resolve to their friendly name with the IP
@@ -462,7 +488,7 @@ export default function OnlineUsers() {
                     </td>
                     <td
                       className="font-bold text-slate-800 text-xs cursor-pointer group"
-                      onClick={() => setSelectedForUsage(s)}
+                      onClick={(e) => { e.stopPropagation(); setSelectedForUsage(s) }}
                       title="Click to view live data usage graph"
                     >
                       <div className="group-hover:text-cyan-600 transition-colors flex items-center gap-1">
@@ -481,7 +507,7 @@ export default function OnlineUsers() {
                       <div>{s.reseller_name || s.reseller_username || 'Admin Direct'}</div>
                       {s.seller_name && <div className="text-[10px] text-slate-400">{s.seller_name}</div>}
                     </td>
-                    <td className="text-center">
+                    <td className="text-center" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-center gap-1.5">
                         <button
                           onClick={() => setSelectedForUsage(s)}
@@ -550,6 +576,7 @@ export default function OnlineUsers() {
         confirmText="Disconnect"
         tone="danger"
       />
+      <SubscriberDetailModal customerId={detailCustomerId} onClose={() => setDetailCustomerId(null)} />
     </div>
   )
 }

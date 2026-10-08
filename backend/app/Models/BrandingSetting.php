@@ -17,5 +17,10 @@ class BrandingSetting extends Model
         'support_phone',
         'registered_address',
         'pan_vat_number',
+        'pppoe_only',
+    ];
+
+    protected $casts = [
+        'pppoe_only' => 'boolean',
     ];
 }

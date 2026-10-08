@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes, Link } from 'react-router-dom'
 import { Lock } from 'lucide-react'
 import { Role, useAuth } from './lib/auth'
+import { useBranding } from './lib/branding'
 import AppShell from './layouts/AppShell'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
@@ -30,6 +31,7 @@ import OnlineUsers from './pages/OnlineUsers'
 import PppoeCustomers from './pages/PppoeCustomers'
 import BrandingSettings from './pages/BrandingSettings'
 import PppoeSalesSummary from './pages/PppoeSalesSummary'
+import PppoeCommissionSummary from './pages/PppoeCommissionSummary'
 import Monitoring from './pages/Monitoring'
 
 function Protected({ children }: { children: JSX.Element }) {
@@ -56,15 +58,28 @@ function AccessDenied() {
 
 // Route-level gate — mirrors the sidebar's role/permission rules so a direct URL
 // cannot bypass a hidden menu item.
-function Guard({ perm, roles, children }: { perm?: string | string[]; roles?: Role[]; children: JSX.Element }) {
+// `hotspot` marks a hotspot/voucher-only route: it is redirected away when the
+// system is set to PPPoE only (Settings → Branding).
+function Guard({ perm, roles, hotspot, children }: { perm?: string | string[]; roles?: Role[]; hotspot?: boolean; children: JSX.Element }) {
   const { user, can } = useAuth()
+  const { branding, loading } = useBranding()
   if (!user) return null
+  if (hotspot) {
+    if (loading) return null
+    if (branding.pppoe_only) return <Navigate to="/pppoe/customers" replace />
+  }
   const roleOk = !roles || roles.includes(user.role)
   // A perm list means "any of these grants access" — used where one page now covers
   // what used to be two separately-gated routes.
   const permOk = !perm || (Array.isArray(perm) ? perm.some((p) => can(p)) : can(perm))
   if (!roleOk || !permOk) return <AccessDenied />
   return children
+}
+
+function PlansIndex() {
+  const { branding, loading } = useBranding()
+  if (loading) return null
+  return <Navigate to={branding.pppoe_only ? '/plans/pppoe' : '/plans/hotspot'} replace />
 }
 
 export default function App() {
@@ -87,21 +102,22 @@ export default function App() {
         <Route path="/pppoe" element={<Navigate to="/pppoe/customers" replace />} />
         <Route path="/pppoe/customers" element={<Guard perm="view_pppoe" roles={['admin', 'reseller']}><PppoeCustomers /></Guard>} />
         <Route path="/pppoe/sales-summary" element={<Guard perm="view_pppoe" roles={['admin', 'reseller']}><PppoeSalesSummary /></Guard>} />
-        <Route path="/plans" element={<Navigate to="/plans/hotspot" replace />} />
-        <Route path="/plans/hotspot" element={<Guard perm="view_plans"><HotspotPlans /></Guard>} />
+        <Route path="/pppoe/commission-summary" element={<Guard perm="view_pppoe" roles={['admin', 'reseller']}><PppoeCommissionSummary /></Guard>} />
+        <Route path="/plans" element={<PlansIndex />} />
+        <Route path="/plans/hotspot" element={<Guard perm="view_plans" hotspot><HotspotPlans /></Guard>} />
         <Route path="/plans/pppoe" element={<Guard perm="view_plans" roles={['admin', 'reseller']}><PppoePlans /></Guard>} />
         <Route path="/plans/bandwidth" element={<Guard perm="view_plans"><Bandwidths /></Guard>} />
         <Route path="/resellers" element={<Guard perm="view_resellers" roles={['admin']}><Users role="reseller" /></Guard>} />
-        <Route path="/sellers" element={<Guard perm="view_sellers" roles={['admin', 'reseller']}><Users role="seller" /></Guard>} />
+        <Route path="/sellers" element={<Guard perm="view_sellers" roles={['admin', 'reseller']} hotspot><Users role="seller" /></Guard>} />
         <Route path="/wallet" element={<Guard roles={['admin', 'reseller', 'seller']}><FundAllocation defaultTab="wallet" /></Guard>} />
-        <Route path="/gb" element={<Guard roles={['admin', 'reseller', 'seller']}><FundAllocation defaultTab="gb" /></Guard>} />
+        <Route path="/gb" element={<Guard roles={['admin', 'reseller', 'seller']} hotspot><FundAllocation defaultTab="gb" /></Guard>} />
         <Route path="/funds" element={<Guard roles={['admin', 'reseller', 'seller']}><FundAllocation /></Guard>} />
         <Route path="/ledger" element={<Guard roles={['admin', 'reseller', 'seller']}><Ledger /></Guard>} />
         <Route path="/accounts/sales" element={<Navigate to="/ledger?tab=sales" replace />} />
         <Route path="/accounts/expenses" element={<Navigate to="/ledger?tab=expenses" replace />} />
         <Route path="/transactions" element={<Navigate to="/ledger?tab=transactions" replace />} />
-        <Route path="/vouchers" element={<Guard perm={['generate_voucher', 'reports']}><Vouchers /></Guard>} />
-        <Route path="/vouchers/generate" element={<Guard perm="generate_voucher"><VoucherGenerator /></Guard>} />
+        <Route path="/vouchers" element={<Guard perm={['generate_voucher', 'reports']} hotspot><Vouchers /></Guard>} />
+        <Route path="/vouchers/generate" element={<Guard perm="generate_voucher" hotspot><VoucherGenerator /></Guard>} />
         <Route path="/reports" element={<Navigate to="/vouchers?tab=vouchers" replace />} />
         <Route path="/diagnostics" element={<Guard roles={['admin', 'reseller', 'seller']}><RadiusLogs /></Guard>} />
         <Route path="/monitoring" element={<Guard roles={['admin']}><Monitoring /></Guard>} />
@@ -113,7 +129,7 @@ export default function App() {
         <Route path="/settings/payment-methods" element={<Guard perm="view_settings" roles={['admin']}><PaymentMethods /></Guard>} />
         <Route path="/settings/chart-of-accounts" element={<Guard roles={['admin']}><ChartOfAccounts /></Guard>} />
         <Route path="/settings/system-load" element={<Guard perm="view_settings" roles={['admin']}><SystemLoad /></Guard>} />
-        <Route path="/settings/voucher-card" element={<Guard roles={['admin', 'reseller', 'seller']}><VoucherCardDesigner /></Guard>} />
+        <Route path="/settings/voucher-card" element={<Guard roles={['admin', 'reseller', 'seller']} hotspot><VoucherCardDesigner /></Guard>} />
         <Route path="/settings/api-tokens" element={<Guard perm="manage_api_tokens" roles={['admin', 'reseller', 'seller']}><ApiTokens /></Guard>} />
         <Route path="/settings/seasons" element={<Guard perm="view_settings" roles={['admin']}><SeasonDuration /></Guard>} />
       </Route>

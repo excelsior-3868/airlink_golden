@@ -16,6 +16,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'role' => \App\Http\Middleware\EnsureRole::class,
             'permission' => \App\Http\Middleware\CheckPermission::class,
+            'hotspot' => \App\Http\Middleware\EnsureHotspotEnabled::class,
         ]);
 
         // API-only backend: never redirect unauthenticated users to a web `login`

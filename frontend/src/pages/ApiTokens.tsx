@@ -4,6 +4,7 @@ import { Plus, Trash2, KeyRound, Copy, Check, ShieldAlert, UserCog } from 'lucid
 import { api, apiError } from '../lib/api'
 import { useQuery, invalidateCache } from '../lib/cache'
 import { useAuth } from '../lib/auth'
+import { useBranding } from '../lib/branding'
 import { GlassCard, PageTitle, Modal, Pill, EmptyState, ConfirmModal, Spinner, CustomSelect } from '../components/ui'
 
 interface TokenOwner {
@@ -35,6 +36,7 @@ interface Candidate extends TokenOwner {
 // everyone else can only ever create a token for themselves.
 export default function ApiTokens() {
   const { user } = useAuth()
+  const pppoeOnly = useBranding().branding.pppoe_only
   const isAdmin = user?.role === 'admin'
 
   const [open, setOpen] = useState(false)
@@ -56,6 +58,8 @@ export default function ApiTokens() {
     () => api.get('/api-tokens/abilities').then((r) => r.data.data),
     { staleTime: Infinity },
   )
+  // PPPoE-only: voucher abilities are not offered for new tokens.
+  const offeredAbilities = Object.keys(abilityCatalog).filter((k) => !(pppoeOnly && k.startsWith('vouchers.')))
   const { data: candidates = [] } = useQuery<Candidate[]>(
     'api-token-candidates',
     async () => {
@@ -74,7 +78,7 @@ export default function ApiTokens() {
   const openNew = () => {
     setName('')
     setTargetUserId(null)
-    setSelectedAbilities(Object.keys(abilityCatalog))
+    setSelectedAbilities(offeredAbilities)
     setErr('')
     setOpen(true)
   }
@@ -246,7 +250,7 @@ export default function ApiTokens() {
           <div>
             <label className="text-xs font-semibold text-muted-foreground uppercase block mb-2">Abilities</label>
             <div className="space-y-2">
-              {Object.entries(abilityCatalog).map(([key, label]) => (
+              {offeredAbilities.map((key) => [key, abilityCatalog[key]] as const).map(([key, label]) => (
                 <label key={key} className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
                   <input
                     type="checkbox"

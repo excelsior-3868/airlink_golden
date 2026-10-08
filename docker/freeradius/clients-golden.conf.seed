@@ -1,0 +1,36 @@
+# Airlink v3.0 — RADIUS clients (NAS) for the GOLDEN tenant.
+#
+# SEED content for /var/lib/airlink-radius/clients-golden.conf — written
+# once, the first time the volume lacks that file (see entrypoint.sh). After
+# that the Golden app's ClientsConfService owns this file and appends/edits
+# client{} blocks below the marker as NAS devices are added in its UI.
+#
+# EVERY client in this file must carry `virtual_server = golden`. That line
+# is the entire tenant-routing mechanism: it sends the request into the
+# `golden` virtual server, which talks to the `sql_golden` module
+# instance, which is bound to the airlink_golden schema. A client here
+# WITHOUT that line silently falls through to the Mera virtual server and
+# writes Golden sessions into Mera's database.
+#
+# Block names are prefixed `gol_` by the app so they can never collide with a
+# Mera block — both apps number their devices from id 1, so an unprefixed
+# `{shortname}_{id}` would eventually produce a duplicate client name and
+# FreeRADIUS would refuse to start.
+
+# Lets the Golden backend's built-in RADIUS test-auth tool reach this
+# server. The /16 is deliberate: Mera's `client docker_networks` covers
+# 172.16.0.0/12, which contains this range, and FreeRADIUS resolves
+# overlapping clients by longest prefix — so this more specific entry wins
+# for Golden's containers while Mera's keeps matching its own.
+#
+# MUST match RADIUS_SECRET in the golden stack's .env.
+client golden_docker {
+	ipaddr = 172.30.0.0/16
+	secret = "testing123"
+	require_message_authenticator = yes
+	virtual_server = golden
+}
+
+# Admin-managed NAS devices below this line are written/updated by the
+# Golden app (app/Services/ClientsConfService.php). Manual edits will be
+# overwritten the next time the matching device is saved from the frontend.

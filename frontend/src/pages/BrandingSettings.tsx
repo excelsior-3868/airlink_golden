@@ -10,14 +10,18 @@ import {
   AlertCircle,
   Loader2,
   Save,
+  Router,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useBranding, BrandingData } from '../lib/branding';
+import { useAuth } from '../lib/auth';
 import { PageTitle } from '../components/ui';
 
 export default function BrandingSettings() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const { branding, updateBrandingState } = useBranding();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
 
   const [propertyName, setPropertyName] = useState('Oxygen Restaurant and Home');
   const [primaryColor, setPrimaryColor] = useState('#1e3a5f');
@@ -26,6 +30,7 @@ export default function BrandingSettings() {
   const [supportPhone, setSupportPhone] = useState('+9779851129935');
   const [registeredAddress, setRegisteredAddress] = useState('kathmandu Barnani');
   const [panVatNumber, setPanVatNumber] = useState('601234567');
+  const [pppoeOnly, setPppoeOnly] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -50,6 +55,7 @@ export default function BrandingSettings() {
         setSupportPhone(data.support_phone || '');
         setRegisteredAddress(data.registered_address || '');
         setPanVatNumber(data.pan_vat_number || '');
+        setPppoeOnly(!!data.pppoe_only);
 
         updateBrandingState(data);
       }
@@ -100,6 +106,7 @@ export default function BrandingSettings() {
         support_phone: supportPhone,
         registered_address: registeredAddress,
         pan_vat_number: panVatNumber,
+        pppoe_only: pppoeOnly,
       };
 
       const res = await api.post('/settings/branding', payload);
@@ -341,6 +348,41 @@ export default function BrandingSettings() {
               </div>
             </div>
           </div>
+
+          {/* Service mode — admin only; the API ignores this field from other roles. */}
+          {isAdmin && (
+            <div className="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-xs">
+              <div className="flex items-center gap-2.5 text-slate-800 mb-4">
+                <Router className="text-blue-600" size={20} />
+                <h2 className="text-base font-extrabold tracking-tight">Service Mode</h2>
+              </div>
+              <div className="flex items-center justify-between gap-6">
+                <div>
+                  <p className="text-sm font-extrabold text-slate-800">PPPoE only</p>
+                  <p className="text-xs font-medium text-slate-500 mt-1 max-w-xl">
+                    Hides everything related to Hotspot (hotspot plans, vouchers, voucher card, hotspot
+                    sessions) and blocks the hotspot API. Existing data is kept; turn this off to bring
+                    hotspot back.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={pppoeOnly}
+                  onClick={() => setPppoeOnly((v) => !v)}
+                  className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors cursor-pointer ${
+                    pppoeOnly ? 'bg-blue-600' : 'bg-slate-300'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                      pppoeOnly ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Submit Action Bar */}
           <div className="flex justify-end pt-2">

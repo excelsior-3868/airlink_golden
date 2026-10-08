@@ -703,12 +703,29 @@ class RadiusController extends Controller
             ->select('vouchers.*', 'internet_plans.name as plan_name')
             ->first();
 
+        // Not a voucher — the same box is used to troubleshoot PPPoE
+        // customers, whose login is their username. A PPPoE customer has the
+        // same fields the diagnosis reads (status, validity window, MAC/NAS
+        // binding, radcheck credentials), so it flows through unchanged.
+        $isPppoe = false;
+        if (!$voucher) {
+            $voucher = DB::table('pppoe_customers')
+                ->leftJoin('internet_plans', 'internet_plans.id', '=', 'pppoe_customers.plan_id')
+                ->whereRaw('UPPER(pppoe_customers.username) = ?', [strtoupper($code)])
+                ->select('pppoe_customers.*', 'internet_plans.name as plan_name', 'internet_plans.selling_price as price')
+                ->first();
+            if ($voucher) {
+                $isPppoe = true;
+                $voucher->code = $voucher->username;
+            }
+        }
+
         if (!$voucher) {
             return $this->ok([
                 'code' => $code,
                 'db' => ['exists' => false],
                 'overall_status' => 'error',
-                'summary' => 'Voucher code does not exist in the database. Please verify the code.',
+                'summary' => 'Code does not exist as a voucher or a PPPoE customer. Please verify it.',
             ]);
         }
 
@@ -809,6 +826,7 @@ class RadiusController extends Controller
         return $this->ok([
             'code' => $voucher->code,
             'username' => $username,
+            'type' => $isPppoe ? 'pppoe' : 'voucher',
             'db' => [
                 'exists' => true,
                 'status' => $voucher->status,

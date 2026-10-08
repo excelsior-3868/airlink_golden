@@ -44,6 +44,7 @@ class BrandingSettingController extends Controller
             'registered_address' => 'nullable|string|max:500',
             'pan_vat_number' => 'nullable|string|max:100',
             'logo_url' => 'nullable|string',
+            'pppoe_only' => 'sometimes|boolean',
             'logo_file' => 'nullable|image|max:5120', // 5MB max
         ]);
 
@@ -53,6 +54,12 @@ class BrandingSettingController extends Controller
         }
 
         unset($validated['logo_file']);
+
+        // Service mode is a system-wide switch: only an admin may flip it, even though
+        // resellers/sellers can edit the rest of the branding.
+        if ($request->user()?->role !== 'admin') {
+            unset($validated['pppoe_only']);
+        }
 
         $setting->update($validated);
 

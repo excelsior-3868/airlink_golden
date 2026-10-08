@@ -1,5 +1,6 @@
 <?php
 
+
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
@@ -192,8 +193,22 @@ class PppoeCustomerController extends Controller
             'owner:id,name,username,role',
             'reseller:id,name,username',
             'nasDevice:id,name,nasname',
-            'recharges' => fn ($q) => $q->with('collectedBy:id,name,username')->orderBy('created_at', 'desc')->limit(10),
+            'recharges' => fn ($q) => $q->with(['plan:id,name', 'collectedBy:id,name,username'])->orderBy('created_at', 'desc')->limit(200),
         ]);
+
+        // Lifetime accounting totals for the details view (all sessions, not just the live one).
+        $totals = DB::table('radacct')
+            ->where('username', $customer->username)
+            ->selectRaw('COUNT(*) as session_count, COALESCE(SUM(acctinputoctets),0) as input_bytes, COALESCE(SUM(acctoutputoctets),0) as output_bytes, COALESCE(SUM(acctsessiontime),0) as total_time, MIN(acctstarttime) as first_seen, MAX(acctstarttime) as last_seen')
+            ->first();
+        $customer->usage_totals = [
+            'session_count' => (int) ($totals->session_count ?? 0),
+            'input_bytes' => (int) ($totals->input_bytes ?? 0),
+            'output_bytes' => (int) ($totals->output_bytes ?? 0),
+            'total_time' => (int) ($totals->total_time ?? 0),
+            'first_seen' => $totals->first_seen ?? null,
+            'last_seen' => $totals->last_seen ?? null,
+        ];
 
         $live = OnlineSession::scopeLive(DB::table('radacct'))
             ->where('username', $customer->username)
@@ -203,6 +218,47 @@ class PppoeCustomerController extends Controller
         $customer->current_session = $live;
 
         return $this->ok($customer);
+    }
+
+    /**
+     * Check if a PPPoE username is available.
+     */
+    public function checkUsername(Request $request): JsonResponse
+    {
+        if (! $request->user()->tokenCan('pppoe.read') && ! $request->user()->tokenCan('*')) {
+            return $this->fail("This API token does not have the 'pppoe.read' ability.", 403);
+        }
+
+        $username = trim((string) $request->input('username', ''));
+        if (mb_strlen($username) < 3) {
+            return $this->ok(['available' => false, 'message' => 'Username must be at least 3 characters.']);
+        }
+
+        if (!preg_match('/^[A-Za-z0-9._@-]{3,64}$/', $username)) {
+            return $this->ok(['available' => false, 'message' => 'Username contains invalid characters (letters, numbers, . _ @ - allowed).']);
+        }
+
+        $existsInCustomer = PppoeCustomer::where('username', $username)->exists();
+        $existsInVoucher = \App\Models\Voucher::where('code', $username)->whereNull('void_reason')->exists();
+
+        $available = !$existsInCustomer && !$existsInVoucher;
+        return $this->ok([
+            'available' => $available,
+            'message' => $available ? 'Username is available.' : 'This username is already taken.'
+        ]);
+    }
+
+    /**
+     * Return next auto-generated PPPoE credentials.
+     */
+    public function nextCredentials(Request $request): JsonResponse
+    {
+        if (! $request->user()->tokenCan('pppoe.read') && ! $request->user()->tokenCan('*')) {
+            return $this->fail("This API token does not have the 'pppoe.read' ability.", 403);
+        }
+
+        $credentials = $this->customerService->generateNextCredentials();
+        return $this->ok($credentials);
     }
 
     /**
@@ -216,11 +272,18 @@ class PppoeCustomerController extends Controller
         }
 
         $data = $request->validate([
-            'username' => ['required', 'string', 'min:3', 'max:64', 'regex:/^[A-Za-z0-9._@-]{3,64}$/'],
+            'username' => [
+                'required', 'string', 'min:3', 'max:64', 'regex:/^[A-Za-z0-9._@-]{3,64}$/', 'unique:pppoe_customers,username',
+                function ($attribute, $value, $fail) {
+                    if (\App\Models\Voucher::where('code', $value)->whereNull('void_reason')->exists()) {
+                        $fail('The username has already been taken by an active voucher code.');
+                    }
+                },
+            ],
             'password' => ['required', 'string', 'min:1', 'max:255'],
             'plan_id' => ['required', 'integer', 'exists:internet_plans,id'],
             'full_name' => ['required', 'string', 'max:255'],
-            'phone' => ['nullable', 'string', 'max:30'],
+            'phone' => ['required', 'string', 'regex:/^(?:\+?977[- ]?)?9[6-8]\d{8}$/'],
             'address' => ['nullable', 'string', 'max:255'],
             'notes' => ['nullable', 'string'],
             'customer_code' => ['nullable', 'string', 'max:40'],
@@ -237,6 +300,10 @@ class PppoeCustomerController extends Controller
             'activate_now' => ['nullable', 'boolean'],
             'periods' => ['nullable', 'integer', 'min:1', 'max:24'],
             'payment_method' => ['nullable', 'string', 'max:40'],
+        ], [
+            'username.unique' => 'The username has already been taken by an existing subscriber.',
+            'phone.required' => 'Mobile number is required.',
+            'phone.regex' => 'Please enter a valid 10-digit mobile number (e.g. 98XXXXXXXX or 97XXXXXXXX).',
         ]);
 
         $data = $this->normalizeMac($data);
@@ -290,7 +357,7 @@ class PppoeCustomerController extends Controller
             'password' => ['nullable', 'string', 'min:1', 'max:255'],
             'plan_id' => ['nullable', 'integer', 'exists:internet_plans,id'],
             'full_name' => ['required', 'string', 'max:255'],
-            'phone' => ['nullable', 'string', 'max:30'],
+            'phone' => ['nullable', 'string', 'regex:/^(?:\+?977[- ]?)?9[6-8]\d{8}$/'],
             'address' => ['nullable', 'string', 'max:255'],
             'notes' => ['nullable', 'string'],
             'customer_code' => ['nullable', 'string', 'max:40'],
@@ -300,6 +367,8 @@ class PppoeCustomerController extends Controller
             'mac_bind' => ['nullable', 'boolean'],
             'mac_address' => ['nullable', 'string', 'regex:/^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/'],
             'nas_device_id' => ['nullable', 'integer', 'exists:nas_devices,id'],
+        ], [
+            'phone.regex' => 'Please enter a valid 10-digit mobile number (e.g. 98XXXXXXXX or 97XXXXXXXX).',
         ]);
 
         $data = $this->normalizeMac($data);
@@ -443,6 +512,75 @@ class PppoeCustomerController extends Controller
             ->paginate($perPage);
 
         return $this->ok($sessions);
+    }
+
+    /**
+     * Day-by-day data usage for one subscriber, summed from RADIUS accounting.
+     * Each session is attributed to the (Nepal-local) day it started, and every
+     * day in the window is returned — zero-filled — so charts have no gaps.
+     * Download is acctoutputoctets (NAS → subscriber), upload is acctinputoctets.
+     */
+    public function usage(Request $request, PppoeCustomer $customer): JsonResponse
+    {
+        if (! $request->user()->tokenCan('pppoe.read')) {
+            return $this->fail("This API token does not have the 'pppoe.read' ability.", 403);
+        }
+
+        $actor = $request->user();
+        if (!$this->canAccess($actor, $customer)) {
+            return $this->fail('You do not have access to this subscriber.', 403);
+        }
+
+        $days = max(1, min(365, (int) $request->input('days', 30)));
+        $tz = 'Asia/Kathmandu';
+        $today = now($tz)->startOfDay();
+        $start = (clone $today)->subDays($days - 1);
+        $offset = $today->format('P'); // e.g. +05:45
+
+        $rows = DB::table('radacct')
+            ->where('username', $customer->username)
+            ->where('acctstarttime', '>=', (clone $start)->utc()->toDateTimeString())
+            ->selectRaw(
+                'DATE(CONVERT_TZ(acctstarttime, \'+00:00\', ?)) as day, COUNT(*) as sessions, '
+                . 'COALESCE(SUM(acctoutputoctets),0) as download, COALESCE(SUM(acctinputoctets),0) as upload, '
+                . 'COALESCE(SUM(acctsessiontime),0) as online_seconds',
+                [$offset]
+            )
+            ->groupBy('day')
+            ->get()
+            ->keyBy('day');
+
+        $daily = [];
+        for ($i = 0; $i < $days; $i++) {
+            $key = (clone $start)->addDays($i)->toDateString();
+            $r = $rows->get($key);
+            $download = (int) ($r->download ?? 0);
+            $upload = (int) ($r->upload ?? 0);
+            $daily[] = [
+                'date' => $key,
+                'sessions' => (int) ($r->sessions ?? 0),
+                'download' => $download,
+                'upload' => $upload,
+                'total' => $download + $upload,
+                'online_seconds' => (int) ($r->online_seconds ?? 0),
+            ];
+        }
+
+        $download = array_sum(array_column($daily, 'download'));
+        $upload = array_sum(array_column($daily, 'upload'));
+
+        return $this->ok([
+            'days' => $days,
+            'daily' => $daily,
+            'totals' => [
+                'download' => $download,
+                'upload' => $upload,
+                'total' => $download + $upload,
+                'sessions' => array_sum(array_column($daily, 'sessions')),
+                'online_seconds' => array_sum(array_column($daily, 'online_seconds')),
+                'average_per_day' => (int) round(($download + $upload) / $days),
+            ],
+        ]);
     }
 
     /**

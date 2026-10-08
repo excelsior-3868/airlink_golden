@@ -10,6 +10,8 @@ export interface BrandingData {
   support_phone: string;
   registered_address: string;
   pan_vat_number: string;
+  /** PPPoE-only deployment: hotspot/voucher UI is hidden and its API rejected. */
+  pppoe_only: boolean;
 }
 
 interface BrandingContextType {
@@ -19,6 +21,13 @@ interface BrandingContextType {
   refreshBranding: () => Promise<void>;
 }
 
+// Last known service mode, so a PPPoE-only system doesn't flash hotspot UI while the
+// branding request is still in flight.
+const CACHE_KEY = 'airlink_pppoe_only';
+const cachedPppoeOnly = (): boolean => {
+  try { return localStorage.getItem(CACHE_KEY) === '1'; } catch { return false; }
+};
+
 const defaultBranding: BrandingData = {
   property_name: 'Airlink',
   primary_color: '#1e3a5f',
@@ -27,6 +36,7 @@ const defaultBranding: BrandingData = {
   support_phone: '+9779851129935',
   registered_address: 'kathmandu Barnani',
   pan_vat_number: '601234567',
+  pppoe_only: cachedPppoeOnly(),
 };
 
 const BrandingContext = createContext<BrandingContextType>({
@@ -54,6 +64,8 @@ export function BrandingProvider({ children }: { children: ReactNode }) {
       }
       favicon.href = data.logo_url;
     }
+
+    try { localStorage.setItem(CACHE_KEY, data.pppoe_only ? '1' : '0'); } catch { /* storage unavailable */ }
 
     if (data.primary_color) {
       document.documentElement.style.setProperty('--brand-primary', data.primary_color);

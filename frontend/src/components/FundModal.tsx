@@ -4,6 +4,7 @@ import { Wallet, Database, Send } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { rs, gb } from '../lib/format'
+import { useBranding } from '../lib/branding'
 import { Modal, CustomSelect, SelectOption } from './ui'
 
 interface FundModalProps {
@@ -15,6 +16,7 @@ interface FundModalProps {
 
 export default function FundModal({ open, onClose, onSuccess, defaultAllocType = 'gb' }: FundModalProps) {
   const { user, refresh } = useAuth()
+  const pppoeOnly = useBranding().branding.pppoe_only
 
   // Selection state
   const [targetUserId, setTargetUserId] = useState('')
@@ -39,7 +41,7 @@ export default function FundModal({ open, onClose, onSuccess, defaultAllocType =
   useEffect(() => {
     if (!open) return
     setTargetUserId('')
-    setAllocType(defaultAllocType)
+    setAllocType(pppoeOnly ? 'wallet' : defaultAllocType)
     setWalletAmount('')
     setWalletNote('')
     setGbAmount('')
@@ -47,7 +49,7 @@ export default function FundModal({ open, onClose, onSuccess, defaultAllocType =
     setGbNote('')
     setErr('')
     setSuccess('')
-  }, [open, defaultAllocType])
+  }, [open, defaultAllocType, pppoeOnly])
 
   // Load downlines on mount / user change
   useEffect(() => {
@@ -217,7 +219,7 @@ export default function FundModal({ open, onClose, onSuccess, defaultAllocType =
         {targetUser && (
           <>
             {/* Allocation Type Switch (Admin only) */}
-            {user?.role === 'admin' ? (
+            {user?.role === 'admin' && !pppoeOnly ? (
               <div>
                 <label className="text-xs font-bold text-slate-500 block mb-2">
                   Allocation Type
@@ -261,10 +263,12 @@ export default function FundModal({ open, onClose, onSuccess, defaultAllocType =
 
             {/* Recipient current info */}
             <div className="grid grid-cols-2 gap-4 bg-slate-50/50 border border-slate-200/50 p-3 rounded-2xl text-xs">
-              <div>
-                <p className="text-slate-400 font-semibold">Recipient Current GB:</p>
-                <p className="text-slate-800 font-bold mt-0.5">{gb(targetUser.gb_balance)}</p>
-              </div>
+              {!pppoeOnly && (
+                <div>
+                  <p className="text-slate-400 font-semibold">Recipient Current GB:</p>
+                  <p className="text-slate-800 font-bold mt-0.5">{gb(targetUser.gb_balance)}</p>
+                </div>
+              )}
               <div>
                 <p className="text-slate-400 font-semibold">Recipient Current Wallet:</p>
                 <p className="text-slate-800 font-bold mt-0.5">{rs(targetUser.wallet_balance)}</p>

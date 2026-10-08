@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { api } from '../lib/api'
 import { useQuery, invalidateCache } from '../lib/cache'
 import { useAuth } from '../lib/auth'
 import { rs, gb, datet } from '../lib/format'
+import { useBranding } from '../lib/branding'
 import { GlassCard, PageTitle, Pagination, Pill, StatCard, EmptyState, Spinner } from '../components/ui'
 import { Wallet as WalletIcon, Database, PlusCircle } from 'lucide-react'
 import FundModal from '../components/FundModal'
@@ -22,6 +23,7 @@ type TabType = 'wallet' | 'gb'
 
 export default function FundAllocation({ defaultTab }: { defaultTab?: TabType }) {
   const { user } = useAuth()
+  const pppoeOnly = useBranding().branding.pppoe_only
   const location = useLocation()
   const navigate = useNavigate()
 
@@ -34,7 +36,9 @@ export default function FundAllocation({ defaultTab }: { defaultTab?: TabType })
     return user?.role === 'admin' ? 'wallet' : 'gb'
   }
 
-  const [activeTab, setActiveTab] = useState<TabType>(getInitialTab())
+  const [activeTabState, setActiveTab] = useState<TabType>(getInitialTab())
+  // PPPoE-only: there is no GB quota, so the wallet tab is the only one.
+  const activeTab: TabType = pppoeOnly ? 'wallet' : activeTabState
   const [walletPage, setWalletPage] = useState(1)
   const [gbPage, setGbPage] = useState(1)
   const [fundOpen, setFundOpen] = useState(false)
@@ -65,10 +69,13 @@ export default function FundAllocation({ defaultTab }: { defaultTab?: TabType })
     invalidateCache('dashboard')
   }
 
+  // Without GB quota, a reseller/seller has nothing to allocate here.
+  if (pppoeOnly && user?.role !== 'admin') return <Navigate to="/" replace />
+
   return (
     <div className="space-y-6">
       <PageTitle 
-        title={user?.role === 'admin' ? "Wallet & GB Allocation" : "GB Allocation"} 
+        title={pppoeOnly ? "Wallet Allocation" : user?.role === 'admin' ? "Wallet & GB Allocation" : "GB Allocation"} 
         subtitle={user?.role === 'admin' ? "Manage downline cash wallet loads and data quota allocations" : "Manage downline data quota allocations"} 
         icon={user?.role === 'admin' ? <WalletIcon size={22} className="text-emerald-500" /> : <Database size={22} className="text-cyan-500" />} 
       />
@@ -86,6 +93,7 @@ export default function FundAllocation({ defaultTab }: { defaultTab?: TabType })
             </div>
           </GlassCard>
         )}
+        {!pppoeOnly && (
         <GlassCard className="p-4 flex items-center justify-between">
           <div>
             <p className="text-xs font-semibold text-slate-400 font-sans">Current GB Quota</p>
@@ -95,6 +103,7 @@ export default function FundAllocation({ defaultTab }: { defaultTab?: TabType })
             <Database size={20} />
           </div>
         </GlassCard>
+        )}
       </div>
 
       {/* Tab Navigation (Segmented Pill Bar) */}
@@ -114,6 +123,7 @@ export default function FundAllocation({ defaultTab }: { defaultTab?: TabType })
           </button>
         )}
 
+        {!pppoeOnly && (
         <button
           type="button"
           onClick={() => handleTabChange('gb')}
@@ -126,6 +136,7 @@ export default function FundAllocation({ defaultTab }: { defaultTab?: TabType })
           <Database size={16} className={activeTab === 'gb' ? 'text-cyan-600' : 'text-slate-400'} />
           <span>GB Allocation</span>
         </button>
+        )}
       </div>
 
       {/* Tab Contents */}

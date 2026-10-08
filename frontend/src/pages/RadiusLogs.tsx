@@ -29,10 +29,6 @@ export default function RadiusLogs() {
 
   const [activeTab, setActiveTab] = useState<'diagnostics' | 'serverlog' | 'authlogs'>('diagnostics')
 
-  // Log Availability State
-  const [logAvailable, setLogAvailable] = useState<boolean | null>(null)
-  const [logCheckError, setLogCheckError] = useState<string | null>(null)
-
   // Diagnostics State
   const [diagCode, setDiagCode] = useState('')
   const [diagMac, setDiagMac] = useState('')
@@ -57,26 +53,7 @@ export default function RadiusLogs() {
   const [bruteForceAlerts, setBruteForceAlerts] = useState<any[]>([])
   const [revealedPasswords, setRevealedPasswords] = useState<Record<number, boolean>>({})
 
-  // Availability check
-  const checkLogAvailability = async () => {
-    try {
-      const response = await api.get('/radius/server-log', { params: { limit: 1 } })
-      if (response.data.data?.exists === false) {
-        setLogAvailable(false)
-        setLogCheckError(response.data.data.message || 'FreeRADIUS log file not found or not readable.')
-      } else {
-        setLogAvailable(true)
-        setLogCheckError(null)
-      }
-    } catch (err: any) {
-      setLogAvailable(false)
-      setLogCheckError(err.response?.data?.message || err.message || 'Failed to reach the RADIUS log endpoint.')
-    }
-  }
 
-  useEffect(() => {
-    checkLogAvailability()
-  }, [])
 
   // Run single-voucher deep diagnostic
   const runDiagnostics = async (codeToRun?: string) => {
@@ -185,17 +162,11 @@ export default function RadiusLogs() {
   return (
     <div className="w-full space-y-6">
       <PageTitle
-        title="Voucher Diagnostics & RADIUS Logs"
+        title="PPPoE User Diagnostics & RADIUS Logs"
         subtitle="Troubleshoot authentication, inspect server daemon logs, and review audit history"
         icon={<Terminal size={22} className="text-primary" />}
       />
 
-      {logCheckError && (
-        <div className="bg-rose-50 text-rose-800 border border-rose-200 rounded-2xl p-4 flex items-center gap-2">
-          <AlertCircle size={18} className="shrink-0" />
-          <span className="text-sm font-semibold">{logCheckError}</span>
-        </div>
-      )}
 
       {/* Tab Switcher */}
       <div className="flex gap-2 border-b border-slate-200 pb-2">
@@ -207,7 +178,7 @@ export default function RadiusLogs() {
           }`}
           onClick={() => setActiveTab('diagnostics')}
         >
-          <Terminal size={16} /> Voucher Diagnostics
+          <Terminal size={16} /> PPPoE User Diagnostics
         </button>
         <button
           className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-t-xl border-b-2 transition-all cursor-pointer ${
@@ -233,11 +204,11 @@ export default function RadiusLogs() {
         )}
       </div>
 
-      {/* Tab 1: Voucher Diagnostics */}
+      {/* Tab 1: PPPoE User Diagnostics */}
       {activeTab === 'diagnostics' && (
         <GlassCard className="space-y-6 p-6">
           <div className="space-y-2">
-            <label className="text-sm font-bold text-slate-700 block">Enter Voucher Code to Diagnose</label>
+            <label className="text-sm font-bold text-slate-700 block">Enter PPPoE Username to Diagnose</label>
             <div className="flex flex-col sm:flex-row gap-3">
               <input
                 className="input text-base"
@@ -269,9 +240,9 @@ export default function RadiusLogs() {
               </button>
             </div>
             <p className="text-xs text-slate-400">
-              Leave the MAC blank to test the voucher against the device it is already locked to.
+              Leave the MAC blank to test the PPPoE user against the device it is already locked to.
               Enter the customer's current MAC to check whether <em>their</em> device would get in —
-              phones rotate their Wi-Fi MAC, which is the usual reason a MAC-bound card stops working.
+              phones rotate their Wi-Fi MAC, which is the usual reason a MAC-bound account stops working.
             </p>
           </div>
 
@@ -287,7 +258,7 @@ export default function RadiusLogs() {
             <div className="border border-slate-100 rounded-2xl p-5 bg-slate-50/50 space-y-4 text-sm leading-relaxed">
               <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
                 <div className="flex items-center gap-2">
-                  <span className="font-bold text-slate-800 text-base">Voucher: "{diagResults.code}"</span>
+                  <span className="font-bold text-slate-800 text-base">PPPoE User: "{diagResults.code}"</span>
                   {diagResults.username && diagResults.username !== diagResults.code && (
                     <span className="text-xs text-slate-500 font-mono">({diagResults.username})</span>
                   )}
@@ -328,7 +299,7 @@ export default function RadiusLogs() {
                         <span className="font-semibold text-slate-700">{diagResults.db.plan_name || '—'}</span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span className="text-slate-500">Voucher Price:</span>
+                        <span className="text-slate-500">Plan Price:</span>
                         <span className="font-semibold text-slate-700">Rs. {diagResults.db.price}</span>
                       </div>
                       <div className="flex items-center justify-between">
@@ -438,7 +409,7 @@ export default function RadiusLogs() {
               {/* Relevant logs detail list */}
               {diagResults.log_matches?.length > 0 && (
                 <div className="space-y-2 mt-2">
-                  <p className="font-bold text-slate-700 text-xs">Recent Server Log Entries for this Voucher:</p>
+                  <p className="font-bold text-slate-700 text-xs">Recent Server Log Entries for this PPPoE User:</p>
                   <div className="divide-y border border-slate-100 bg-white rounded-xl overflow-hidden max-h-[160px] overflow-y-auto">
                     {diagResults.log_matches.slice(0, 5).map((l: any, i: number) => (
                       <div key={i} className="p-3 text-xs flex items-start justify-between gap-3 hover:bg-slate-50/50">
@@ -465,7 +436,7 @@ export default function RadiusLogs() {
           ) : (
             <div className="flex flex-col items-center justify-center py-12 text-slate-400 italic">
               <Activity size={32} className="text-slate-300 mb-2" />
-              <span>Enter a voucher code above and click Diagnose to start troubleshooting.</span>
+              <span>Enter a PPPoE username above and click Diagnose to start troubleshooting.</span>
             </div>
           )}
         </GlassCard>
@@ -492,7 +463,7 @@ export default function RadiusLogs() {
                   value={serverLogFilterInput}
                   onChange={(e) => setServerLogFilterInput(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && loadServerLog(serverLogLimit, serverLogFilterInput.trim())}
-                  placeholder="Search Voucher Code..."
+                  placeholder="Search PPPoE Username..."
                   className="pl-8 pr-7 py-2 text-xs rounded-xl border border-slate-200 bg-white w-52 focus:outline-none focus:border-slate-300"
                 />
                 {serverLogFilterInput && (

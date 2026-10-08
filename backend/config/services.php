@@ -35,4 +35,8 @@ return [
         ],
     ],
 
+    'pppoe' => [
+        'username_prefix' => env('PPPOE_USERNAME_PREFIX', 'KHPPOE'),
+    ],
+
 ];

@@ -4,6 +4,7 @@ import { api } from '../lib/api'
 import { useQuery } from '../lib/cache'
 import { useAuth } from '../lib/auth'
 import { rs, gb, datet } from '../lib/format'
+import { useBranding } from '../lib/branding'
 import { GlassCard, PageTitle, Pagination, Pill, EmptyState, Spinner } from '../components/ui'
 import { ArrowLeftRight, Wallet, Database, FileText, HandCoins } from 'lucide-react'
 
@@ -43,6 +44,7 @@ const amountText = (t: any) => (t.unit === 'gb' ? gb(t.amount) : rs(t.amount))
 
 export default function Transactions() {
   const { user } = useAuth()
+  const pppoeOnly = useBranding().branding.pppoe_only
   const [page, setPage] = useState(1)
   const [source, setSource] = useState<Source>('')
 
@@ -60,7 +62,7 @@ export default function Transactions() {
       <PageTitle title="Transactions" subtitle={subtitle} icon={<ArrowLeftRight size={22} className="text-blue-500" />} />
 
       <div className="flex flex-wrap gap-2 mb-4">
-        {FILTERS.map((f) => {
+        {FILTERS.filter((f) => !(pppoeOnly && f.key === 'gb')).map((f) => {
           const active = source === f.key
           return (
             <button
@@ -96,7 +98,7 @@ export default function Transactions() {
                 </tr>
               </thead>
               <tbody>
-                {(data?.data || []).map((t: any, idx: number) => (
+                {(data?.data || []).filter((t: any) => !(pppoeOnly && t.source === 'gb')).map((t: any, idx: number) => (
                   <motion.tr key={t.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: idx * 0.02 }} className="hover:bg-secondary/30">
                     <td className="whitespace-nowrap text-xs">{datet(t.created_at)}</td>
                     <td className="font-mono text-xs">{t.account || '—'}</td>

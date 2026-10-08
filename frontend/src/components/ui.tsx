@@ -2,6 +2,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { ReactNode, useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useAuth } from '../lib/auth'
+import { useBranding } from '../lib/branding'
 import { rs, gb } from '../lib/format'
 import { Check, ChevronDown, Tag, Zap, Clock, Ban, Ticket, PlusCircle, Search, Sparkles, Wallet, Database, User, Users } from 'lucide-react'
 import { ComposedChart, Bar, Cell, Line, XAxis, Tooltip, ResponsiveContainer } from 'recharts'
@@ -188,6 +189,7 @@ export function VoucherStatCard({
 
 export function PageTitle({ title, subtitle, action, icon, showBalances = false, showOnlineUsers = false }: { title: string; subtitle?: string; action?: ReactNode; icon?: ReactNode; showBalances?: boolean; showOnlineUsers?: boolean }) {
   const { user } = useAuth()
+  const pppoeOnly = useBranding().branding.pppoe_only
 
   return (
     <div className="flex items-start justify-between mb-6 flex-wrap gap-4 pt-4">
@@ -222,7 +224,7 @@ export function PageTitle({ title, subtitle, action, icon, showBalances = false,
                 </div>
               </div>
             )}
-            {showBalances && (
+            {showBalances && !pppoeOnly && (
               <div className="flex items-center gap-2 bg-gradient-to-r from-purple-50 to-indigo-50/70 border border-purple-200/80 rounded-2xl py-1.5 px-3.5 shadow-xs text-xs group hover:border-purple-300 transition-all">
                 <div className="w-6 h-6 rounded-lg bg-purple-500/15 text-purple-600 flex items-center justify-center shrink-0">
                   <Database size={13} />

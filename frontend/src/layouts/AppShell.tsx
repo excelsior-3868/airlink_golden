@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Package, Users2, Store, Wallet as WalletIcon,
   Database, Ticket, LogOut, Wifi, Router, ShieldCheck, Shield,
   ChevronDown, ChevronRight, ChevronsLeft, Key, Gauge, ArrowLeftRight, Menu, X, Terminal, Calendar,
-  BookOpen, Receipt, Scale, CreditCard, UsersRound, Palette, TrendingUp, Activity
+  BookOpen, Receipt, Scale, CreditCard, UsersRound, Palette, TrendingUp, Activity, Percent
 } from 'lucide-react'
 import { Role, useAuth } from '../lib/auth'
 import { useBranding } from '../lib/branding'
@@ -28,7 +28,9 @@ interface NavItem {
   roles: Role[];
   color: string;
   perm?: string | string[];
-  children?: { to: string; label: string; roles: Role[]; icon: any; color: string; perm?: string | string[] }[];
+  /** Hotspot/voucher-only entry — hidden when the system is PPPoE only. */
+  hotspot?: boolean;
+  children?: { to: string; label: string; roles: Role[]; icon: any; color: string; perm?: string | string[]; hotspot?: boolean }[];
 }
 
 const NAV: NavItem[] = [
@@ -42,11 +44,11 @@ const NAV: NavItem[] = [
     color: 'text-indigo-500',
     perm: 'view_plans',
     children: [
-      { to: '/plans/hotspot', label: 'Hotspot Plans', roles: ['admin'], icon: Wifi, color: 'text-sky-500' },
+      { to: '/plans/hotspot', label: 'Hotspot Plans', roles: ['admin'], icon: Wifi, color: 'text-sky-500', hotspot: true },
       { to: '/plans/bandwidth', label: 'Bandwidth Plans', roles: ['admin'], icon: Gauge, color: 'text-violet-500' },
     ]
   },
-  { to: '/plans/hotspot', label: 'Hotspot Plans', icon: Wifi, roles: ['reseller', 'seller'], color: 'text-sky-500', perm: 'view_plans' },
+  { to: '/plans/hotspot', label: 'Hotspot Plans', icon: Wifi, roles: ['reseller', 'seller'], color: 'text-sky-500', perm: 'view_plans', hotspot: true },
   {
     label: 'PPPoE',
     icon: Router,
@@ -56,14 +58,15 @@ const NAV: NavItem[] = [
     children: [
       { to: '/pppoe/customers', label: 'Subscribers', roles: ['admin', 'reseller'], icon: Users2, color: 'text-indigo-500', perm: 'view_pppoe' },
       { to: '/pppoe/sales-summary', label: 'PPPoE Sales Summary', roles: ['admin', 'reseller'], icon: TrendingUp, color: 'text-emerald-500', perm: 'view_pppoe' },
+      { to: '/pppoe/commission-summary', label: 'PPPoE Commission', roles: ['admin', 'reseller'], icon: Percent, color: 'text-amber-500', perm: 'view_pppoe' },
       { to: '/plans/pppoe', label: 'PPPoE Plans', roles: ['admin', 'reseller'], icon: Package, color: 'text-violet-500', perm: 'view_plans' },
     ]
   },
   { to: '/resellers', label: 'Add/View Resellers', icon: Users2, roles: ['admin'], color: 'text-purple-500', perm: 'view_resellers' },
-  { to: '/sellers', label: 'Add/View Sellers', icon: Store, roles: ['admin', 'reseller'], color: 'text-amber-500', perm: 'view_sellers' },
+  { to: '/sellers', label: 'Add/View Sellers', icon: Store, roles: ['admin', 'reseller'], color: 'text-amber-500', perm: 'view_sellers', hotspot: true },
   { to: '/funds', label: 'Wallet / GB Allocation', icon: WalletIcon, roles: ['admin', 'reseller', 'seller'], color: 'text-emerald-500' },
-  { to: '/vouchers', label: 'Voucher Sales', icon: Ticket, roles: ['admin', 'reseller', 'seller'], color: 'text-rose-500', perm: ['generate_voucher', 'reports'] },
-  { to: '/diagnostics', label: 'Voucher Diagnostics', icon: Terminal, roles: ['admin', 'reseller', 'seller'], color: 'text-slate-600' },
+  { to: '/vouchers', label: 'Voucher Sales', icon: Ticket, roles: ['admin', 'reseller', 'seller'], color: 'text-rose-500', perm: ['generate_voucher', 'reports'], hotspot: true },
+  { to: '/diagnostics', label: 'PPPoE User Diagnostics', icon: Terminal, roles: ['admin', 'reseller', 'seller'], color: 'text-slate-600' },
   { to: '/monitoring', label: 'System Monitor', icon: Activity, roles: ['admin'], color: 'text-emerald-500' },
   { to: '/ledger', label: 'Accounting & Ledger', icon: BookOpen, roles: ['admin', 'reseller', 'seller'], color: 'text-emerald-500' },
   {
@@ -76,7 +79,7 @@ const NAV: NavItem[] = [
       { to: '/settings/payment-methods', label: 'Payment Methods', roles: ['admin'], icon: CreditCard, color: 'text-sky-500' },
       { to: '/settings/chart-of-accounts', label: 'Chart of Accounts', roles: ['admin'], icon: BookOpen, color: 'text-emerald-600' },
       { to: '/settings/system-load', label: 'System Load', roles: ['admin'], icon: WalletIcon, color: 'text-emerald-500' },
-      { to: '/settings/voucher-card', label: 'Voucher Card', roles: ['admin', 'reseller', 'seller'], icon: Ticket, color: 'text-rose-500' },
+      { to: '/settings/voucher-card', label: 'Voucher Card', roles: ['admin', 'reseller', 'seller'], icon: Ticket, color: 'text-rose-500', hotspot: true },
       { to: '/settings/api-tokens', label: 'API Tokens', roles: ['admin', 'reseller', 'seller'], icon: Key, color: 'text-indigo-500', perm: 'manage_api_tokens' },
       { to: '/settings/seasons', label: 'Season Duration', roles: ['admin'], icon: Calendar, color: 'text-amber-500' },
       { to: '/nas', label: 'NAS / Routers', roles: ['admin'], icon: Router, color: 'text-violet-500' },
@@ -254,7 +257,14 @@ export default function AppShell() {
   // A perm can be a single feature or a list — list means "any of these grants access",
   // used where one menu item now covers what used to be two separately-gated pages.
   const canAny = (perm?: string | string[]) => !perm || (Array.isArray(perm) ? perm.some((p) => can(p)) : can(perm))
+  const pppoeOnly = branding.pppoe_only
   const items = NAV
+    // PPPoE-only mode: drop hotspot/voucher entries (parents emptied this way are dropped below).
+    .filter((n) => !(pppoeOnly && n.hotspot))
+    // Wallet / GB Allocation is GB-only for resellers and sellers.
+    .filter((n) => !(pppoeOnly && n.to === '/funds' && user.role !== 'admin'))
+    .map((n) => (pppoeOnly && n.to === '/funds' ? { ...n, label: 'Wallet Allocation' } : n))
+    .map((n) => (n.children && pppoeOnly ? { ...n, children: n.children.filter((c) => !c.hotspot) } : n))
     // Hide items the role can't access OR the permission matrix has switched off.
     .filter((n) => n.roles.includes(user.role) && canAny(n.perm))
     // Drop parents whose children are all hidden by role/permission.
@@ -407,10 +417,12 @@ export default function AppShell() {
                 <span className="font-extrabold text-emerald-950 whitespace-nowrap">{rs(user.wallet_balance)}</span>
               </div>
             )}
-            <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200/80 rounded-xl px-2 h-8 flex items-center gap-1 text-[11px] shadow-2xs shrink-0">
-              <Database size={12} className="text-purple-600 shrink-0" />
-              <span className="font-extrabold text-purple-950 whitespace-nowrap">{gb(user.gb_balance)}</span>
-            </div>
+            {!branding.pppoe_only && (
+              <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200/80 rounded-xl px-2 h-8 flex items-center gap-1 text-[11px] shadow-2xs shrink-0">
+                <Database size={12} className="text-purple-600 shrink-0" />
+                <span className="font-extrabold text-purple-950 whitespace-nowrap">{gb(user.gb_balance)}</span>
+              </div>
+            )}
           </div>
         </div>
       </header>

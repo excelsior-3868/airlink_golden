@@ -20,12 +20,62 @@ class PppoeCustomerService
     }
 
     /**
+     * Generate the next sequential PPPoE username and password.
+     * Default format: KHPPOE00001 (prefix + 5-digit zero-padded number).
+     */
+    public function generateNextCredentials(?string $prefix = null): array
+    {
+        $prefix = $prefix ?: config('services.pppoe.username_prefix', 'KHPPOE');
+        $escapedPrefix = str_replace(['%', '_'], ['\\%', '\\_'], $prefix);
+        $regex = '^' . preg_quote($prefix, '/') . '[0-9]+$';
+
+        $maxCustomerSeq = (int) DB::table('pppoe_customers')
+            ->where('username', 'LIKE', $escapedPrefix . '%')
+            ->whereRaw('username REGEXP ?', [$regex])
+            ->selectRaw('MAX(CAST(SUBSTRING(username, ?) AS UNSIGNED)) as max_seq', [mb_strlen($prefix) + 1])
+            ->value('max_seq');
+
+        $maxVoucherSeq = (int) DB::table('vouchers')
+            ->where('code', 'LIKE', $escapedPrefix . '%')
+            ->whereRaw('code REGEXP ?', [$regex])
+            ->selectRaw('MAX(CAST(SUBSTRING(code, ?) AS UNSIGNED)) as max_seq', [mb_strlen($prefix) + 1])
+            ->value('max_seq');
+
+        $nextSeq = max($maxCustomerSeq, $maxVoucherSeq) + 1;
+
+        while (true) {
+            $candidate = sprintf('%s%05d', $prefix, $nextSeq);
+            $existsInCustomer = DB::table('pppoe_customers')->where('username', $candidate)->exists();
+            $existsInVoucher = DB::table('vouchers')->where('code', $candidate)->whereNull('void_reason')->exists();
+            if (!$existsInCustomer && !$existsInVoucher) {
+                return [
+                    'username' => $candidate,
+                    'password' => $candidate,
+                ];
+            }
+            $nextSeq++;
+        }
+    }
+
+    /**
      * Create a new PPPoE subscriber in 'pending' status.
      * radcheck/radreply rows are NOT created until the first recharge.
      */
     public function create(User $actor, array $data): PppoeCustomer
     {
-        $username = trim($data['username']);
+        $username = trim($data['username'] ?? '');
+        $password = trim($data['password'] ?? '');
+
+        if ($username === '') {
+            throw ValidationException::withMessages([
+                'username' => 'The Username field is required.',
+            ]);
+        }
+        if ($password === '') {
+            throw ValidationException::withMessages([
+                'password' => 'The Password field is required.',
+            ]);
+        }
 
         // Check uniqueness across both PPPoE customers and Voucher codes (Risk R4).
         // Void vouchers (e.g. legacy bad-import rows with no real credential) are
@@ -66,10 +116,10 @@ class PppoeCustomerService
             $nasIp = $nas?->nasname;
         }
 
-        return DB::transaction(function () use ($data, $username, $plan, $ownerId, $resellerId, $nasIp) {
+        return DB::transaction(function () use ($data, $username, $password, $plan, $ownerId, $resellerId, $nasIp) {
             $customer = PppoeCustomer::create([
                 'username' => $username,
-                'password' => $data['password'],
+                'password' => $password,
                 'plan_id' => $plan->id,
                 'owner_id' => $ownerId,
                 'reseller_id' => $resellerId,

@@ -5,12 +5,14 @@ import {
 } from 'lucide-react'
 import { api } from '../lib/api'
 import { useQuery } from '../lib/cache'
+import { useBranding } from '../lib/branding'
 import { rs, num, date } from '../lib/format'
 import { PageTitle, GlassCard, Spinner } from '../components/ui'
 
 type FilterPeriod = 'all_time' | 'this_month' | 'last_month' | 'this_year' | 'custom'
 
 export default function FinancialDashboard() {
+  const pppoeOnly = useBranding().branding.pppoe_only
   const [period, setPeriod] = useState<FilterPeriod>('all_time')
   const [fromDate, setFromDate] = useState<string>(new Date().toISOString().split('T')[0])
   const [toDate, setToDate] = useState<string>(new Date().toISOString().split('T')[0])
@@ -178,20 +180,24 @@ export default function FinancialDashboard() {
                     <p className="text-xs text-slate-400 italic">No revenue posted in this period.</p>
                   ) : (
                     <div className="space-y-2.5">
-                      {incomeStmt.commission_revenue_applicable !== false && (
+                      {!pppoeOnly && incomeStmt.commission_revenue_applicable !== false && (
                         <div className="flex justify-between text-xs text-slate-600 font-medium">
                           <span>Card Voucher Commission Revenue</span>
                           <span className="font-semibold text-slate-900">{rs(incomeStmt.commission_revenue || 0)}</span>
                         </div>
                       )}
-                      <div className="flex justify-between text-xs text-slate-600 font-medium">
-                        <span>GB Allocation Revenue</span>
-                        <span className="font-semibold text-slate-900">{rs(incomeStmt.gb_allocation_revenue || 0)}</span>
-                      </div>
-                      <div className="flex justify-between text-xs text-slate-600 font-medium">
-                        <span>GB Voucher Sales Revenue</span>
-                        <span className="font-semibold text-slate-900">{rs(incomeStmt.gb_voucher_revenue || 0)}</span>
-                      </div>
+                      {!pppoeOnly && (
+                        <>
+                          <div className="flex justify-between text-xs text-slate-600 font-medium">
+                            <span>GB Allocation Revenue</span>
+                            <span className="font-semibold text-slate-900">{rs(incomeStmt.gb_allocation_revenue || 0)}</span>
+                          </div>
+                          <div className="flex justify-between text-xs text-slate-600 font-medium">
+                            <span>GB Voucher Sales Revenue</span>
+                            <span className="font-semibold text-slate-900">{rs(incomeStmt.gb_voucher_revenue || 0)}</span>
+                          </div>
+                        </>
+                      )}
                       <div className="flex justify-between text-xs text-slate-600 font-medium">
                         <span>PPPoE Sales Revenue</span>
                         <span className="font-semibold text-slate-900">{rs(incomeStmt.pppoe_revenue || 0)}</span>

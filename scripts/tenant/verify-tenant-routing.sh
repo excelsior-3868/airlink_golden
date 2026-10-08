@@ -4,10 +4,10 @@
 #
 # The test is deliberately a cross-check rather than a smoke test. It plants a
 # probe credential in ONE tenant's radcheck table only, then authenticates from
-# BOTH tenants' network ranges and asserts:
+# EVERY tenant's network range and asserts:
 #
-#   from Annapurna's range (172.31.x) : annapurna probe ACCEPT , mera probe REJECT
-#   from Mera's range      (172.18.x) : mera probe      ACCEPT , annapurna probe REJECT
+#   from each tenant's range : its OWN probe ACCEPT, every other tenant's probe REJECT
+#   (Mera 172.18.x, Annapurna 172.31.x, Golden 172.30.x)
 #
 # A single Accept proves the right database was read; the paired Reject proves
 # the other database was NOT read. Both halves matter — a server wired to one
@@ -28,33 +28,43 @@ set -uo pipefail
 RADIUS_HOSTNAME="${RADIUS_HOSTNAME:-airlink-prod-freeradius}"
 RADIUS_IMAGE="${RADIUS_IMAGE:-airlink3-prod-freeradius:latest}"
 
-MERA_DB=airlink-mera-prod-mariadb
-ANN_DB=airlink-mariadb-annapurna
-MERA_NET=airlink3-prod_default
-ANN_NET=airlink_tenant_link
+# tenant  db-container  db-name  network
+TENANTS=(
+  "mera       airlink-mera-prod-mariadb  airlink_mera       airlink3-prod_default"
+  "annapurna  airlink-mariadb-annapurna  airlink_annapurna  airlink_tenant_link"
+  "golden     airlink-mariadb-golden     airlink_golden     airlink_golden_link"
+)
 SECRET="${RADIUS_SECRET:-testing123}"
 PROBE_PW=probe-pass-123
 
-mera_sql() { docker exec -i "$MERA_DB" mariadb -uairlink -pairlink_pass airlink_mera -N -B -e "$1"; }
-ann_sql()  { docker exec -i "$ANN_DB"  mariadb -uairlink -pairlink_pass airlink_annapurna -N -B -e "$1"; }
+t_sql() { # t_sql <tenant> <sql>
+  local row name c db
+  for row in "${TENANTS[@]}"; do
+    read -r name c db _ <<<"$row"
+    [ "$name" = "$1" ] && { docker exec -i "$c" mariadb -uairlink -pairlink_pass "$db" -N -B -e "$2"; return; }
+  done
+  return 1
+}
 
 cleanup() {
   echo "--- removing probe rows"
-  mera_sql "DELETE FROM radcheck WHERE username='probe-mera';"      >/dev/null 2>&1
-  ann_sql  "DELETE FROM radcheck WHERE username='probe-annapurna';" >/dev/null 2>&1
+  local row name
+  for row in "${TENANTS[@]}"; do
+    read -r name _ <<<"$row"
+    t_sql "$name" "DELETE FROM radcheck WHERE username='probe-$name';" >/dev/null 2>&1
+  done
 }
 trap cleanup EXIT
 
 echo "=== target: ${RADIUS_HOSTNAME}"
-echo "=== planting probe credentials (one per tenant, never both) ==="
-mera_sql "DELETE FROM radcheck WHERE username='probe-mera';
-          INSERT INTO radcheck (username,attribute,op,value)
-          VALUES ('probe-mera','Cleartext-Password',':=','${PROBE_PW}');" || exit 1
-ann_sql  "DELETE FROM radcheck WHERE username='probe-annapurna';
-          INSERT INTO radcheck (username,attribute,op,value)
-          VALUES ('probe-annapurna','Cleartext-Password',':=','${PROBE_PW}');" || exit 1
-echo "  probe-mera       -> airlink_mera only"
-echo "  probe-annapurna  -> airlink_annapurna only"
+echo "=== planting probe credentials (one per tenant, never in two) ==="
+for row in "${TENANTS[@]}"; do
+  read -r name _ db _ <<<"$row"
+  t_sql "$name" "DELETE FROM radcheck WHERE username='probe-$name';
+                 INSERT INTO radcheck (username,attribute,op,value)
+                 VALUES ('probe-$name','Cleartext-Password',':=','${PROBE_PW}');" || exit 1
+  echo "  probe-$name -> $db only"
+done
 
 # auth_from <docker-network> <username> -> "Accept" | "Reject"
 # The source address is what picks the tenant, so the network matters.
@@ -79,15 +89,19 @@ check() { # check <label> <expected> <actual>
   fi
 }
 
-echo
-echo "=== sourced from ANNAPURNA (172.31.0.0/16 -> virtual_server=annapurna) ==="
-check "annapurna probe should authenticate" Accept "$(auth_from "$ANN_NET" probe-annapurna)"
-check "mera probe must NOT be visible here" Reject "$(auth_from "$ANN_NET" probe-mera)"
-
-echo
-echo "=== sourced from MERA (172.18.0.0/16 -> virtual_server=default) ==="
-check "mera probe should authenticate"           Accept "$(auth_from "$MERA_NET" probe-mera)"
-check "annapurna probe must NOT be visible here" Reject "$(auth_from "$MERA_NET" probe-annapurna)"
+for src in "${TENANTS[@]}"; do
+  read -r sname _ _ snet <<<"$src"
+  echo
+  echo "=== sourced from ${sname^^} (network $snet) ==="
+  for tgt in "${TENANTS[@]}"; do
+    read -r tname _ <<<"$tgt"
+    if [ "$tname" = "$sname" ]; then
+      check "$tname probe should authenticate" Accept "$(auth_from "$snet" "probe-$tname")"
+    else
+      check "$tname probe must NOT be visible here" Reject "$(auth_from "$snet" "probe-$tname")"
+    fi
+  done
+done
 
 echo
 if [ "$fail" = 0 ]; then

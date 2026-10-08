@@ -29,6 +29,7 @@ import {
   ArrowDown
 } from 'lucide-react'
 import { api } from '../lib/api'
+import { useBranding } from '../lib/branding'
 import { num, formatBytes } from '../lib/format'
 import {
   GlassCard,
@@ -44,6 +45,7 @@ import {
 import { useNavigate } from 'react-router-dom'
 
 export default function Monitoring() {
+  const pppoeOnly = useBranding().branding.pppoe_only
   const navigate = useNavigate()
 
   // Main Data States
@@ -475,15 +477,17 @@ export default function Monitoring() {
                       View Live Sessions <ArrowUpRight size={13} />
                     </button>
                   </div>
-                  <div className="grid grid-cols-3 gap-3 pt-2">
+                  <div className={`grid ${pppoeOnly ? 'grid-cols-2' : 'grid-cols-3'} gap-3 pt-2`}>
                     <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100 text-center">
                       <p className="text-[11px] font-bold text-slate-500">Total Online</p>
                       <p className="text-2xl font-black text-emerald-600 mt-1">{num(network?.total_online_subscribers ?? 0)}</p>
                     </div>
+                    {!pppoeOnly && (
                     <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100 text-center">
-                      <p className="text-[11px] font-bold text-slate-500">Hotspot Vouchers</p>
-                      <p className="text-2xl font-black text-sky-600 mt-1">{num(network?.online_hotspot_users ?? 0)}</p>
-                    </div>
+                        <p className="text-[11px] font-bold text-slate-500">Hotspot Vouchers</p>
+                        <p className="text-2xl font-black text-sky-600 mt-1">{num(network?.online_hotspot_users ?? 0)}</p>
+                      </div>
+                    )}
                     <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100 text-center">
                       <p className="text-[11px] font-bold text-slate-500">PPPoE Customers</p>
                       <p className="text-2xl font-black text-indigo-600 mt-1">{num(network?.online_pppoe_users ?? 0)}</p>
