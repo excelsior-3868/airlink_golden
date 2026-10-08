@@ -638,6 +638,24 @@ authorize {
 	#  device's reconnect with "You are already logged in - access denied"
 	#  for up to 12h. Harmless no-op once the MAC has rotated: the session
 	#  just falls back to the ordinary Simultaneous-Use limit.
+	#  A device that is still "logged in" from the same MAC it is now
+	#  authenticating from cannot be a second simultaneous login: it is the
+	#  same device coming back after a power cut / link drop whose
+	#  Accounting-Stop never arrived (the NAS died with it). Without this the
+	#  customer is rejected with "You are already logged in - access denied"
+	#  until the stale radacct row is reaped, even with mac_bind off. A
+	#  different device has a different MAC and is still limited normally.
+	if (&control:Simultaneous-Use && &Calling-Station-Id && "%{sql: \
+			SELECT 1 FROM radacct \
+				WHERE username = '%{User-Name}' \
+					AND acctstoptime IS NULL \
+					AND callingstationid = '%{Calling-Station-Id}' \
+			LIMIT 1}" == "1") {
+		update control {
+			Simultaneous-Use !* ANY
+		}
+	}
+
 	if (&control:Simultaneous-Use && "%{sql: \
 			SELECT 1 FROM vouchers \
 				WHERE username = '%{User-Name}' \
