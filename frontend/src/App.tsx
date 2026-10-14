@@ -33,6 +33,16 @@ import BrandingSettings from './pages/BrandingSettings'
 import PppoeSalesSummary from './pages/PppoeSalesSummary'
 import PppoeCommissionSummary from './pages/PppoeCommissionSummary'
 import Monitoring from './pages/Monitoring'
+import NmsDashboard from './pages/nms/NmsDashboard'
+import NmsDevices from './pages/nms/NmsDevices'
+import NmsDeviceDetail from './pages/nms/NmsDeviceDetail'
+import NmsAlerts from './pages/nms/NmsAlerts'
+import NmsRegisteredOnts from './pages/nms/NmsRegisteredOnts'
+import NmsProvisioning from './pages/nms/NmsProvisioning'
+import NmsAlertingSettings from './pages/nms/NmsAlertingSettings'
+import NmsAudit from './pages/nms/NmsAudit'
+
+
 
 function Protected({ children }: { children: JSX.Element }) {
   const { user, loading } = useAuth()
@@ -132,7 +142,19 @@ export default function App() {
         <Route path="/settings/voucher-card" element={<Guard roles={['admin', 'reseller', 'seller']} hotspot><VoucherCardDesigner /></Guard>} />
         <Route path="/settings/api-tokens" element={<Guard perm="manage_api_tokens" roles={['admin', 'reseller', 'seller']}><ApiTokens /></Guard>} />
         <Route path="/settings/seasons" element={<Guard perm="view_settings" roles={['admin']}><SeasonDuration /></Guard>} />
+
+        {/* NMS Network Management System */}
+        <Route path="/nms" element={<Navigate to="/nms/devices" replace />} />
+        <Route path="/nms/dashboard" element={<Guard perm="view_olts" roles={['admin', 'reseller']}><NmsDashboard /></Guard>} />
+        <Route path="/nms/devices" element={<Guard perm="view_olts" roles={['admin', 'reseller']}><NmsDevices /></Guard>} />
+        <Route path="/nms/devices/:id" element={<Guard perm="view_olts" roles={['admin', 'reseller']}><NmsDeviceDetail /></Guard>} />
+        <Route path="/nms/alerts" element={<Guard roles={['admin', 'reseller']}><NmsAlerts /></Guard>} />
+        <Route path="/nms/registered-onts" element={<Guard perm="view_registered_onts" roles={['admin', 'reseller']}><NmsRegisteredOnts /></Guard>} />
+        <Route path="/nms/provisioning" element={<Guard perm="olt_provisioning" roles={['admin', 'reseller']}><NmsProvisioning /></Guard>} />
+        <Route path="/nms/settings" element={<Guard perm="manage_olts" roles={['admin']}><NmsAlertingSettings /></Guard>} />
+        <Route path="/nms/audit" element={<Guard perm="view_olt_audit_log" roles={['admin', 'reseller']}><NmsAudit /></Guard>} />
       </Route>
+
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

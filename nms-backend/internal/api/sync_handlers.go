@@ -38,7 +38,7 @@ func (s *Server) oltInventory(w http.ResponseWriter, r *http.Request) {
 	queries := map[string]string{
 		"boards":        `SELECT slot, board_name, status FROM olt_boards WHERE olt_id=? ORDER BY slot`,
 		"vlans":         `SELECT vlan_id, vlan_type, attribute, std_ports, serv_ports FROM olt_vlans WHERE olt_id=? ORDER BY vlan_id`,
-		"service-ports": `SELECT sp_index, vlan, attribute, frame, slot, port, ont_id, gem, flow_type, flow_para, state FROM olt_service_ports WHERE olt_id=? ORDER BY sp_index`,
+		"service-ports": `SELECT sp_index, vlan, vlan AS vlan_id, attribute, frame, slot, port, ont_id, gem, flow_type, flow_para, state FROM olt_service_ports WHERE olt_id=? ORDER BY sp_index`,
 		"profiles":      `SELECT profile_type, profile_id, profile_name, binding_times, detail, verified_at FROM olt_profiles WHERE olt_id=? ORDER BY profile_type, profile_id`,
 	}
 	q, ok := queries[chi.URLParam(r, "kind")]

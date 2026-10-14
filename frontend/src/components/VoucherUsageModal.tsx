@@ -307,13 +307,13 @@ export default function VoucherUsageModal({ voucher, onClose }: { voucher: any |
               <div>
                 <div className="flex items-center gap-2 mb-3">
                   <h4 className="text-sm font-bold text-primary">Detail</h4>
-                  <div className="ml-auto flex rounded-xl bg-slate-100 p-0.5 text-xs font-semibold">
+                  <div className="ml-auto flex rounded-xl bg-slate-100 dark:bg-slate-800 p-0.5 text-xs font-semibold">
                     {(['sessions', 'daily'] as const).map((v) => (
                       <button
                         key={v}
                         onClick={() => setTableView(v)}
                         className={`px-3 py-1.5 rounded-[10px] capitalize transition ${
-                          tableView === v ? 'bg-white text-primary shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                          tableView === v ? 'bg-white dark:bg-slate-900 text-primary dark:text-sky-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
                         }`}
                       >
                         {v}
@@ -322,10 +322,10 @@ export default function VoucherUsageModal({ voucher, onClose }: { voucher: any |
                   </div>
                 </div>
 
-                <div className="overflow-x-auto rounded-2xl border border-slate-100">
+                <div className="overflow-x-auto rounded-2xl border border-slate-100 dark:border-slate-800">
                   {tableView === 'sessions' ? (
                     <table className="w-full text-xs">
-                      <thead className="bg-slate-50 text-slate-500">
+                      <thead className="bg-slate-50 dark:bg-slate-800/70 text-slate-500 dark:text-slate-400">
                         <tr>
                           <th className="text-left p-2.5 font-semibold">Started</th>
                           <th className="text-left p-2.5 font-semibold">Duration</th>
@@ -338,24 +338,24 @@ export default function VoucherUsageModal({ voucher, onClose }: { voucher: any |
                       </thead>
                       <tbody className="tabular-nums">
                         {[...sessions].reverse().map((s) => (
-                          <tr key={s.id} className="border-t border-slate-100">
-                            <td className="p-2.5 whitespace-nowrap">
+                          <tr key={s.id} className="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
+                            <td className="p-2.5 whitespace-nowrap text-slate-700 dark:text-slate-200">
                               {datet(s.start)}
                               {s.is_open && <Pill tone="success" className="ml-2">live</Pill>}
                             </td>
-                            <td className="p-2.5 whitespace-nowrap">{duration(s.seconds)}</td>
-                            <td className="p-2.5 text-right">{gb(s.download_gb)}</td>
-                            <td className="p-2.5 text-right">{gb(s.upload_gb)}</td>
-                            <td className="p-2.5 text-right font-bold">{gb(s.total_gb)}</td>
-                            <td className="p-2.5 text-right text-slate-500">{gb(s.cumulative_gb)}</td>
-                            <td className="p-2.5 whitespace-nowrap text-slate-500">{s.mac_address || '—'}</td>
+                            <td className="p-2.5 whitespace-nowrap text-slate-600 dark:text-slate-300">{duration(s.seconds)}</td>
+                            <td className="p-2.5 text-right text-slate-600 dark:text-slate-300">{gb(s.download_gb)}</td>
+                            <td className="p-2.5 text-right text-slate-600 dark:text-slate-300">{gb(s.upload_gb)}</td>
+                            <td className="p-2.5 text-right font-bold text-slate-800 dark:text-slate-100">{gb(s.total_gb)}</td>
+                            <td className="p-2.5 text-right text-slate-500 dark:text-slate-400">{gb(s.cumulative_gb)}</td>
+                            <td className="p-2.5 whitespace-nowrap text-slate-500 dark:text-slate-400">{s.mac_address || '—'}</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   ) : (
                     <table className="w-full text-xs">
-                      <thead className="bg-slate-50 text-slate-500">
+                      <thead className="bg-slate-50 dark:bg-slate-800/70 text-slate-500 dark:text-slate-400">
                         <tr>
                           <th className="text-left p-2.5 font-semibold">Date</th>
                           <th className="text-right p-2.5 font-semibold">Sessions</th>
@@ -366,12 +366,12 @@ export default function VoucherUsageModal({ voucher, onClose }: { voucher: any |
                       </thead>
                       <tbody className="tabular-nums">
                         {daily.map((d) => (
-                          <tr key={d.date} className="border-t border-slate-100">
-                            <td className="p-2.5 whitespace-nowrap">{d.date}</td>
-                            <td className="p-2.5 text-right">{d.sessions}</td>
-                            <td className="p-2.5 text-right">{gb(d.download_gb)}</td>
-                            <td className="p-2.5 text-right">{gb(d.upload_gb)}</td>
-                            <td className="p-2.5 text-right font-bold">{gb(d.total_gb)}</td>
+                          <tr key={d.date} className="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
+                            <td className="p-2.5 whitespace-nowrap text-slate-700 dark:text-slate-200">{d.date}</td>
+                            <td className="p-2.5 text-right text-slate-600 dark:text-slate-300">{d.sessions}</td>
+                            <td className="p-2.5 text-right text-slate-600 dark:text-slate-300">{gb(d.download_gb)}</td>
+                            <td className="p-2.5 text-right text-slate-600 dark:text-slate-300">{gb(d.upload_gb)}</td>
+                            <td className="p-2.5 text-right font-bold text-slate-800 dark:text-slate-100">{gb(d.total_gb)}</td>
                           </tr>
                         ))}
                       </tbody>

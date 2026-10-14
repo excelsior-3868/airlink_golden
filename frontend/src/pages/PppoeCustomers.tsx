@@ -31,6 +31,8 @@ const blankCustomer = {
   mac_bind: false,
   mac_address: '',
   nas_device_id: '',
+  onu_serial_number: '',
+  onu_id: '',
   simultaneous_use: 1,
   owner_id: '',
 }
@@ -252,6 +254,8 @@ export default function PppoeCustomers() {
       mac_bind: Boolean(c.mac_bind),
       mac_address: c.mac_address || '',
       nas_device_id: c.nas_device_id ? String(c.nas_device_id) : '',
+      onu_serial_number: c.onu_serial_number || '',
+      onu_id: c.onu_id || '',
       simultaneous_use: c.simultaneous_use || 1,
       owner_id: c.owner_id ? String(c.owner_id) : '',
     })
@@ -324,6 +328,8 @@ export default function PppoeCustomers() {
         mac_bind: Boolean(form.mac_bind),
         mac_address: form.mac_address.trim() || null,
         nas_device_id: form.nas_device_id ? Number(form.nas_device_id) : null,
+        onu_serial_number: form.onu_serial_number.trim() || null,
+        onu_id: form.onu_id.trim() || null,
         simultaneous_use: Number(form.simultaneous_use || 1),
       }
       // Delegation is expressed as owner_id; the service derives reseller_id
@@ -374,6 +380,8 @@ export default function PppoeCustomers() {
         mac_bind: Boolean(form.mac_bind),
         mac_address: form.mac_address.trim() || null,
         nas_device_id: form.nas_device_id ? Number(form.nas_device_id) : null,
+        onu_serial_number: form.onu_serial_number.trim() || null,
+        onu_id: form.onu_id.trim() || null,
         simultaneous_use: Number(form.simultaneous_use || 1),
       }
 
@@ -437,7 +445,7 @@ export default function PppoeCustomers() {
   return (
     <div className="space-y-6">
       <PageTitle
-        title="PPPoE Subscribers"
+        title="Add New Customer"
         subtitle="Manage broadband internet subscribers, subscriptions, live sessions, and recharge billing"
         icon={<Router size={22} className="text-indigo-500" />}
         action={
@@ -577,6 +585,11 @@ export default function PppoeCustomers() {
 
           {/* Subscribers Table */}
           <GlassCard className="overflow-hidden">
+            {!loading && totalPages > 1 && (
+              <div className="p-4 border-b border-slate-100 dark:border-slate-800 [&>div]:mt-0">
+                <Pagination meta={custPage} onPage={setPage} />
+              </div>
+            )}
             {loading ? (
               <Spinner />
             ) : paginatedCustomers.length === 0 ? (
@@ -1043,6 +1056,36 @@ export default function PppoeCustomers() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
+                    ONU Serial Number (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. HWTC12345678"
+                    value={form.onu_serial_number}
+                    onChange={(e) => setForm({ ...form, onu_serial_number: e.target.value })}
+                    maxLength={64}
+                    className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
+                    ONU ID (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 1/1/3:12"
+                    value={form.onu_id}
+                    onChange={(e) => setForm({ ...form, onu_id: e.target.value })}
+                    maxLength={32}
+                    className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
                     Manual MAC Address (Optional)
                   </label>
                   <input
@@ -1263,6 +1306,36 @@ export default function PppoeCustomers() {
                     value={form.nas_device_id}
                     onChange={(v) => setForm({ ...form, nas_device_id: v })}
                     options={nasOptions}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
+                    ONU Serial Number (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. HWTC12345678"
+                    value={form.onu_serial_number}
+                    onChange={(e) => setForm({ ...form, onu_serial_number: e.target.value })}
+                    maxLength={64}
+                    className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
+                    ONU ID (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 1/1/3:12"
+                    value={form.onu_id}
+                    onChange={(e) => setForm({ ...form, onu_id: e.target.value })}
+                    maxLength={32}
+                    className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none font-mono"
                   />
                 </div>
               </div>

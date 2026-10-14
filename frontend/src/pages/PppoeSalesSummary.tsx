@@ -246,8 +246,8 @@ export default function PppoeSalesSummary() {
   return (
     <div className="space-y-5">
       <PageTitle
-        title="PPPoE Sales Summary"
-        subtitle="Performance analytics, new subscriber registrations, and recharge revenue insights"
+        title="Sales Summary"
+        subtitle="Performance analytics, new customer registrations, and recharge revenue insights"
         icon={<TrendingUp size={22} className="text-emerald-500" />}
       />
 

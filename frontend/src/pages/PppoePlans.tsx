@@ -262,8 +262,8 @@ export default function PppoePlans() {
   return (
     <div className="space-y-6">
       <PageTitle
-        title="PPPoE Plans"
-        subtitle="Manage dedicated PPPoE broadband internet subscription packages"
+        title="Package Plan"
+        subtitle="Manage dedicated customer broadband internet subscription packages"
         icon={<Router size={22} className="text-indigo-500" />}
         action={
           canManage ? (

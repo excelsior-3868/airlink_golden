@@ -732,15 +732,16 @@ class ReportController extends Controller
             ->map(function ($r) {
                 $sales = (float) $r->total_sales;
                 $admin = (float) $r->admin_share;
+                $resellerShare = (float) $r->reseller_share;
 
                 return [
                     'reseller_id' => $r->reseller_id !== null ? (int) $r->reseller_id : null,
                     'reseller_name' => $r->reseller_name ?: 'Direct (no reseller)',
                     'recharges' => (int) $r->recharges,
                     'total_sales' => round($sales, 2),
-                    'commission_percent' => ($r->reseller_id !== null && $sales > 0) ? round($admin / $sales * 100, 2) : 0.0,
+                    'commission_percent' => ($r->reseller_id !== null && $sales > 0) ? round($resellerShare / $sales * 100, 2) : 0.0,
                     'admin_share' => round($admin, 2),
-                    'reseller_share' => round((float) $r->reseller_share, 2),
+                    'reseller_share' => round($resellerShare, 2),
                 ];
             })
             ->values();

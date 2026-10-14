@@ -3,6 +3,8 @@ package olt
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
 )
 
 // SaveConfig writes the OLT's running configuration to its saved configuration (the `save` command) for a job
@@ -45,7 +47,24 @@ func (s *Service) SaveConfig(ctx context.Context, id int64, actor string) (*Job,
 	}
 	defer ex.Close()
 
-	out, runErr := ex.Run(ctx, Save())
+	var out string
+	var runErr error
+	for attempt := 0; attempt < 5; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(3 * time.Second):
+			}
+		}
+		out, runErr = ex.Run(ctx, Save())
+		if runErr == nil {
+			break
+		}
+		if !strings.Contains(strings.ToLower(runErr.Error()), "system is busy") {
+			break
+		}
+	}
 	if runErr != nil {
 		s.audit(ctx, actor, "job.save_failed", id, runErr.Error())
 		return nil, fmt.Errorf("save failed, the configuration is NOT persisted: %w", runErr)
@@ -64,8 +83,8 @@ func (s *Service) SaveConfig(ctx context.Context, id int64, actor string) (*Job,
 		return nil, fmt.Errorf("%w: this job's configuration was already saved", ErrState)
 	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO provisioning_job_steps (job_id, seq, name, kind, command, rollback_command, expect, result, output, executed_at)
-		SELECT ?, COALESCE(MAX(seq),0)+1, 'save_configuration', 'write', 'save', '', '', 'ok', ?, NOW() FROM provisioning_job_steps WHERE job_id=?`, id, out, id); err != nil {
+		INSERT INTO provisioning_job_steps (job_id, seq, name, kind, command, rollback_command, expect, result, output, plan_result, plan_output, executed_at)
+		SELECT ?, COALESCE(MAX(seq),0)+1, 'save_configuration', 'write', 'save', '', '', 'ok', ?, 'ok', '', NOW() FROM provisioning_job_steps WHERE job_id=?`, id, out, id); err != nil {
 		return nil, err
 	}
 	if err := tx.Commit(); err != nil {

@@ -5,13 +5,16 @@ import {
   LayoutDashboard, Package, Users2, Store, Wallet as WalletIcon,
   Database, Ticket, LogOut, Wifi, Router, ShieldCheck, Shield,
   ChevronDown, ChevronRight, ChevronsLeft, Key, Gauge, ArrowLeftRight, Menu, X, Terminal, Calendar,
-  BookOpen, Receipt, Scale, CreditCard, UsersRound, Palette, TrendingUp, Activity, Percent
+  BookOpen, Receipt, Scale, CreditCard, UsersRound, Palette, TrendingUp, Activity, Percent,
+  Network, Server, Radio, AlertTriangle
 } from 'lucide-react'
+
 import { Role, useAuth } from '../lib/auth'
 import { useBranding } from '../lib/branding'
 import { rs, gb } from '../lib/format'
 import ChangePasswordModal from '../components/ChangePasswordModal'
 import InstallAppButton from '../components/InstallAppButton'
+import { ThemeToggle } from '../lib/theme'
 
 // The panel's two widths, and the page offsets that track them. The rail is
 // sized so a 44px logo tile and a 40px avatar both land centered while the nav
@@ -36,41 +39,46 @@ interface NavItem {
 const NAV: NavItem[] = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'reseller', 'seller'], color: 'text-blue-500', perm: 'dashboard' },
   { to: '/financial-dashboard', label: 'Financial Dashboard', icon: Scale, roles: ['admin', 'reseller', 'seller'], color: 'text-blue-600' },
-  { to: '/online-users', label: 'Online Users', icon: UsersRound, roles: ['admin', 'reseller', 'seller'], color: 'text-cyan-500' },
-  {
-    label: 'Plan',
-    icon: Package,
-    roles: ['admin'],
-    color: 'text-indigo-500',
-    perm: 'view_plans',
-    children: [
-      { to: '/plans/hotspot', label: 'Hotspot Plans', roles: ['admin'], icon: Wifi, color: 'text-sky-500', hotspot: true },
-      { to: '/plans/bandwidth', label: 'Bandwidth Plans', roles: ['admin'], icon: Gauge, color: 'text-violet-500' },
-    ]
-  },
+  { to: '/online-users', label: 'Online Customers', icon: UsersRound, roles: ['admin', 'reseller', 'seller'], color: 'text-cyan-500' },
+  { to: '/plans/hotspot', label: 'Hotspot Plans', icon: Wifi, roles: ['admin'], color: 'text-sky-500', perm: 'view_plans', hotspot: true },
+  { to: '/plans/bandwidth', label: 'Bandwidth Plans', icon: Package, roles: ['admin'], color: 'text-indigo-500', perm: 'view_plans' },
   { to: '/plans/hotspot', label: 'Hotspot Plans', icon: Wifi, roles: ['reseller', 'seller'], color: 'text-sky-500', perm: 'view_plans', hotspot: true },
   {
-    label: 'PPPoE',
+    label: 'Customer',
     icon: Router,
     roles: ['admin', 'reseller'],
     color: 'text-indigo-500',
     perm: ['view_pppoe', 'view_plans'],
     children: [
-      { to: '/pppoe/customers', label: 'Subscribers', roles: ['admin', 'reseller'], icon: Users2, color: 'text-indigo-500', perm: 'view_pppoe' },
-      { to: '/pppoe/sales-summary', label: 'PPPoE Sales Summary', roles: ['admin', 'reseller'], icon: TrendingUp, color: 'text-emerald-500', perm: 'view_pppoe' },
-      { to: '/pppoe/commission-summary', label: 'PPPoE Commission', roles: ['admin', 'reseller'], icon: Percent, color: 'text-amber-500', perm: 'view_pppoe' },
-      { to: '/plans/pppoe', label: 'PPPoE Plans', roles: ['admin', 'reseller'], icon: Package, color: 'text-violet-500', perm: 'view_plans' },
+      { to: '/pppoe/customers', label: 'Add New Customer', roles: ['admin', 'reseller'], icon: Users2, color: 'text-indigo-500', perm: 'view_pppoe' },
+      { to: '/pppoe/sales-summary', label: 'Sales Summary', roles: ['admin', 'reseller'], icon: TrendingUp, color: 'text-emerald-500', perm: 'view_pppoe' },
+      { to: '/pppoe/commission-summary', label: 'Sales Commission', roles: ['admin', 'reseller'], icon: Percent, color: 'text-amber-500', perm: 'view_pppoe' },
+      { to: '/plans/pppoe', label: 'Package Plan', roles: ['admin', 'reseller'], icon: Package, color: 'text-violet-500', perm: 'view_plans' },
     ]
   },
   { to: '/resellers', label: 'Add/View Resellers', icon: Users2, roles: ['admin'], color: 'text-purple-500', perm: 'view_resellers' },
   { to: '/sellers', label: 'Add/View Sellers', icon: Store, roles: ['admin', 'reseller'], color: 'text-amber-500', perm: 'view_sellers', hotspot: true },
   { to: '/funds', label: 'Wallet / GB Allocation', icon: WalletIcon, roles: ['admin', 'reseller', 'seller'], color: 'text-emerald-500' },
+  {
+    label: 'OLTs',
+    icon: Network,
+    roles: ['admin', 'reseller'],
+    color: 'text-cyan-500',
+    perm: ['view_olts', 'view_registered_onts', 'olt_provisioning', 'view_olt_audit_log'],
+    children: [
+      { to: '/nms/devices', label: 'OLT List', roles: ['admin', 'reseller'], icon: Server, color: 'text-indigo-500', perm: 'view_olts' },
+      { to: '/nms/registered-onts', label: 'Registered ONTs', roles: ['admin', 'reseller'], icon: Radio, color: 'text-emerald-500', perm: 'view_registered_onts' },
+      { to: '/nms/provisioning', label: 'OLT Provisioning', roles: ['admin', 'reseller'], icon: Terminal, color: 'text-violet-500', perm: 'olt_provisioning' },
+      { to: '/nms/audit', label: 'Audit Log', roles: ['admin', 'reseller'], icon: BookOpen, color: 'text-slate-500', perm: 'view_olt_audit_log' },
+    ]
+  },
   { to: '/vouchers', label: 'Voucher Sales', icon: Ticket, roles: ['admin', 'reseller', 'seller'], color: 'text-rose-500', perm: ['generate_voucher', 'reports'], hotspot: true },
-  { to: '/diagnostics', label: 'PPPoE User Diagnostics', icon: Terminal, roles: ['admin', 'reseller', 'seller'], color: 'text-slate-600' },
+  { to: '/diagnostics', label: 'Customer Diagnostic', icon: Terminal, roles: ['admin', 'reseller', 'seller'], color: 'text-slate-600' },
   { to: '/monitoring', label: 'System Monitor', icon: Activity, roles: ['admin'], color: 'text-emerald-500' },
   { to: '/ledger', label: 'Accounting & Ledger', icon: BookOpen, roles: ['admin', 'reseller', 'seller'], color: 'text-emerald-500' },
   {
     label: 'Settings',
+
     icon: Shield,
     roles: ['admin', 'reseller', 'seller'],
     color: 'text-slate-500',
@@ -157,7 +165,7 @@ const NavList = ({ items, location, expanded, toggleExpanded, user, can, onNavig
                   transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
                   className="overflow-hidden"
                 >
-                  <div className="pl-4 flex flex-col gap-1 mt-1 border-l border-slate-100 ml-4">
+                  <div className="pl-4 flex flex-col gap-1 mt-1 border-l border-slate-100 dark:border-slate-800 ml-4">
                     {it.children
                       .filter((c) => c.roles.includes(user.role) && can(c.perm))
                       .map((c) => (
@@ -211,7 +219,8 @@ export default function AppShell() {
   const location = useLocation()
   const [expanded, setExpanded] = useState<Record<string, boolean>>({
     Plan: location.pathname.startsWith('/plans') && location.pathname !== '/plans/pppoe',
-    PPPoE: location.pathname.startsWith('/pppoe') || location.pathname === '/plans/pppoe',
+    Customer: location.pathname.startsWith('/pppoe') || location.pathname === '/plans/pppoe',
+    OLTs: location.pathname.startsWith('/nms'),
     Settings: location.pathname.startsWith('/settings') || ['/nas', '/logs', '/permissions'].includes(location.pathname),
   })
   const toggleExpanded = (label: string) => {
@@ -292,24 +301,24 @@ export default function AppShell() {
           title={collapsed ? 'Expand menu' : 'Collapse menu'}
           aria-label={collapsed ? 'Expand menu' : 'Collapse menu'}
           aria-expanded={!collapsed}
-          className="absolute -right-3 top-[34px] z-40 w-6 h-6 rounded-full bg-white border border-slate-200/90 text-slate-400 shadow-sm flex items-center justify-center hover:text-[#003164] hover:border-slate-300 hover:scale-110 active:scale-95 transition-all duration-200"
+          className="absolute -right-3 top-[34px] z-40 w-6 h-6 rounded-full bg-white dark:bg-slate-800 border border-slate-200/90 dark:border-slate-700 text-slate-400 dark:text-slate-300 shadow-sm flex items-center justify-center hover:text-[#003164] dark:hover:text-sky-400 hover:border-slate-300 dark:hover:border-slate-600 hover:scale-110 active:scale-95 transition-all duration-200"
         >
           <ChevronsLeft size={13} className={`transition-transform duration-300 ease-out ${collapsed ? 'rotate-180' : ''}`} />
         </button>
 
         <div className="mb-4 flex items-center gap-3 py-2">
-          <div className="bg-[#003164] text-white rounded-2xl p-2 shadow-sm shrink-0 w-10 h-10 flex items-center justify-center overflow-hidden">
-            {branding.logo_url ? (
-              <img src={branding.logo_url} alt="Logo" className="w-full h-full object-contain" />
-            ) : (
+          {branding.logo_url ? (
+            <img src={branding.logo_url} alt="Logo" className="shrink-0 w-10 h-10 object-contain" />
+          ) : (
+            <div className="bg-[#003164] text-white rounded-2xl p-2 shadow-sm shrink-0 w-10 h-10 flex items-center justify-center">
               <Wifi size={18} />
-            )}
-          </div>
+            </div>
+          )}
           <div className={`app-sidebar-label ${collapsed ? 'app-sidebar-label-out' : 'app-sidebar-label-in'} min-w-0 flex-1 overflow-hidden`}>
-            <p className="font-medium text-lg tracking-tight text-[#003164] leading-none whitespace-nowrap overflow-hidden text-ellipsis">
+            <p className="font-medium text-lg tracking-tight text-[#003164] dark:text-white leading-none whitespace-nowrap overflow-hidden text-ellipsis">
               {branding.property_name || 'Airlink'}
             </p>
-            <p className="text-[10px] text-slate-400 font-medium tracking-wider mt-1 whitespace-nowrap">Billing V3.0</p>
+            <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium tracking-wider mt-1 whitespace-nowrap">Billing V3.0</p>
           </div>
         </div>
 
@@ -325,15 +334,17 @@ export default function AppShell() {
         />
 
         {/* Profile Card Dropdown Container */}
-        <div ref={profileRef} className="relative mt-3 pt-3 border-t border-slate-100">
+        <div ref={profileRef} className="relative mt-auto pt-2 border-t border-slate-100 dark:border-slate-800">
           {profileOpen && (
             <motion.div
               initial={{ opacity: 0, y: 10, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
-              className={`absolute bottom-[calc(100%+0.5rem)] left-0 bg-white border border-slate-200/80 rounded-[24px] shadow-2xl p-2 z-40 flex flex-col gap-1 ${
+              className={`absolute bottom-[calc(100%+0.5rem)] left-0 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-700 rounded-[24px] shadow-2xl p-2 z-40 flex flex-col gap-1 ${
                 collapsed ? 'w-56' : 'w-full'
               }`}
             >
+              <ThemeToggle variant="dropdown-item" />
+
               <InstallAppButton onDone={() => setProfileOpen(false)} />
 
               <button
@@ -341,9 +352,9 @@ export default function AppShell() {
                   setProfileOpen(false)
                   setPasswordOpen(true)
                 }}
-                className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-50 text-slate-700 hover:text-slate-900 transition-all text-sm font-semibold text-left"
+                className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white transition-all text-sm font-semibold text-left"
               >
-                <div className="w-8 h-8 rounded-full bg-rose-50 border border-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                <div className="w-8 h-8 rounded-full bg-rose-50 dark:bg-rose-950/50 border border-rose-100 dark:border-rose-900/60 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
                   <Key size={14} />
                 </div>
                 Change Password
@@ -354,9 +365,9 @@ export default function AppShell() {
                   setProfileOpen(false)
                   doLogout()
                 }}
-                className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-rose-50/50 text-slate-700 hover:text-rose-600 transition-all text-sm font-semibold text-left"
+                className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-rose-50/50 dark:hover:bg-rose-950/30 text-slate-700 dark:text-slate-200 hover:text-rose-600 dark:hover:text-rose-400 transition-all text-sm font-semibold text-left"
               >
-                <div className="w-8 h-8 rounded-full bg-rose-50 border border-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                <div className="w-8 h-8 rounded-full bg-rose-50 dark:bg-rose-950/50 border border-rose-100 dark:border-rose-900/60 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
                   <LogOut size={14} />
                 </div>
                 Log Out
@@ -370,15 +381,15 @@ export default function AppShell() {
             className={`app-sidebar-profile w-full flex items-center gap-2.5 py-2 rounded-2xl border text-left ${
               collapsed
                 ? 'px-px border-transparent bg-transparent'
-                : 'px-2 border-slate-200/80 bg-white hover:bg-slate-50'
+                : 'px-2 border-slate-200/80 dark:border-slate-700/80 bg-white dark:bg-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-800'
             }`}
           >
-            <div className="w-10 h-10 rounded-full bg-rose-50 border border-rose-100 text-rose-700 flex items-center justify-center font-extrabold text-sm shrink-0 shadow-inner uppercase">
+            <div className="w-10 h-10 rounded-full bg-rose-50 dark:bg-rose-950/50 border border-rose-100 dark:border-rose-900/60 text-rose-700 dark:text-rose-300 flex items-center justify-center font-extrabold text-sm shrink-0 shadow-inner uppercase">
               {initials}
             </div>
             <div className={`app-sidebar-label ${collapsed ? 'app-sidebar-label-out' : 'app-sidebar-label-in'} min-w-0 flex-1 overflow-hidden`}>
-              <p className="font-extrabold text-sm text-[#003164] truncate leading-tight select-none">{user.name}</p>
-              <p className="text-[10px] text-slate-400 font-bold capitalize tracking-wider mt-0.5 select-none">{user.role}</p>
+              <p className="font-extrabold text-sm text-[#003164] dark:text-white truncate leading-tight select-none">{user.name}</p>
+              <p className="text-[10px] text-slate-400 dark:text-slate-400 font-bold capitalize tracking-wider mt-0.5 select-none">{user.role}</p>
             </div>
             <ChevronDown
               size={14}
@@ -391,36 +402,40 @@ export default function AppShell() {
       </aside>
 
       {/* Mobile top app bar */}
-      <header className="md:hidden sticky top-0 z-40 bg-white/85 backdrop-blur-xl border-b border-slate-200/70 pt-[env(safe-area-inset-top)]">
+      <header className="md:hidden sticky top-0 z-40 bg-white/85 dark:bg-slate-900/85 backdrop-blur-xl border-b border-slate-200/70 dark:border-slate-800/70 pt-[env(safe-area-inset-top)]">
         <div className="flex items-center justify-between gap-2 px-3 h-14">
           <button
             onClick={() => setDrawerOpen(true)}
             aria-label="Open menu"
-            className="w-10 h-10 flex items-center justify-center rounded-2xl border border-slate-200/80 bg-white text-[#003164] active:scale-95 transition-transform"
+            className="w-10 h-10 flex items-center justify-center rounded-2xl border border-slate-200/80 dark:border-slate-700 bg-white dark:bg-slate-800 text-[#003164] dark:text-sky-400 active:scale-95 transition-transform"
           >
             <Menu size={20} />
           </button>
 
           <div className="flex items-center gap-2">
-            <div className="bg-[#003164] text-white rounded-xl p-1 shadow-sm w-7 h-7 flex items-center justify-center overflow-hidden">
-              {branding.logo_url ? <img src={branding.logo_url} alt="Logo" className="w-full h-full object-contain" /> : <Wifi size={14} />}
-            </div>
-            <p className="font-medium text-base tracking-tight text-[#003164] leading-none">{branding.property_name || 'Airlink'}</p>
+            {branding.logo_url ? (
+              <img src={branding.logo_url} alt="Logo" className="shrink-0 w-7 h-7 object-contain" />
+            ) : (
+              <div className="bg-[#003164] text-white rounded-xl p-1 shadow-sm w-7 h-7 flex items-center justify-center">
+                <Wifi size={14} />
+              </div>
+            )}
+            <p className="font-medium text-base tracking-tight text-[#003164] dark:text-white leading-none">{branding.property_name || 'Airlink'}</p>
           </div>
 
-          {/* Compact balance badges — icon substitutes for the label so large
-              values (Rs 900,000+) never wrap inside the pill on narrow phones. */}
+          {/* Header Controls: Balances */}
           <div className="flex items-center gap-1.5 select-none min-w-0">
+
             {user.role !== 'seller' && (
-              <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200/80 rounded-xl px-2 h-8 flex items-center gap-1 text-[11px] shadow-2xs shrink-0">
-                <WalletIcon size={12} className="text-emerald-600 shrink-0" />
-                <span className="font-extrabold text-emerald-950 whitespace-nowrap">{rs(user.wallet_balance)}</span>
+              <div className="bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/40 dark:to-teal-950/30 border border-emerald-200/80 dark:border-emerald-800/60 rounded-xl px-2 h-8 flex items-center gap-1 text-[11px] shadow-2xs shrink-0">
+                <WalletIcon size={12} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+                <span className="font-extrabold text-emerald-950 dark:text-emerald-300 whitespace-nowrap">{rs(user.wallet_balance)}</span>
               </div>
             )}
             {!branding.pppoe_only && (
-              <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200/80 rounded-xl px-2 h-8 flex items-center gap-1 text-[11px] shadow-2xs shrink-0">
-                <Database size={12} className="text-purple-600 shrink-0" />
-                <span className="font-extrabold text-purple-950 whitespace-nowrap">{gb(user.gb_balance)}</span>
+              <div className="bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-950/40 dark:to-indigo-950/30 border border-purple-200/80 dark:border-purple-800/60 rounded-xl px-2 h-8 flex items-center gap-1 text-[11px] shadow-2xs shrink-0">
+                <Database size={12} className="text-purple-600 dark:text-purple-400 shrink-0" />
+                <span className="font-extrabold text-purple-950 dark:text-purple-300 whitespace-nowrap">{gb(user.gb_balance)}</span>
               </div>
             )}
           </div>
@@ -447,22 +462,26 @@ export default function AppShell() {
             animate={{ x: 0 }}
             exit={{ x: '-100%' }}
             transition={{ type: 'tween', duration: 0.26, ease: 'easeOut' }}
-            className="md:hidden fixed top-0 left-0 z-[60] h-[100dvh] w-[82%] max-w-xs bg-white border-r border-slate-200 shadow-2xl flex flex-col p-4 pt-[calc(1rem+env(safe-area-inset-top))] pb-[calc(1rem+env(safe-area-inset-bottom))]"
+            className="md:hidden fixed top-0 left-0 z-[60] h-[100dvh] w-[82%] max-w-xs bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col p-4 pt-[calc(1rem+env(safe-area-inset-top))] pb-[calc(1rem+env(safe-area-inset-bottom))]"
           >
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3 px-1">
-                  <div className="bg-[#003164] text-white rounded-2xl p-2 shadow-sm shrink-0 w-10 h-10 flex items-center justify-center overflow-hidden">
-                    {branding.logo_url ? <img src={branding.logo_url} alt="Logo" className="w-full h-full object-contain" /> : <Wifi size={18} />}
-                  </div>
+                  {branding.logo_url ? (
+                    <img src={branding.logo_url} alt="Logo" className="shrink-0 w-10 h-10 object-contain" />
+                  ) : (
+                    <div className="bg-[#003164] text-white rounded-2xl p-2 shadow-sm shrink-0 w-10 h-10 flex items-center justify-center">
+                      <Wifi size={18} />
+                    </div>
+                  )}
                   <div>
-                    <p className="font-medium text-lg tracking-tight text-[#003164] leading-none">{branding.property_name || 'Airlink'}</p>
-                    <p className="text-[10px] text-slate-400 font-medium tracking-wider mt-1">Billing V3.0</p>
+                    <p className="font-medium text-lg tracking-tight text-[#003164] dark:text-white leading-none">{branding.property_name || 'Airlink'}</p>
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium tracking-wider mt-1">Billing V3.0</p>
                   </div>
                 </div>
                 <button
                   onClick={() => setDrawerOpen(false)}
                   aria-label="Close menu"
-                  className="w-9 h-9 flex items-center justify-center rounded-full border border-slate-200 text-slate-500 active:scale-95 transition-transform"
+                  className="w-9 h-9 flex items-center justify-center rounded-full border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 active:scale-95 transition-transform"
                 >
                   <X size={18} />
                 </button>
@@ -478,30 +497,29 @@ export default function AppShell() {
                 onNavigate={() => setDrawerOpen(false)}
               />
 
-              {/* Drawer profile actions */}
-              <div className="mt-3 pt-3 border-t border-slate-100 flex flex-col gap-2">
-                <div className="flex items-center gap-2.5 p-2 rounded-2xl border border-slate-200/80 bg-white">
-                  <div className="w-10 h-10 rounded-full bg-rose-50 border border-rose-100 text-rose-700 flex items-center justify-center font-extrabold text-sm shrink-0 shadow-inner uppercase">
+              {/* Drawer profile & actions */}
+              <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-col gap-2">
+                <div className="flex items-center gap-2.5 p-2 rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-white dark:bg-slate-800">
+                  <div className="w-10 h-10 rounded-full bg-rose-50 dark:bg-rose-950/50 border border-rose-100 dark:border-rose-900/60 text-rose-700 dark:text-rose-300 flex items-center justify-center font-extrabold text-sm shrink-0 shadow-inner uppercase">
                     {initials}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="font-extrabold text-sm text-[#003164] break-words leading-tight">{user.name}</p>
-                    <p className="text-[10px] text-slate-400 font-bold capitalize tracking-wider mt-0.5">{user.role}</p>
+                    <p className="font-extrabold text-sm text-[#003164] dark:text-white break-words leading-tight">{user.name}</p>
+                    <p className="text-[10px] text-slate-400 dark:text-slate-400 font-bold capitalize tracking-wider mt-0.5">{user.role}</p>
                   </div>
                 </div>
-                {/* Full-width row of its own: a third cell would orphan Log Out
-                    in the 2-up grid, and the labels don't fit three across. */}
+
                 <InstallAppButton variant="compact" onDone={() => setDrawerOpen(false)} />
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     onClick={() => { setDrawerOpen(false); setPasswordOpen(true) }}
-                    className="flex items-center justify-center gap-2 p-2.5 rounded-xl border border-slate-200 bg-white text-slate-700 text-xs font-bold active:scale-95 transition-transform"
+                    className="flex items-center justify-center gap-2 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold active:scale-95 transition-transform"
                   >
                     <Key size={14} className="text-rose-500" /> Password
                   </button>
                   <button
                     onClick={() => { setDrawerOpen(false); doLogout() }}
-                    className="flex items-center justify-center gap-2 p-2.5 rounded-xl border border-rose-100 bg-rose-50/50 text-rose-600 text-xs font-bold active:scale-95 transition-transform"
+                    className="flex items-center justify-center gap-2 p-2.5 rounded-xl border border-rose-100 dark:border-rose-950/60 bg-rose-50/50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 text-xs font-bold active:scale-95 transition-transform"
                   >
                     <LogOut size={14} /> Log Out
                   </button>
@@ -523,7 +541,6 @@ export default function AppShell() {
           <Outlet />
         </motion.main>
       </div>
-
 
       <ChangePasswordModal open={passwordOpen} onClose={() => setPasswordOpen(false)} />
     </div>

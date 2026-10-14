@@ -142,6 +142,22 @@ class OnlineSession
                     self::STALE_GRACE_SECONDS,
                     self::MAX_STALE_SECONDS,
                 ]
+            )
+            // One physical session can be accounted twice when a router (e.g.
+            // one with two WAN links) sends its Accounting packets from more
+            // than one source IP: FreeRADIUS keys radacct on the NAS IP, so it
+            // stores a row per source IP. Same username + Acct-Session-Id + MAC
+            // is the same session, so keep only the most recently updated row.
+            ->whereRaw(
+                "NOT EXISTS (SELECT 1 FROM radacct dup
+                    WHERE dup.username = {$table}.username
+                      AND dup.acctsessionid = {$table}.acctsessionid
+                      AND COALESCE(dup.callingstationid, '') = COALESCE({$table}.callingstationid, '')
+                      AND dup.acctstoptime IS NULL
+                      AND dup.radacctid <> {$table}.radacctid
+                      AND (COALESCE(dup.acctupdatetime, dup.acctstarttime) > COALESCE({$table}.acctupdatetime, {$table}.acctstarttime)
+                           OR (COALESCE(dup.acctupdatetime, dup.acctstarttime) = COALESCE({$table}.acctupdatetime, {$table}.acctstarttime)
+                               AND dup.radacctid > {$table}.radacctid)))"
             );
     }
 }

@@ -128,6 +128,16 @@ func DisplayONTOptical(sn string) (Cmd, error) {
 	return read("display ont optical-info by-sn " + strings.ToUpper(sn)), nil
 }
 
+func DisplayONTOpticalPos(f, s, p, ont int) (Cmd, error) {
+	if err := validFSP(f, s, p); err != nil {
+		return Cmd{}, err
+	}
+	if err := rng("ont id", ont, 0, 127); err != nil {
+		return Cmd{}, err
+	}
+	return read(fmt.Sprintf("display ont optical-info %d %d %d %d", f, s, p, ont)), nil
+}
+
 func validFSP(f, s, p int) error {
 	if err := rng("frame", f, 0, 7); err != nil {
 		return err

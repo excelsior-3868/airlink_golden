@@ -41,7 +41,7 @@ class PermissionController extends Controller
             $perm = SystemPermission::findOrFail($p['id']);
 
             $seller = (bool) $p['seller'];
-            if ($seller && str_contains($perm->feature, 'pppoe')) {
+            if ($seller && (str_contains($perm->feature, 'pppoe') || str_contains($perm->feature, 'olt') || str_contains($perm->feature, 'ont'))) {
                 $seller = false;
                 $droppedSellerGrants[] = $perm->display_name;
             }

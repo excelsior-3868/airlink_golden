@@ -720,8 +720,9 @@ class VoucherController extends Controller
             $reseller = $voucher->reseller_id ? User::find($voucher->reseller_id) : null;
             $percent = $reseller ? (float) $reseller->commission_percent : 0.0;
             $price = (float) $voucher->price;
-            $adminShare = round($price * $percent / 100, 2);
-            $resellerShare = round($price - $adminShare, 2);
+            // Reseller commission: reseller keeps $percent%, admin gets the remainder.
+            $resellerShare = $reseller ? round($price * $percent / 100, 2) : 0.0;
+            $adminShare = $reseller ? round($price - $resellerShare, 2) : $price;
 
             $voucher->update([
                 'status' => 'active',
@@ -740,7 +741,7 @@ class VoucherController extends Controller
                 if ($admin && $admin->isAdmin()) {
                     $this->wallet->credit(
                         $admin, $adminShare, 'commission', $voucher->code,
-                        "Commission on voucher {$voucher->code} sale ({$percent}%)"
+                        "Admin share on voucher {$voucher->code} sale (Reseller commission: {$percent}%)"
                     );
                     // The wallet credit above is an internal accrual — the reseller
                     // hasn't actually remitted this cash yet, so it stays on their

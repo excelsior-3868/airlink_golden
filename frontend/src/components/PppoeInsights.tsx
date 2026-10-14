@@ -43,29 +43,29 @@ export default function PppoeInsights({
         {subscribersCard}
         <StatCard
           label="Revenue Today"
-          value={<span className="text-blue-600">{rs(m.revenue.today)}</span>}
+          value={<span className="text-blue-600 dark:text-blue-400">{rs(m.revenue.today)}</span>}
           icon={<Banknote size={22} />}
-          iconColorClass="text-blue-600 bg-blue-50 border border-blue-100/50"
+          iconColorClass="text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 border border-blue-100/50 dark:border-blue-900/60"
           sub={<span>{num(m.revenue.recharges_today)} recharges</span>}
         />
         <StatCard
           label="Revenue This Month"
-          value={<span className="text-purple-600">{rs(m.revenue.month)}</span>}
+          value={<span className="text-purple-600 dark:text-purple-400">{rs(m.revenue.month)}</span>}
           icon={<TrendingUp size={22} />}
-          iconColorClass="text-purple-600 bg-purple-50 border border-purple-100/50"
+          iconColorClass="text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/40 border border-purple-100/50 dark:border-purple-900/60"
           sub={<span>{num(m.revenue.recharges_month)} recharges</span>}
         />
         <StatCard
           label="New Subscribers Today"
-          value={<span className="text-indigo-600">{num(m.new_subscribers.today)}</span>}
+          value={<span className="text-indigo-600 dark:text-indigo-400">{num(m.new_subscribers.today)}</span>}
           icon={<UserPlus size={22} />}
-          iconColorClass="text-indigo-600 bg-indigo-50 border border-indigo-100/50"
+          iconColorClass="text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-100/50 dark:border-indigo-900/60"
         />
         <StatCard
           label="New Subscribers This Month"
-          value={<span className="text-cyan-600">{num(m.new_subscribers.month)}</span>}
+          value={<span className="text-cyan-600 dark:text-cyan-400">{num(m.new_subscribers.month)}</span>}
           icon={<Users2 size={22} />}
-          iconColorClass="text-cyan-600 bg-cyan-50 border border-cyan-100/50"
+          iconColorClass="text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-950/40 border border-cyan-100/50 dark:border-cyan-900/60"
         />
         <motion.button
           type="button"
@@ -73,30 +73,30 @@ export default function PppoeInsights({
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3 }}
-          className="glass-card p-5 flex items-start justify-between text-left w-full hover:-translate-y-0.5 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 rounded-2xl"
+          className="glass-card p-5 flex items-start justify-between text-left w-full hover:-translate-y-0.5 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 rounded-2xl cursor-pointer"
           title="View subscribers"
         >
           <div className="min-w-0">
             <p className="text-muted-foreground text-xs sm:text-sm font-medium">Expiring Soon</p>
-            <p className="text-xl font-bold mt-1 tracking-tight tabular-nums text-amber-600">{num(expiring.count)}</p>
+            <p className="text-xl font-bold mt-1 tracking-tight tabular-nums text-amber-600 dark:text-amber-400">{num(expiring.count)}</p>
             <p className="text-xs text-muted-foreground mt-1">Within the next {expiring.within_days} days</p>
           </div>
-          <div className="rounded-2xl p-2.5 shrink-0 flex items-center justify-center text-amber-600 bg-amber-50 border border-amber-100/50">
+          <div className="rounded-2xl p-2.5 shrink-0 flex items-center justify-center text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 border border-amber-100/50 dark:border-amber-900/60">
             <CalendarClock size={22} />
           </div>
         </motion.button>
         <StatCard
           label={isAdmin ? 'Commission Earned This Month' : 'Your Earnings This Month'}
-          value={<span className="text-emerald-600">{rs(isAdmin ? m.commission.admin_share_month : m.commission.reseller_share_month)}</span>}
+          value={<span className="text-emerald-600 dark:text-emerald-400">{rs(isAdmin ? m.commission.admin_share_month : m.commission.reseller_share_month)}</span>}
           icon={<Coins size={22} />}
-          iconColorClass="text-emerald-600 bg-emerald-50 border border-emerald-100/50"
-          sub={isAdmin ? <span>Today: <strong className="text-slate-700">{rs(m.commission.admin_share_today)}</strong></span> : undefined}
+          iconColorClass="text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-100/50 dark:border-emerald-900/60"
+          sub={isAdmin ? <span>Today: <strong className="text-slate-700 dark:text-slate-200">{rs(m.commission.admin_share_today)}</strong></span> : undefined}
         />
         <StatCard
           label={isAdmin ? 'Kept By Resellers This Month' : 'Commission To Admin This Month'}
-          value={<span className="text-orange-600">{rs(isAdmin ? m.commission.reseller_share_month : m.commission.admin_share_month)}</span>}
+          value={<span className="text-orange-600 dark:text-orange-400">{rs(isAdmin ? m.commission.reseller_share_month : m.commission.admin_share_month)}</span>}
           icon={<Handshake size={22} />}
-          iconColorClass="text-orange-600 bg-orange-50 border border-orange-100/50"
+          iconColorClass="text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-950/40 border border-orange-100/50 dark:border-orange-900/60"
         />
       </div>
 

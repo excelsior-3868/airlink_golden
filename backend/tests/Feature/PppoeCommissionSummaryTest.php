@@ -39,7 +39,7 @@ class PppoeCommissionSummaryTest extends TestCase
         ]);
     }
 
-    private function recharge(?User $reseller, float $price, float $adminShare, $createdAt = null): void
+    private function recharge(?User $reseller, float $price, float $resellerShare, $createdAt = null): void
     {
         static $n = 0;
         $n++;
@@ -55,8 +55,8 @@ class PppoeCommissionSummaryTest extends TestCase
             'reference' => "CRG-{$n}", 'customer_id' => $customerId, 'plan_id' => $this->plan->id,
             'owner_id' => $reseller?->id ?? $this->admin->id, 'reseller_id' => $reseller?->id,
             'collected_by' => $this->admin->id, 'price' => $price, 'base_price' => $price,
-            'commission_percent' => $price > 0 ? round($adminShare / $price * 100, 2) : 0,
-            'admin_share' => $adminShare, 'reseller_share' => $price - $adminShare,
+            'commission_percent' => $price > 0 ? round($resellerShare / $price * 100, 2) : 0,
+            'admin_share' => $price - $resellerShare, 'reseller_share' => $resellerShare,
             'validity_days' => 30, 'period_start' => now(), 'period_end' => now()->addDays(30),
             'created_at' => $createdAt ?? now(), 'updated_at' => $createdAt ?? now(),
         ]);
@@ -74,14 +74,14 @@ class PppoeCommissionSummaryTest extends TestCase
         $rows = collect($res->json('data.rows'))->keyBy('reseller_name');
         $this->assertSame(2, $rows['Alpha']['recharges']);
         $this->assertEquals(1500, $rows['Alpha']['total_sales']);
-        $this->assertEquals(150, $rows['Alpha']['admin_share']);
-        $this->assertEquals(1350, $rows['Alpha']['reseller_share']);
+        $this->assertEquals(1350, $rows['Alpha']['admin_share']);
+        $this->assertEquals(150, $rows['Alpha']['reseller_share']);
         $this->assertEquals(10, $rows['Alpha']['commission_percent']);
         $this->assertEquals(20, $rows['Beta']['commission_percent']);
         $res->assertJsonPath('data.totals.recharges', 3);
         $this->assertEquals(3500, $res->json('data.totals.total_sales'));
-        $this->assertEquals(550, $res->json('data.totals.admin_share'));
-        $this->assertEquals(2950, $res->json('data.totals.reseller_share'));
+        $this->assertEquals(2950, $res->json('data.totals.admin_share'));
+        $this->assertEquals(550, $res->json('data.totals.reseller_share'));
     }
 
     public function test_reseller_filter_narrows_rows_and_detail(): void

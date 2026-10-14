@@ -2,6 +2,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -297,12 +298,16 @@ func (s *Server) queryJSON(ctx context.Context, sqlQuery string, args ...any) ([
 		for i, c := range cols {
 			val := vals[i]
 			if b, ok := val.([]byte); ok {
-				var parsed any
-				if json.Unmarshal(b, &parsed) == nil {
-					m[c] = parsed
-				} else {
-					m[c] = string(b)
+				// Only attempt JSON unmarshal for JSON objects/arrays (starting with { or [)
+				trimmed := bytes.TrimSpace(b)
+				if len(trimmed) > 0 && (trimmed[0] == '{' || trimmed[0] == '[') {
+					var parsed any
+					if json.Unmarshal(trimmed, &parsed) == nil {
+						m[c] = parsed
+						continue
+					}
 				}
+				m[c] = string(b)
 			} else {
 				m[c] = val
 			}

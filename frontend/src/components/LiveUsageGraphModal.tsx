@@ -194,23 +194,23 @@ export function LiveUsageGraphModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 md:p-6 bg-slate-900/50 backdrop-blur-xs animate-fadeIn">
-      {/* Light Mode Modal Card with Extra Width to Fit All Columns */}
+      {/* Modal Card with Extra Width to Fit All Columns */}
       <div
-        className="w-full max-w-6xl xl:max-w-7xl 2xl:max-w-[1380px] bg-white border border-slate-200/90 rounded-2xl shadow-2xl overflow-hidden text-slate-800 flex flex-col max-h-[92dvh] animate-scaleUp"
+        className="w-full max-w-6xl xl:max-w-7xl 2xl:max-w-[1380px] bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl shadow-2xl overflow-hidden text-slate-800 dark:text-slate-100 flex flex-col max-h-[92dvh] animate-scaleUp"
         role="dialog"
         aria-modal="true"
       >
         {/* Modal Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/80">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/90">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-cyan-50 border border-cyan-200 text-cyan-600 shadow-xs">
+            <div className="p-2 rounded-xl bg-cyan-50 dark:bg-cyan-950/50 border border-cyan-200 dark:border-cyan-800 text-cyan-600 dark:text-cyan-400 shadow-xs">
               <Activity size={18} className="animate-pulse" />
             </div>
             <div>
-              <h2 className="text-base font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
+              <h2 className="text-base font-extrabold text-slate-900 dark:text-slate-100 tracking-tight flex items-center gap-2">
                 <span>Data Usage</span>
                 {data?.is_online && (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
                     <span className="relative flex h-2 w-2">
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                       <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
@@ -227,17 +227,17 @@ export function LiveUsageGraphModal({
               onClick={() =>
                 setViewMode((prev) => (prev === 'chart' ? 'logs' : 'chart'))
               }
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-extrabold shadow-xs transition-all cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-extrabold shadow-xs transition-all cursor-pointer"
               title="Toggle detailed session logs"
             >
               {viewMode === 'chart' ? (
                 <>
-                  <FileText size={13} className="text-cyan-600" />
+                  <FileText size={13} className="text-cyan-600 dark:text-cyan-400" />
                   <span>View Log</span>
                 </>
               ) : (
                 <>
-                  <ChartIcon size={13} className="text-emerald-600" />
+                  <ChartIcon size={13} className="text-emerald-600 dark:text-emerald-400" />
                   <span>View Graph</span>
                 </>
               )}
@@ -245,7 +245,7 @@ export function LiveUsageGraphModal({
 
             <button
               onClick={onClose}
-              className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-all cursor-pointer"
+              className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer"
               aria-label="Close modal"
             >
               <X size={18} />
@@ -254,13 +254,13 @@ export function LiveUsageGraphModal({
         </div>
 
         {/* Modal Body */}
-        <div className="p-6 overflow-y-auto space-y-6 flex-1 bg-white">
+        <div className="p-6 overflow-y-auto space-y-6 flex-1 bg-white dark:bg-slate-900">
           {viewMode === 'chart' ? (
             <>
               {/* Range Filters & Dynamic Totals Legend */}
               <div className="flex flex-wrap items-center justify-between gap-4">
                 {/* Time Range Selector Tabs */}
-                <div className="flex items-center bg-slate-100 border border-slate-200/80 p-1 rounded-xl gap-1 shadow-xs">
+                <div className="flex items-center bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 p-1 rounded-xl gap-1 shadow-xs">
                   {ranges.map((r) => {
                     const active = range === r.key
                     return (
@@ -270,7 +270,7 @@ export function LiveUsageGraphModal({
                         className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                           active
                             ? 'bg-[#0284c7] text-white shadow-xs'
-                            : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
+                            : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-white/80 dark:hover:bg-slate-700'
                         }`}
                       >
                         {r.label}
@@ -307,10 +307,10 @@ export function LiveUsageGraphModal({
                 </div>
               </div>
 
-              {/* Chart Visual Canvas in clean light container */}
-              <div className="relative bg-slate-50/70 border border-slate-200/80 rounded-2xl p-4 pt-6 shadow-xs min-h-[260px] flex items-center justify-center">
+              {/* Chart Visual Canvas */}
+              <div className="relative bg-slate-50/70 dark:bg-slate-950/60 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-4 pt-6 shadow-xs min-h-[260px] flex items-center justify-center">
                 {loading && (
-                  <div className="absolute inset-0 bg-white/70 backdrop-blur-xs z-10 flex items-center justify-center rounded-2xl">
+                  <div className="absolute inset-0 bg-white/70 dark:bg-slate-900/70 backdrop-blur-xs z-10 flex items-center justify-center rounded-2xl">
                     <Spinner />
                   </div>
                 )}
@@ -367,7 +367,8 @@ export function LiveUsageGraphModal({
 
                         <CartesianGrid
                           strokeDasharray="0"
-                          stroke="#e2e8f0"
+                          stroke="#cbd5e1"
+                          className="dark:stroke-slate-800"
                           vertical={false}
                         />
 
@@ -394,8 +395,8 @@ export function LiveUsageGraphModal({
                             if (!active || !payload?.length) return null
                             const pData = payload[0].payload
                             return (
-                              <div className="bg-white/95 backdrop-blur-md border border-slate-200 rounded-xl p-3 shadow-xl text-xs space-y-1.5 min-w-[175px]">
-                                <div className="text-slate-500 font-bold border-b border-slate-100 pb-1 flex items-center justify-between">
+                              <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-slate-200 dark:border-slate-800 rounded-xl p-3 shadow-xl text-xs space-y-1.5 min-w-[175px]">
+                                <div className="text-slate-500 dark:text-slate-400 font-bold border-b border-slate-100 dark:border-slate-800 pb-1 flex items-center justify-between">
                                   <span>{label}</span>
                                   <span className="text-[10px] text-slate-400 font-mono">
                                     {pData.timestamp}
@@ -419,7 +420,7 @@ export function LiveUsageGraphModal({
                                     {formatBytes(pData.upload_bytes)}
                                   </span>
                                 </div>
-                                <div className="flex items-center justify-between text-slate-800 border-t border-slate-100 pt-1 font-extrabold">
+                                <div className="flex items-center justify-between text-slate-800 dark:text-slate-200 border-t border-slate-100 dark:border-slate-800 pt-1 font-extrabold">
                                   <span>Total:</span>
                                   <span className="font-mono">
                                     {formatBytes(pData.total_bytes)}
@@ -480,26 +481,26 @@ export function LiveUsageGraphModal({
               </div>
             </>
           ) : (
-            /* Session Logs View in clean light table */
+            /* Session Logs View */
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <h3 className="text-xs font-extrabold text-slate-700 uppercase tracking-wider">
+                <h3 className="text-xs font-extrabold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
                   Session Accounting Log ({data?.sessions?.length || 0})
                 </h3>
                 <button
                   onClick={() => fetchUsageData(range)}
                   disabled={loading}
-                  className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold flex items-center gap-1 cursor-pointer shadow-xs"
+                  className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold flex items-center gap-1 cursor-pointer shadow-xs"
                 >
                   <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
                   <span>Refresh Log</span>
                 </button>
               </div>
 
-              <div className="bg-white border border-slate-200/80 rounded-xl overflow-hidden shadow-xs">
+              <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl overflow-hidden shadow-xs">
                 <div className="overflow-x-auto max-h-80 overflow-y-auto">
                   <table className="w-full text-xs text-left">
-                    <thead className="bg-slate-100/90 text-slate-600 border-b border-slate-200 sticky top-0 font-bold">
+                    <thead className="bg-slate-100/90 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700 sticky top-0 font-bold">
                       <tr>
                         <th className="py-2.5 px-3">Start Time</th>
                         <th className="py-2.5 px-3">Stop Time</th>
@@ -513,31 +514,31 @@ export function LiveUsageGraphModal({
                         <th className="py-2.5 px-3">Cause</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100 font-mono">
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-mono">
                       {data?.sessions && data.sessions.length > 0 ? (
                         data.sessions.map((s) => (
                           <tr
                             key={s.id}
-                            className="hover:bg-slate-50 transition-colors"
+                            className="hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors"
                           >
-                            <td className="py-2 px-3 whitespace-nowrap text-slate-700">
+                            <td className="py-2 px-3 whitespace-nowrap text-slate-700 dark:text-slate-300">
                               {s.start_time ? datet(s.start_time) : '—'}
                             </td>
                             <td className="py-2 px-3 whitespace-nowrap">
                               {s.is_online ? (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 font-sans">
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 font-sans">
                                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
                                   Online
                                 </span>
                               ) : s.stop_time ? (
-                                <span className="text-slate-500">
+                                <span className="text-slate-500 dark:text-slate-400">
                                   {datet(s.stop_time)}
                                 </span>
                               ) : (
                                 '—'
                               )}
                             </td>
-                            <td className="py-2 px-3 whitespace-nowrap text-slate-700">
+                            <td className="py-2 px-3 whitespace-nowrap text-slate-700 dark:text-slate-300">
                               {formatDuration(s.session_time)}
                             </td>
                             <td className="py-2 px-3 whitespace-nowrap text-[#16a34a] font-bold">
@@ -546,19 +547,19 @@ export function LiveUsageGraphModal({
                             <td className="py-2 px-3 whitespace-nowrap text-[#0284c7] font-bold">
                               {formatBytes(s.upload_bytes)}
                             </td>
-                            <td className="py-2 px-3 whitespace-nowrap text-slate-900 font-bold">
+                            <td className="py-2 px-3 whitespace-nowrap text-slate-900 dark:text-slate-100 font-bold">
                               {formatBytes(s.total_bytes)}
                             </td>
-                            <td className="py-2 px-3 whitespace-nowrap text-slate-600">
+                            <td className="py-2 px-3 whitespace-nowrap text-slate-600 dark:text-slate-400">
                               {s.ip_address}
                             </td>
-                            <td className="py-2 px-3 whitespace-nowrap text-slate-600">
+                            <td className="py-2 px-3 whitespace-nowrap text-slate-600 dark:text-slate-400">
                               {s.caller_id}
                             </td>
-                            <td className="py-2 px-3 whitespace-nowrap text-slate-600 font-sans">
+                            <td className="py-2 px-3 whitespace-nowrap text-slate-600 dark:text-slate-400 font-sans">
                               {s.nas_name || s.nas_ip}
                             </td>
-                            <td className="py-2 px-3 whitespace-nowrap text-slate-600 font-sans">
+                            <td className="py-2 px-3 whitespace-nowrap text-slate-600 dark:text-slate-400 font-sans">
                               {s.terminate_cause}
                             </td>
                           </tr>
@@ -567,7 +568,7 @@ export function LiveUsageGraphModal({
                         <tr>
                           <td
                             colSpan={10}
-                            className="py-8 text-center text-slate-400 font-sans"
+                            className="py-8 text-center text-slate-400 dark:text-slate-500 font-sans"
                           >
                             No accounting session history recorded for this user yet.
                           </td>
@@ -580,51 +581,51 @@ export function LiveUsageGraphModal({
             </div>
           )}
 
-          {/* Bottom Card: Current Session Metadata in clean light card */}
-          <div className="bg-slate-50/80 border border-slate-200/80 rounded-xl p-4 shadow-xs">
-            <h4 className="text-xs font-extrabold text-slate-800 mb-3 tracking-wide">
+          {/* Bottom Card: Current Session Metadata */}
+          <div className="bg-slate-50/80 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/80 rounded-xl p-4 shadow-xs">
+            <h4 className="text-xs font-extrabold text-slate-800 dark:text-slate-200 mb-3 tracking-wide">
               Current Session
             </h4>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-y-3 gap-x-6 text-xs">
               <div className="flex items-center gap-2">
-                <span className="text-slate-500 font-medium">Customer:</span>
-                <span className="text-slate-900 font-bold truncate" title={customerDisplay}>
+                <span className="text-slate-500 dark:text-slate-400 font-medium">Customer:</span>
+                <span className="text-slate-900 dark:text-slate-100 font-bold truncate" title={customerDisplay}>
                   {customerDisplay}
                 </span>
               </div>
 
               <div className="flex items-center gap-2">
-                <span className="text-slate-500 font-medium">User ID:</span>
-                <span className="text-slate-900 font-mono font-bold truncate" title={userIdDisplay}>
+                <span className="text-slate-500 dark:text-slate-400 font-medium">User ID:</span>
+                <span className="text-slate-900 dark:text-slate-100 font-mono font-bold truncate" title={userIdDisplay}>
                   {userIdDisplay}
                 </span>
               </div>
 
               <div className="flex items-center gap-2">
-                <span className="text-slate-500 font-medium">Plan:</span>
-                <span className="text-slate-900 font-bold truncate" title={planDisplay}>
+                <span className="text-slate-500 dark:text-slate-400 font-medium">Plan:</span>
+                <span className="text-slate-900 dark:text-slate-100 font-bold truncate" title={planDisplay}>
                   {planDisplay}
                 </span>
               </div>
 
               <div className="flex items-center gap-2">
-                <span className="text-slate-500 font-medium">Login IP:</span>
-                <span className="text-slate-900 font-mono font-bold">
+                <span className="text-slate-500 dark:text-slate-400 font-medium">Login IP:</span>
+                <span className="text-slate-900 dark:text-slate-100 font-mono font-bold">
                   {ipDisplay}
                 </span>
               </div>
 
               <div className="flex items-center gap-2">
-                <span className="text-slate-500 font-medium">Start Time:</span>
-                <span className="text-slate-900 font-mono font-bold">
+                <span className="text-slate-500 dark:text-slate-400 font-medium">Start Time:</span>
+                <span className="text-slate-900 dark:text-slate-100 font-mono font-bold">
                   {startTimeDisplay ? datet(startTimeDisplay) : 'Active'}
                 </span>
               </div>
 
               <div className="flex items-center gap-2">
-                <span className="text-slate-500 font-medium">Caller ID:</span>
-                <span className="text-slate-900 font-mono font-bold truncate" title={callerIdDisplay}>
+                <span className="text-slate-500 dark:text-slate-400 font-medium">Caller ID:</span>
+                <span className="text-slate-900 dark:text-slate-100 font-mono font-bold truncate" title={callerIdDisplay}>
                   {callerIdDisplay}
                 </span>
               </div>

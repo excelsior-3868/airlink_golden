@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -18,7 +19,8 @@ func (s *Server) listOLTs(w http.ResponseWriter, r *http.Request) {
 		       o.protocol, o.login_user, (o.login_pass_enc IS NOT NULL AND o.login_pass_enc<>'') AS has_password,
 		       (o.protocol='telnet' OR o.ssh_host_key<>'') AS host_key_pinned,
 		       (SELECT count(*) FROM ont_inventory i WHERE i.olt_id=o.device_id) AS onts,
-		       (SELECT count(*) FROM ont_inventory i WHERE i.olt_id=o.device_id AND i.run_state='online') AS onts_online
+		       (SELECT count(*) FROM ont_inventory i WHERE i.olt_id=o.device_id AND i.run_state='online') AS onts_online,
+		       d.vlan, d.gem_port, d.gem_port_untagged, d.default_tag_mode, d.line_profile_id, d.srv_profile_id, d.line_profile_id_untagged, d.srv_profile_id_untagged
 		FROM olts o JOIN devices d ON d.id=o.device_id ORDER BY d.name`)
 }
 
@@ -50,6 +52,8 @@ func (s *Server) createOLT(w http.ResponseWriter, r *http.Request) {
 		Username        string `json:"username"`
 		Password        string `json:"password"`
 		PonPorts        string `json:"pon_ports"`
+		Vlan            *int   `json:"vlan"`
+		GemPort         *int   `json:"gem_port"`
 	}
 	if !decode(w, r, &in) {
 		return
@@ -98,8 +102,8 @@ func (s *Server) createOLT(w http.ResponseWriter, r *http.Request) {
 		}
 		// TCP port polling avoids needing an SNMP community for the new OLT.
 		res, err := tx.ExecContext(r.Context(), `
-			INSERT INTO devices (name, ip, role, vendor, pop_id, poll_method, tcp_port, credential_ref, sys_descr)
-			VALUES (?,?, 'olt', ?, ?, 'tcp', ?, 'default', '')`, in.Name, in.IP, in.Vendor, in.PopID, in.Port)
+			INSERT INTO devices (name, ip, role, vendor, pop_id, poll_method, tcp_port, credential_ref, sys_descr, vlan, gem_port)
+			VALUES (?,?, 'olt', ?, ?, 'tcp', ?, 'default', '', ?, ?)`, in.Name, in.IP, in.Vendor, in.PopID, in.Port, in.Vlan, in.GemPort)
 		if err != nil {
 			s.dbError(w, err)
 			return
@@ -108,6 +112,8 @@ func (s *Server) createOLT(w http.ResponseWriter, r *http.Request) {
 			s.dbError(w, err)
 			return
 		}
+	} else if in.Vlan != nil || in.GemPort != nil {
+		_, _ = tx.ExecContext(r.Context(), `UPDATE devices SET vlan=COALESCE(?, vlan), gem_port=COALESCE(?, gem_port) WHERE id=?`, in.Vlan, in.GemPort, devID)
 	}
 	res, err := tx.ExecContext(r.Context(), `
 		INSERT INTO olts (device_id, software_version, ssh_port, ssh_host_key, pon_ports, protocol, login_user, login_pass_enc)
@@ -445,7 +451,8 @@ func (s *Server) planJob(w http.ResponseWriter, r *http.Request) {
 			s.jobError(w, err)
 			return
 		}
-		fail(w, 502, err.Error())
+		slog.Error("plan job failed", "operation", req.Operation, "serial", req.Serial, "err", err)
+		fail(w, 422, err.Error())
 		return
 	}
 	writeJSON(w, 201, j)
@@ -476,7 +483,7 @@ func (s *Server) saveJob(w http.ResponseWriter, r *http.Request) {
 			s.jobError(w, err)
 			return
 		}
-		fail(w, 502, err.Error())
+		fail(w, 422, err.Error())
 		return
 	}
 	writeJSON(w, 200, j)

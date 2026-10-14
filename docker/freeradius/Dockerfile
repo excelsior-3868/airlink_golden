@@ -11,6 +11,18 @@ FROM freeradius/freeradius-server:3.2.10
 RUN groupadd -g 5555 radiusweb && usermod -aG radiusweb freerad
 
 # ---- Custom policy (from the replicated bundle) -----------------------
+
+# ---- Simultaneous-Use counts sessions, not rows ------------------------
+# A router sending Accounting from two source IPs (multi-WAN) gets one radacct
+# row per IP for the same session, which the stock query counts as two logins
+# and rejects the customer's next login with "already logged in". Count
+# distinct (Acct-Session-Id, MAC) instead. Patched in the shipped queries.conf
+# because a module cannot override a query that file already defines. The grep
+# fails the build if a FreeRADIUS upgrade changes the text this relies on.
+RUN perl -0pi -e 's/(simul_count_query = "\\\n\s*SELECT )COUNT\(\*\)/$1COUNT(DISTINCT a.acctsessionid, IFNULL(a.callingstationid, \x27\x27))/' \
+        /etc/freeradius/mods-config/sql/main/mysql/queries.conf \
+    && grep -q "COUNT(DISTINCT a.acctsessionid" /etc/freeradius/mods-config/sql/main/mysql/queries.conf
+
 COPY sites-enabled/default /etc/freeradius/sites-enabled/default
 COPY sites-enabled/inner-tunnel /etc/freeradius/sites-enabled/inner-tunnel
 COPY mods-enabled/sql /etc/freeradius/mods-enabled/sql

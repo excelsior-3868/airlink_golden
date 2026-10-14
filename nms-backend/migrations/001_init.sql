@@ -30,6 +30,8 @@ CREATE TABLE IF NOT EXISTS devices (
     uptime_seconds  BIGINT NULL,
     cpu_pct         DOUBLE NULL,
     mem_pct         DOUBLE NULL,
+    vlan            INT NULL,
+    gem_port        INT NULL,
     created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX devices_pop_idx (pop_id),
     INDEX devices_parent_idx (parent_id),

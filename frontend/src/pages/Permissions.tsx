@@ -34,7 +34,11 @@ export default function Permissions() {
   // role:admin,reseller on top of its permission gate, so a seller tick would
   // save and then do nothing. The API strips it too; this only stops the UI
   // offering a toggle that cannot take effect.
-  const sellerLocked = (row: any) => String(row.feature || '').includes('pppoe')
+  const sellerLocked = (row: any) =>
+    String(row.feature || '').includes('pppoe') ||
+    String(row.feature || '').includes('olt') ||
+    String(row.feature || '').includes('ont') ||
+    String(row.category || '').toLowerCase().includes('olt')
 
   const save = async () => {
     setSaving(true); setErr(''); setMsg('')
@@ -126,7 +130,7 @@ export default function Permissions() {
                         className="w-4 h-4 text-primary rounded border-slate-300 focus:ring-primary focus:ring-offset-0 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                         checked={!!row.seller && !sellerLocked(row)}
                         disabled={sellerLocked(row)}
-                        title={sellerLocked(row) ? 'PPPoE features are unavailable to the seller role.' : undefined}
+                        title={sellerLocked(row) ? 'This feature is unavailable to the seller role.' : undefined}
                         onChange={() => toggle(idx, 'seller')}
                       />
                     </td>

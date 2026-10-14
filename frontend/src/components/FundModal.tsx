@@ -224,7 +224,7 @@ export default function FundModal({ open, onClose, onSuccess, defaultAllocType =
                 <label className="text-xs font-bold text-slate-500 block mb-2">
                   Allocation Type
                 </label>
-                <div className="grid grid-cols-2 gap-2 bg-slate-100/80 p-1.5 rounded-2xl">
+                <div className="grid grid-cols-2 gap-2 bg-slate-100/80 dark:bg-slate-800/80 p-1.5 rounded-2xl">
                   <button
                     type="button"
                     onClick={() => {
@@ -234,8 +234,8 @@ export default function FundModal({ open, onClose, onSuccess, defaultAllocType =
                     }}
                     className={`flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-sm font-bold transition-all ${
                       allocType === 'gb'
-                        ? 'bg-white text-[#003164] shadow-sm'
-                        : 'text-slate-500 hover:text-slate-800'
+                        ? 'bg-white dark:bg-slate-700 text-[#003164] dark:text-sky-300 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
                     }`}
                   >
                     <Database size={16} />
@@ -250,8 +250,8 @@ export default function FundModal({ open, onClose, onSuccess, defaultAllocType =
                     }}
                     className={`flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-sm font-bold transition-all ${
                       allocType === 'wallet'
-                        ? 'bg-white text-[#003164] shadow-sm'
-                        : 'text-slate-500 hover:text-slate-800'
+                        ? 'bg-white dark:bg-slate-700 text-[#003164] dark:text-sky-300 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
                     }`}
                   >
                     <Wallet size={16} />
@@ -262,16 +262,16 @@ export default function FundModal({ open, onClose, onSuccess, defaultAllocType =
             ) : null}
 
             {/* Recipient current info */}
-            <div className="grid grid-cols-2 gap-4 bg-slate-50/50 border border-slate-200/50 p-3 rounded-2xl text-xs">
+            <div className="grid grid-cols-2 gap-4 bg-slate-50/50 dark:bg-slate-800/50 border border-slate-200/50 dark:border-slate-700/50 p-3 rounded-2xl text-xs">
               {!pppoeOnly && (
                 <div>
                   <p className="text-slate-400 font-semibold">Recipient Current GB:</p>
-                  <p className="text-slate-800 font-bold mt-0.5">{gb(targetUser.gb_balance)}</p>
+                  <p className="text-slate-800 dark:text-slate-200 font-bold mt-0.5">{gb(targetUser.gb_balance)}</p>
                 </div>
               )}
               <div>
                 <p className="text-slate-400 font-semibold">Recipient Current Wallet:</p>
-                <p className="text-slate-800 font-bold mt-0.5">{rs(targetUser.wallet_balance)}</p>
+                <p className="text-slate-800 dark:text-slate-200 font-bold mt-0.5">{rs(targetUser.wallet_balance)}</p>
               </div>
             </div>
 
@@ -397,10 +397,10 @@ export default function FundModal({ open, onClose, onSuccess, defaultAllocType =
         {success && <div className="pill success w-full justify-center py-2.5 text-xs font-semibold">{success}</div>}
 
         {/* Buttons */}
-        <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+        <div className="flex justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
           <button
             type="button"
-            className="btn-ghost !border-slate-200 !text-slate-700 hover:!bg-slate-50 py-2.5 px-6 rounded-2xl font-bold transition-all"
+            className="btn-ghost py-2.5 px-6 rounded-2xl font-bold transition-all"
             onClick={onClose}
           >
             Close

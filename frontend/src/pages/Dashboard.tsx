@@ -36,22 +36,22 @@ function PppoeStatCard({ pppoe, onClick }: { pppoe?: any; onClick?: () => void }
     >
       <div className="min-w-0">
         <p className="text-muted-foreground text-xs sm:text-sm font-medium">PPPoE Subscribers</p>
-        <p className="text-xl font-bold mt-1 tracking-tight tabular-nums text-indigo-600">{num(total)}</p>
+        <p className="text-xl font-bold mt-1 tracking-tight tabular-nums text-indigo-600 dark:text-indigo-400">{num(total)}</p>
         <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/70">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200/70 dark:border-emerald-800/60">
             {num(active)} Active
           </span>
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200/70">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border border-rose-200/70 dark:border-rose-800/60">
             {num(expired)} Expired
           </span>
           {suspended > 0 && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200/70">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border border-amber-200/70 dark:border-amber-800/60">
               {num(suspended)} Suspended
             </span>
           )}
         </div>
       </div>
-      <div className="rounded-2xl p-2.5 shrink-0 flex items-center justify-center text-indigo-600 bg-indigo-50 border border-indigo-100/50">
+      <div className="rounded-2xl p-2.5 shrink-0 flex items-center justify-center text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-100/50 dark:border-indigo-900/60">
         <Router size={22} />
       </div>
     </motion.button>
@@ -202,7 +202,7 @@ export default function Dashboard() {
               className={toolbarItemClass}
               onClick={() => navigate('/diagnostics')}
             >
-              <Terminal size={16} className="text-slate-400" /> PPPoE User Diagnostics
+              <Terminal size={16} className="text-slate-400" /> Customer Diagnostic
             </motion.button>
           </div>
         }
@@ -221,8 +221,8 @@ export default function Dashboard() {
             />
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {!pppoeOnly && <StatCard label="Total Wallet Voucher" value={<span className="text-emerald-600">{num(d.wallet_vouchers?.total || 0)}</span>} icon={<Wallet size={22} />} iconColorClass="text-emerald-600 bg-emerald-50 border border-emerald-100/50" />}
-              {!pppoeOnly && <StatCard label="Total Wallet Voucher Used" value={<span className="text-cyan-600">{num(d.wallet_vouchers?.used ?? d.wallet_vouchers?.by_status?.used ?? 0)}</span>} icon={<Ticket size={22} />} iconColorClass="text-cyan-600 bg-cyan-50 border border-cyan-100/50" />}
+              {!pppoeOnly && <StatCard label="Total Wallet Voucher" value={<span className="text-emerald-600 dark:text-emerald-400">{num(d.wallet_vouchers?.total || 0)}</span>} icon={<Wallet size={22} />} iconColorClass="text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-100/50 dark:border-emerald-900/60" />}
+              {!pppoeOnly && <StatCard label="Total Wallet Voucher Used" value={<span className="text-cyan-600 dark:text-cyan-400">{num(d.wallet_vouchers?.used ?? d.wallet_vouchers?.by_status?.used ?? 0)}</span>} icon={<Ticket size={22} />} iconColorClass="text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-950/40 border border-cyan-100/50 dark:border-cyan-900/60" />}
               {/* One row, two columns: the two distribution figures read as a
                   single fact, so they share a label and sit side by side rather
                   than stacking into two half-height rows. flex-wrap keeps large
@@ -232,17 +232,17 @@ export default function Dashboard() {
                 label={pppoeOnly ? 'Wallet Distributed' : 'Wallet / GB Distributed'}
                 value={
                   <span className="flex items-baseline gap-1.5 flex-wrap">
-                    <span className="text-blue-600">{rs(d.wallet_distributed)}</span>
+                    <span className="text-blue-600 dark:text-sky-400">{rs(d.wallet_distributed)}</span>
                     {!pppoeOnly && (
                       <>
                         <span className="text-slate-300 dark:text-slate-600 font-normal">/</span>
-                        <span className="text-purple-600">{gb(d.gb_distributed)}</span>
+                        <span className="text-purple-600 dark:text-purple-400">{gb(d.gb_distributed)}</span>
                       </>
                     )}
                   </span>
                 }
                 icon={<Wallet size={22} />}
-                iconColorClass="text-blue-600 bg-blue-50 border border-blue-100/50"
+                iconColorClass="text-blue-600 dark:text-sky-400 bg-blue-50 dark:bg-blue-950/40 border border-blue-100/50 dark:border-blue-900/60"
               />
               )}
               <PppoeStatCard pppoe={d.pppoe} onClick={() => navigate('/pppoe/customers')} />

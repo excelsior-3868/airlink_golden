@@ -139,6 +139,8 @@ class PppoeCustomerService
                 'mac_address' => $data['mac_address'] ?? null,
                 'nas_device_id' => $data['nas_device_id'] ?? null,
                 'nas_ip' => $nasIp,
+                'onu_serial_number' => $data['onu_serial_number'] ?? null,
+                'onu_id' => $data['onu_id'] ?? null,
             ]);
 
             return $customer;
@@ -177,7 +179,8 @@ class PppoeCustomerService
         $fillable = [
             'full_name', 'phone', 'address', 'notes', 'customer_code',
             'contract_price', 'bandwidth', 'simultaneous_use', 'mac_bind',
-            'mac_address', 'nas_device_id', 'nas_ip', 'plan_id'
+            'mac_address', 'nas_device_id', 'nas_ip', 'plan_id',
+            'onu_serial_number', 'onu_id'
         ];
         if (!empty($data['password'])) {
             $fillable[] = 'password';

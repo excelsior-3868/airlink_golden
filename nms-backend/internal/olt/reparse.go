@@ -58,6 +58,9 @@ var reparsers = []reparser{
 	rp(`display ont info by-sn ([0-9A-F]{16})`, func(m []string, _ []int) (Cmd, error) { return DisplayONTBySN(m[1]) }),
 	rp(`display ont info (\d+) (\d+) (\d+) all`, func(_ []string, n []int) (Cmd, error) { return DisplayONTPort(n[0], n[1], n[2]) }),
 	rp(`display ont optical-info by-sn ([0-9A-F]{16})`, func(m []string, _ []int) (Cmd, error) { return DisplayONTOptical(m[1]) }),
+	rp(`display ont optical-info (\d+) (\d+) (\d+) (\d+)`, func(_ []string, n []int) (Cmd, error) {
+		return DisplayONTOpticalPos(n[0], n[1], n[2], n[3])
+	}),
 	rp(`interface gpon (\d+)/(\d+)`, func(_ []string, n []int) (Cmd, error) { return InterfaceGpon(n[0], n[1]) }),
 	rp(`quit`, func([]string, []int) (Cmd, error) { return Quit(), nil }),
 	rp(`ont add (\d+) (\d+) sn-auth "([0-9A-F]{16})" omci ont-lineprofile-id (\d+) ont-srvprofile-id (\d+)(?: desc "([A-Za-z0-9 _.\-]{0,64})")?`,

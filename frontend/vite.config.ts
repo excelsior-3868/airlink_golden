@@ -98,10 +98,15 @@ export default defineConfig({
     // Without this, opening dev by IP/domain (not localhost) made lib/api.ts
     // fall back to relative '/api' and every call 404'd on Vite itself.
     proxy: {
+      '/api/nms': {
+        target: process.env.VITE_NMS_PROXY_TARGET || 'http://localhost:8080',
+        changeOrigin: true,
+      },
       '/api': {
         target: process.env.VITE_API_PROXY_TARGET || 'http://backend:8000',
         changeOrigin: true,
       },
     },
+
   },
 })

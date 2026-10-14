@@ -135,5 +135,8 @@ class PppoeRechargeTest extends TestCase
         $recharge = $this->customer->recharges()->latest()->first();
         $this->assertNotNull($recharge);
         $this->assertEquals(2000, $recharge->price);
+        $this->assertEquals(200, $recharge->reseller_share);
+        $this->assertEquals(1800, $recharge->admin_share);
+        $this->assertEquals(1800, $this->reseller->commission_due);
     }
 }

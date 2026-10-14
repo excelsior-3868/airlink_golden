@@ -208,7 +208,7 @@ export default function OnlineUsers() {
   return (
     <div className="space-y-6">
       <PageTitle
-        title="Online Users"
+        title="Online Customers"
         subtitle={isSeller ? "Live RADIUS sessions for hotspot vouchers" : "Live RADIUS sessions across hotspot vouchers and PPPoE subscribers"}
         icon={<Wifi size={22} className="text-cyan-500" />}
         action={
@@ -226,7 +226,7 @@ export default function OnlineUsers() {
       {/* Top Stat Summary Cards */}
       <div className={`grid grid-cols-1 sm:grid-cols-2 ${isSeller ? 'lg:grid-cols-4' : 'lg:grid-cols-3 xl:grid-cols-5'} gap-4`}>
         <StatCard
-          label="Live Online Users"
+          label="Live Online Customers"
           value={
             <span className="flex items-center gap-2 text-cyan-600">
               <span className="relative flex h-3 w-3">
@@ -540,7 +540,7 @@ export default function OnlineUsers() {
                 : nasFilter !== 'all'
                 ? `No online sessions connected via ${nasOptions.find((o) => o.value === nasFilter)?.label || nasFilter} right now.`
                 : typeFilter === 'all'
-                ? 'No active online users connected at the moment.'
+                ? 'No active online customers connected at the moment.'
                 : `No ${typeFilter === 'pppoe' ? 'PPPoE' : 'hotspot'} sessions are online right now.`}
             </EmptyState>
           )}

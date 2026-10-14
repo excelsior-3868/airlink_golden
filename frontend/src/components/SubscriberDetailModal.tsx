@@ -201,6 +201,8 @@ export default function SubscriberDetailModal({
                   <Field label="Locked MAC" mono>{c.mac_address || (c.mac_bind ? 'Pending Login' : null)}</Field>
                   <Field label="Connected Via">{c.nas_device?.name || c.nasDevice?.name}</Field>
                   <Field label="NAS IP" mono>{live?.nasipaddress || c.nas_ip}</Field>
+                  <Field label="ONU Serial Number" mono>{c.onu_serial_number}</Field>
+                  <Field label="ONU ID" mono>{c.onu_id}</Field>
                   <Field label="Online Since">{live?.acctstarttime ? datet(live.acctstarttime) : null}</Field>
                   <Field label="Last Seen">{lifetime?.last_seen ? datet(lifetime.last_seen) : null}</Field>
                   <Field label="Owner">{c.owner ? `${c.owner.name} (${c.owner.role})` : null}</Field>

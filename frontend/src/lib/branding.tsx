@@ -28,10 +28,18 @@ const cachedPppoeOnly = (): boolean => {
   try { return localStorage.getItem(CACHE_KEY) === '1'; } catch { return false; }
 };
 
+// Last known name/logo, so the login heading doesn't flash the default before the fetch lands.
+const NAME_KEY = 'airlink_property_name';
+const LOGO_KEY = 'airlink_logo_url';
+const COLOR_KEY = 'airlink_primary_color';
+const cached = (key: string): string | null => {
+  try { return localStorage.getItem(key); } catch { return null; }
+};
+
 const defaultBranding: BrandingData = {
-  property_name: 'Airlink',
-  primary_color: '#1e3a5f',
-  logo_url: null,
+  property_name: cached(NAME_KEY) || 'Airlink',
+  primary_color: cached(COLOR_KEY) || '#1e3a5f',
+  logo_url: cached(LOGO_KEY),
   official_email: 'oxygen@gmail.com',
   support_phone: '+9779851129935',
   registered_address: 'kathmandu Barnani',
@@ -65,7 +73,12 @@ export function BrandingProvider({ children }: { children: ReactNode }) {
       favicon.href = data.logo_url;
     }
 
-    try { localStorage.setItem(CACHE_KEY, data.pppoe_only ? '1' : '0'); } catch { /* storage unavailable */ }
+    try {
+      localStorage.setItem(CACHE_KEY, data.pppoe_only ? '1' : '0');
+      if (data.primary_color) localStorage.setItem(COLOR_KEY, data.primary_color);
+      if (data.property_name) localStorage.setItem(NAME_KEY, data.property_name);
+      if (data.logo_url) localStorage.setItem(LOGO_KEY, data.logo_url); else localStorage.removeItem(LOGO_KEY);
+    } catch { /* storage unavailable (private mode / quota) */ }
 
     if (data.primary_color) {
       document.documentElement.style.setProperty('--brand-primary', data.primary_color);

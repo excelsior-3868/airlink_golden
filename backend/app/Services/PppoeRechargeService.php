@@ -111,9 +111,10 @@ class PppoeRechargeService
                 : ($c->reseller_id ?: ($actor->isReseller() ? $actor->id : null));
             $reseller = $resellerId ? User::find($resellerId) : null;
             $percent = $reseller ? (float) $reseller->commission_percent : 0.0;
-            $adminShare = round($totalPrice * $percent / 100, 2);
-            // Direct (admin-created) subscribers have no reseller: no commission split at all.
-            $resellerShare = $reseller ? round($totalPrice - $adminShare, 2) : 0.0;
+            // Reseller commission: reseller keeps $percent%, admin gets the remainder.
+            // Direct (admin-created) subscribers have no reseller: admin gets 100%.
+            $resellerShare = $reseller ? round($totalPrice * $percent / 100, 2) : 0.0;
+            $adminShare = $reseller ? round($totalPrice - $resellerShare, 2) : $totalPrice;
 
             if ($adminShare > 0 && $reseller && $reseller->parent_id) {
                 $admin = User::find($reseller->parent_id);
@@ -123,7 +124,7 @@ class PppoeRechargeService
                         $adminShare,
                         'commission',
                         $reference,
-                        "Commission on PPPoE recharge {$reference} ({$percent}%)"
+                        "Admin share on PPPoE recharge {$reference} (Reseller commission: {$percent}%)"
                     );
                     $reseller->increment('commission_due', $adminShare);
                 }

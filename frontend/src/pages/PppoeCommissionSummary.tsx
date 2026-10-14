@@ -143,8 +143,8 @@ export default function PppoeCommissionSummary() {
   return (
     <div className="space-y-5">
       <PageTitle
-        title="PPPoE Commission Summary"
-        subtitle="Commission split between admin and each reseller on PPPoE recharges"
+        title="Sales Commission"
+        subtitle="Commission split between admin and each reseller on customer recharges"
         icon={<Percent size={22} className="text-emerald-500" />}
       />
 
@@ -331,7 +331,7 @@ export default function PppoeCommissionSummary() {
                     <td className="px-4 py-3 text-right">{num(totals.recharges)}</td>
                     <td className="px-4 py-3 text-right">{rs(totals.total_sales)}</td>
                     <td className="px-4 py-3 text-right">
-                      {totals.total_sales > 0 ? Math.round((totals.admin_share / totals.total_sales) * 10000) / 100 : 0}%
+                      {totals.total_sales > 0 ? Math.round((totals.reseller_share / totals.total_sales) * 10000) / 100 : 0}%
                     </td>
                     <td className="px-4 py-3 text-right text-indigo-600">{rs(totals.admin_share)}</td>
                     <td className="px-4 py-3 text-right text-purple-600">{rs(totals.reseller_share)}</td>

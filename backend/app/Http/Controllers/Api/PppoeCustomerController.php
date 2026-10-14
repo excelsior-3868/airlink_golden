@@ -72,7 +72,15 @@ class PppoeCustomerController extends Controller
 
         // Filter: Owner (Admin only)
         if ($actor->isAdmin() && ($ownerId = $request->input('owner_id'))) {
-            $query->where('owner_id', $ownerId);
+            if ($ownerId === 'admin') {
+                // "System Admin Direct": subscribers not delegated to any reseller.
+                $query->where(function ($q) {
+                    $q->whereNull('pppoe_customers.owner_id')
+                      ->orWhereIn('pppoe_customers.owner_id', fn ($sub) => $sub->select('id')->from('users')->where('role', 'admin'));
+                });
+            } else {
+                $query->where('owner_id', $ownerId);
+            }
         }
 
         // Sorting
@@ -293,6 +301,8 @@ class PppoeCustomerController extends Controller
             'mac_bind' => ['nullable', 'boolean'],
             'mac_address' => ['nullable', 'string', 'regex:/^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/'],
             'nas_device_id' => ['nullable', 'integer', 'exists:nas_devices,id'],
+            'onu_serial_number' => ['nullable', 'string', 'max:64'],
+            'onu_id' => ['nullable', 'string', 'max:32'],
             'owner_id' => ['nullable', 'integer', 'exists:users,id'],
             // Optional one-step onboarding: create the subscriber and take the
             // first prepaid recharge together, so an operator signing up a
@@ -367,6 +377,8 @@ class PppoeCustomerController extends Controller
             'mac_bind' => ['nullable', 'boolean'],
             'mac_address' => ['nullable', 'string', 'regex:/^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/'],
             'nas_device_id' => ['nullable', 'integer', 'exists:nas_devices,id'],
+            'onu_serial_number' => ['nullable', 'string', 'max:64'],
+            'onu_id' => ['nullable', 'string', 'max:32'],
         ], [
             'phone.regex' => 'Please enter a valid 10-digit mobile number (e.g. 98XXXXXXXX or 97XXXXXXXX).',
         ]);

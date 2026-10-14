@@ -13,6 +13,8 @@ export { Toast } from './Toast'
 export type { ToastState } from './Toast'
 import { OnlineUsersBadge, OnlineUsersModal } from './OnlineUsersModal'
 export { OnlineUsersBadge, OnlineUsersModal } from './OnlineUsersModal'
+import { ThemeToggle } from '../lib/theme'
+export { ThemeToggle } from '../lib/theme'
 
 export function GlassCard({ children, className = '', onClick }: { children: ReactNode; className?: string; onClick?: () => void }) {
   return <div className={`glass-card p-5 sm:p-6 ${className}`} onClick={onClick}>{children}</div>
@@ -22,17 +24,33 @@ export function Pill({ tone = 'secondary', children, className = '' }: { tone?: 
   return <span className={`pill ${tone} ${className}`}>{children}</span>
 }
 
-export function StatCard({ label, value, icon, sub, iconColorClass = 'text-primary bg-primary/10' }: { label: string; value: ReactNode; icon?: ReactNode; sub?: ReactNode; iconColorClass?: string }) {
+export function StatCard({
+  label,
+  value,
+  icon,
+  sub,
+  iconColorClass = 'text-primary bg-primary/10',
+  valueColorClass = '',
+  className = '',
+}: {
+  label: string;
+  value: ReactNode;
+  icon?: ReactNode;
+  sub?: ReactNode;
+  iconColorClass?: string;
+  valueColorClass?: string;
+  className?: string;
+}) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
-      className="glass-card p-5 flex items-start justify-between"
+      className={`glass-card p-5 flex items-start justify-between ${className}`}
     >
       <div className="min-w-0">
         <p className="text-muted-foreground text-xs sm:text-sm font-medium">{label}</p>
-        <p className="text-xl font-bold mt-1 tracking-tight tabular-nums whitespace-nowrap">{value}</p>
+        <p className={`text-xl font-bold mt-1 tracking-tight tabular-nums whitespace-nowrap ${valueColorClass}`}>{value}</p>
         {sub && <p className="text-xs text-muted-foreground mt-1">{sub}</p>}
       </div>
       {icon && <div className={`rounded-2xl p-2.5 shrink-0 flex items-center justify-center ${iconColorClass}`}>{icon}</div>}
@@ -73,7 +91,7 @@ export function DualStatCard({ top, bottom, className = '' }: {
       className={`glass-card p-5 flex flex-col justify-between gap-3 ${className}`}
     >
       {half(top)}
-      <div className="h-px bg-slate-200" />
+      <div className="h-px bg-slate-200 dark:bg-slate-800" />
       {half(bottom)}
     </motion.div>
   )
@@ -133,7 +151,7 @@ export function VoucherStatCard({
             <p className="text-muted-foreground text-xs sm:text-sm font-medium">{title}</p>
             {soldToday !== undefined && (
               <p className="text-xs text-muted-foreground whitespace-nowrap">
-                Today <strong className="text-slate-700">{soldToday.toLocaleString()}</strong> Sold
+                Today <strong className="text-slate-700 dark:text-slate-200">{soldToday.toLocaleString()}</strong> Sold
               </p>
             )}
           </div>
@@ -170,16 +188,16 @@ export function VoucherStatCard({
       </div>
 
       <div className="flex flex-wrap gap-1.5 mt-1">
-        <span className="px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 text-[10px] font-bold border border-blue-100/50 shrink-0">
+        <span className="px-1.5 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 text-[10px] font-bold border border-blue-100/50 dark:border-blue-800/50 shrink-0">
           {byStatus.ready || 0} Ready
         </span>
-        <span className="px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 text-[10px] font-bold border border-emerald-100/50 shrink-0">
+        <span className="px-1.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold border border-emerald-100/50 dark:border-emerald-800/50 shrink-0">
           {byStatus.active || 0} Active
         </span>
-        <span className="px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600 text-[10px] font-bold border border-amber-100/50 shrink-0">
+        <span className="px-1.5 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 text-[10px] font-bold border border-amber-100/50 dark:border-amber-800/50 shrink-0">
           {byStatus.used || 0} Used
         </span>
-        <span className="px-1.5 py-0.5 rounded-full bg-rose-50 text-rose-600 text-[10px] font-bold border border-rose-100/50 shrink-0">
+        <span className="px-1.5 py-0.5 rounded-full bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 text-[10px] font-bold border border-rose-100/50 dark:border-rose-800/50 shrink-0">
           {disabled} Disabled
         </span>
       </div>
@@ -187,7 +205,23 @@ export function VoucherStatCard({
   )
 }
 
-export function PageTitle({ title, subtitle, action, icon, showBalances = false, showOnlineUsers = false }: { title: string; subtitle?: string; action?: ReactNode; icon?: ReactNode; showBalances?: boolean; showOnlineUsers?: boolean }) {
+export function PageTitle({
+  title,
+  subtitle,
+  action,
+  icon,
+  showBalances = false,
+  showOnlineUsers = false,
+  children,
+}: {
+  title?: string;
+  subtitle?: ReactNode;
+  action?: ReactNode;
+  icon?: ReactNode;
+  showBalances?: boolean;
+  showOnlineUsers?: boolean;
+  children?: ReactNode;
+}) {
   const { user } = useAuth()
   const pppoeOnly = useBranding().branding.pppoe_only
 
@@ -195,43 +229,43 @@ export function PageTitle({ title, subtitle, action, icon, showBalances = false,
     <div className="flex items-start justify-between mb-6 flex-wrap gap-4 pt-4">
       <div className="flex items-start gap-4">
         {icon && (
-          <div className="p-3 rounded-2xl shrink-0 bg-white border border-slate-200/80 shadow-sm flex items-center justify-center">
+          <div className="p-3 rounded-2xl shrink-0 bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 shadow-sm flex items-center justify-center">
             {icon}
           </div>
         )}
         <div className="pt-1">
-          <h1 className="text-lg sm:text-2xl font-medium tracking-tight text-[#003164] flex items-center gap-2">
-            {title}
+          <h1 className="text-lg sm:text-2xl font-medium tracking-tight text-[#003164] dark:text-white flex items-center gap-2">
+            {title || children}
           </h1>
           {subtitle && <p className="text-muted-foreground text-sm mt-1">{subtitle}</p>}
         </div>
       </div>
       
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="flex items-center gap-2.5 flex-wrap">
         {/* Wallet / GB balance pills and the online-users badge are independent:
             the Dashboard already shows both balances as StatCards, so it opts
             out of the pills while keeping the badge. */}
         {(showBalances || showOnlineUsers) && user && (
           <div className="hidden sm:flex items-center gap-2.5 select-none">
             {showBalances && user.role !== 'seller' && (
-              <div className="flex items-center gap-2 bg-gradient-to-r from-emerald-50 to-teal-50/70 border border-emerald-200/80 rounded-2xl py-1.5 px-3.5 shadow-xs text-xs group hover:border-emerald-300 transition-all">
-                <div className="w-6 h-6 rounded-lg bg-emerald-500/15 text-emerald-600 flex items-center justify-center shrink-0">
+              <div className="flex items-center gap-2 bg-gradient-to-r from-emerald-50 to-teal-50/70 dark:from-emerald-950/40 dark:to-teal-950/30 border border-emerald-200/80 dark:border-emerald-800/60 rounded-2xl py-1.5 px-3.5 shadow-xs text-xs group hover:border-emerald-300 dark:hover:border-emerald-700 transition-all">
+                <div className="w-6 h-6 rounded-lg bg-emerald-500/15 dark:bg-emerald-500/25 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
                   <Wallet size={13} />
                 </div>
                 <div className="flex flex-col leading-tight">
-                  <span className="text-[10px] text-emerald-600 font-extrabold tracking-wide">Wallet</span>
-                  <span className="font-extrabold text-emerald-950 text-xs">{rs(user.wallet_balance)}</span>
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-extrabold tracking-wide">Wallet</span>
+                  <span className="font-extrabold text-emerald-950 dark:text-emerald-200 text-xs">{rs(user.wallet_balance)}</span>
                 </div>
               </div>
             )}
             {showBalances && !pppoeOnly && (
-              <div className="flex items-center gap-2 bg-gradient-to-r from-purple-50 to-indigo-50/70 border border-purple-200/80 rounded-2xl py-1.5 px-3.5 shadow-xs text-xs group hover:border-purple-300 transition-all">
-                <div className="w-6 h-6 rounded-lg bg-purple-500/15 text-purple-600 flex items-center justify-center shrink-0">
+              <div className="flex items-center gap-2 bg-gradient-to-r from-purple-50 to-indigo-50/70 dark:from-purple-950/40 dark:to-indigo-950/30 border border-purple-200/80 dark:border-purple-800/60 rounded-2xl py-1.5 px-3.5 shadow-xs text-xs group hover:border-purple-300 dark:hover:border-purple-700 transition-all">
+                <div className="w-6 h-6 rounded-lg bg-purple-500/15 dark:bg-purple-500/25 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
                   <Database size={13} />
                 </div>
                 <div className="flex flex-col leading-tight">
-                  <span className="text-[10px] text-purple-600 font-extrabold tracking-wide">GB Balance</span>
-                  <span className="font-extrabold text-purple-950 text-xs">{gb(user.gb_balance)}</span>
+                  <span className="text-[10px] text-purple-600 dark:text-purple-400 font-extrabold tracking-wide">GB Balance</span>
+                  <span className="font-extrabold text-purple-950 dark:text-purple-200 text-xs">{gb(user.gb_balance)}</span>
                 </div>
               </div>
             )}
@@ -258,14 +292,14 @@ export function Pagination({ meta, onPage }: { meta: any; onPage: (p: number) =>
   const rangeEnd = to ?? (total > 0 && perPage > 0 ? Math.min(current_page * perPage, total) : 0)
   return (
     <div className="flex items-center justify-between mt-4 flex-wrap gap-3">
-      <p className="text-xs font-semibold text-slate-500">
+      <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">
         Showing {rangeStart} to {rangeEnd} of {total} items
       </p>
       <div className="flex items-center gap-1.5">
         <button
           onClick={() => onPage(current_page - 1)}
           disabled={current_page <= 1}
-          className="px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+          className="px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
         >
           Prev
         </button>
@@ -275,7 +309,7 @@ export function Pagination({ meta, onPage }: { meta: any; onPage: (p: number) =>
         <button
           onClick={() => onPage(current_page + 1)}
           disabled={current_page >= last_page}
-          className="px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+          className="px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
         >
           Next
         </button>
@@ -324,25 +358,25 @@ export function Modal({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.97, y: 8 }}
             transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-            className={`bg-white w-full ${widthClassName} rounded-[28px] relative shadow-2xl border border-slate-100 flex flex-col overflow-visible`}
+            className={`bg-white dark:bg-slate-900 w-full ${widthClassName} rounded-[28px] relative shadow-2xl border border-slate-100 dark:border-slate-800 flex flex-col overflow-visible`}
             onMouseDown={(e) => e.stopPropagation()}
           >
-            <div className={`flex items-center justify-between p-5 sm:p-6 border-b rounded-t-[28px] select-none ${isBrand ? 'bg-[#003164] border-[#003164]' : 'bg-white border-slate-100'}`}>
+            <div className={`flex items-center justify-between p-5 sm:p-6 border-b rounded-t-[28px] select-none ${isBrand ? 'bg-[#003164] border-[#003164]' : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800'}`}>
               <div className="flex items-center gap-3.5 min-w-0">
                 {icon && (
-                  <div className={`p-3 rounded-2xl shrink-0 flex items-center justify-center shadow-sm ${isBrand ? 'bg-white/10 text-white border border-white/20' : 'bg-blue-50 text-[#003164] border border-blue-100/50'}`}>
+                  <div className={`p-3 rounded-2xl shrink-0 flex items-center justify-center shadow-sm ${isBrand ? 'bg-white/10 text-white border border-white/20' : 'bg-blue-50 dark:bg-blue-950/50 text-[#003164] dark:text-sky-400 border border-blue-100/50 dark:border-blue-800/50'}`}>
                     {icon}
                   </div>
                 )}
                 <div className="min-w-0">
-                  <h2 className={`text-lg font-bold tracking-tight leading-none truncate ${isBrand ? 'text-white' : 'text-slate-800'}`}>{title}</h2>
-                  {subtitle && <p className={`text-xs font-semibold mt-1.5 leading-normal tracking-wide truncate max-w-lg ${isBrand ? 'text-blue-100/70' : 'text-slate-400'}`}>{subtitle}</p>}
+                  <h2 className={`text-lg font-bold tracking-tight leading-none truncate ${isBrand ? 'text-white' : 'text-slate-800 dark:text-white'}`}>{title}</h2>
+                  {subtitle && <p className={`text-xs font-semibold mt-1.5 leading-normal tracking-wide truncate max-w-lg ${isBrand ? 'text-blue-100/70' : 'text-slate-400 dark:text-slate-400'}`}>{subtitle}</p>}
                 </div>
               </div>
 
               <button
                 onClick={onClose}
-                className={`w-8 h-8 flex items-center justify-center rounded-full border transition-all cursor-pointer shrink-0 ml-4 ${isBrand ? 'border-white/20 text-white/70 hover:text-white hover:bg-white/10' : 'border-slate-100 text-slate-400 hover:text-slate-700 hover:bg-slate-50'}`}
+                className={`w-8 h-8 flex items-center justify-center rounded-full border transition-all cursor-pointer shrink-0 ml-4 ${isBrand ? 'border-white/20 text-white/70 hover:text-white hover:bg-white/10' : 'border-slate-100 dark:border-slate-800 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
               >
                 ✕
               </button>
@@ -539,7 +573,7 @@ export function CustomSelect({
         type="button"
         disabled={disabled}
         onClick={() => setOpen(!open)}
-        className={`w-full flex items-center justify-between gap-3 px-4 py-2.5 bg-white disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm font-semibold text-slate-700 ${borderless ? 'border-0 rounded-none shadow-none hover:bg-slate-50' : 'border border-slate-200 rounded-2xl hover:border-slate-300 shadow-sm'} ${buttonClassName}`}
+        className={`w-full flex items-center justify-between gap-3 px-4 py-2.5 bg-white dark:bg-slate-800/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm font-semibold text-slate-700 dark:text-slate-200 ${borderless ? 'border-0 rounded-none shadow-none hover:bg-slate-50 dark:hover:bg-slate-800' : 'border border-slate-200 dark:border-slate-700 rounded-2xl hover:border-slate-300 dark:hover:border-slate-600 shadow-sm'} ${buttonClassName}`}
       >
         <div className="flex flex-1 items-center gap-2 min-w-0">
           {selected?.icon && <div className="shrink-0 flex items-center justify-center">{selected.icon}</div>}
@@ -560,15 +594,15 @@ export function CustomSelect({
             left: coords.left,
             minWidth: Math.max(coords.width, DROPDOWN_MIN_WIDTH)
           }}
-          className="bg-white border border-slate-200/80 rounded-2xl shadow-xl z-[9999] flex flex-col overflow-hidden"
+          className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-700 rounded-2xl shadow-xl z-[9999] flex flex-col overflow-hidden"
         >
           {isSearchable && (
-            <div className="p-2.5 border-b border-slate-100 bg-white z-10 flex items-center gap-1.5 shrink-0">
+            <div className="p-2.5 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 z-10 flex items-center gap-1.5 shrink-0">
               <Search size={14} className="text-slate-400 shrink-0 ml-1.5" />
               <input
                 ref={inputRef}
                 type="text"
-                className="w-full bg-transparent border-0 outline-none text-xs text-slate-700 py-1"
+                className="w-full bg-transparent border-0 outline-none text-xs text-slate-700 dark:text-slate-200 py-1"
                 placeholder="Search..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -586,7 +620,7 @@ export function CustomSelect({
                 return (
                   <div key={String(opt.value)}>
                     {showGroupHeader && (
-                      <div className="px-2.5 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400 select-none">
+                      <div className="px-2.5 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 select-none">
                         {opt.group}
                       </div>
                     )}
@@ -596,8 +630,8 @@ export function CustomSelect({
                         onChange(opt.value)
                         setOpen(false)
                       }}
-                      className={`w-full flex items-center justify-between gap-3 p-2.5 rounded-xl hover:bg-slate-50 transition-all text-sm font-semibold text-left ${
-                        isSelected ? 'bg-slate-50/50 text-[#003164]' : 'text-slate-600 hover:text-slate-900'
+                      className={`w-full flex items-center justify-between gap-3 p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-all text-sm font-semibold text-left ${
+                        isSelected ? 'bg-slate-50/50 dark:bg-slate-800 text-[#003164] dark:text-sky-400' : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
                       }`}
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
@@ -607,8 +641,8 @@ export function CustomSelect({
                       <div className="flex items-center gap-1.5 shrink-0">
                         {opt.badge}
                         {isSelected && (
-                          <div className="w-5 h-5 rounded-full bg-blue-50 border border-blue-100 flex items-center justify-center shrink-0">
-                            <Check size={12} className="text-[#003164]" />
+                          <div className="w-5 h-5 rounded-full bg-blue-50 dark:bg-blue-950/60 border border-blue-100 dark:border-blue-800 flex items-center justify-center shrink-0">
+                            <Check size={12} className="text-[#003164] dark:text-sky-400" />
                           </div>
                         )}
                       </div>
@@ -706,7 +740,7 @@ export function ActionsMenu({ items, buttonLabel = 'Actions' }: { items: ActionM
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-slate-600 bg-white border border-slate-200 rounded-xl hover:border-slate-300 hover:text-slate-900 transition-all"
+        className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-slate-300 dark:hover:border-slate-600 hover:text-slate-900 dark:hover:text-white transition-all"
       >
         {buttonLabel}
         <ChevronDown size={13} className={`text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
@@ -716,14 +750,14 @@ export function ActionsMenu({ items, buttonLabel = 'Actions' }: { items: ActionM
         <div
           ref={dropdownRef}
           style={{ position: 'absolute', top: coords.top + 6, left: coords.left, width: 176 }}
-          className="bg-white border border-slate-200/80 rounded-2xl shadow-xl z-[9999] p-1.5 flex flex-col gap-0.5"
+          className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-700 rounded-2xl shadow-xl z-[9999] p-1.5 flex flex-col gap-0.5"
         >
           {visible.map((item) => (
             <button
               key={item.label}
               type="button"
               onClick={() => { setOpen(false); item.onClick() }}
-              className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-sm font-semibold hover:bg-slate-50 transition-all ${item.className || 'text-slate-600 hover:text-slate-900'}`}
+              className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-sm font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 transition-all ${item.className || 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'}`}
             >
               {item.icon}
               {item.label}

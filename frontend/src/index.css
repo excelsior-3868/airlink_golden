@@ -26,6 +26,28 @@
     --gradient-color-3: 350 86% 72%;
   }
 
+  .dark {
+    --background: 222 47% 7%;       /* #0b0f19 Sleek deep slate dark */
+    --foreground: 210 40% 98%;      /* #f8fafc Crisp readable foreground */
+    --card: 222 47% 10%;            /* #0f172a / #111827 Dark card */
+    --card-foreground: 210 40% 98%;
+    --primary: 221 83% 53%;         /* Royal blue for clear contrast on dark without neon glare */
+    --primary-foreground: 0 0% 100%;
+    --nt-accent: 217 33% 20%;
+    --accent: 217 33% 20%;
+    --accent-foreground: 210 40% 98%;
+    --secondary: 217 33% 14%;       /* Dark slate secondary */
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217 33% 14%;
+    --muted-foreground: 215 20% 65%; /* Soft readable muted text */
+    --border: 217 33% 18%;           /* Subtle dark border */
+    --soft-red: 221 83% 53%;
+    --soft-red-2: 211 90% 45%;
+    --gradient-color-1: 222 47% 11%;
+    --gradient-color-2: 217 33% 18%;
+    --gradient-color-3: 222 47% 14%;
+  }
+
   * {
     scrollbar-width: none !important;
     -ms-overflow-style: none !important;
@@ -62,12 +84,23 @@
     background: linear-gradient(180deg, hsl(var(--card) / 0.92) 0%, hsl(var(--card) / 0.84) 100%);
     box-shadow: 0 18px 45px -22px hsl(var(--primary) / 0.35), 0 8px 18px -18px hsl(var(--primary) / 0.22);
   }
+  .dark .glass-card {
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: linear-gradient(180deg, hsl(222 47% 11% / 0.92) 0%, hsl(222 47% 9% / 0.86) 100%);
+    box-shadow: 0 18px 45px -22px rgba(0, 0, 0, 0.75), 0 8px 18px -18px rgba(0, 0, 0, 0.5);
+  }
+
   .surface-panel {
     border-radius: 28px;
     border: 1px solid rgba(255, 255, 255, 0.7);
     background-color: rgba(255, 255, 255, 0.8);
     backdrop-filter: blur(24px);
     box-shadow: 0 18px 45px -24px rgba(0, 0, 0, 0.32);
+  }
+  .dark .surface-panel {
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background-color: hsl(222 47% 10% / 0.85);
+    box-shadow: 0 18px 45px -24px rgba(0, 0, 0, 0.8);
   }
 
   .gradient-background {
@@ -94,8 +127,35 @@
     border: 1px solid hsl(var(--primary) / 0.2);
     transition: all 0.2s ease;
   }
+  .dark .btn-primary,
+  html.dark .btn-primary {
+    background: linear-gradient(180deg, #1e40af 0%, #1e3a8a 100%);
+    box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.45);
+    border: 1px solid rgba(147, 197, 253, 0.22);
+    color: #ffffff !important;
+  }
   .btn-primary:hover { transform: translateY(-1px); filter: saturate(1.06); }
+  .dark .btn-primary:hover,
+  html.dark .btn-primary:hover {
+    background: linear-gradient(180deg, #2563eb 0%, #1e40af 100%);
+    border-color: rgba(147, 197, 253, 0.45);
+    box-shadow: 0 6px 16px -2px rgba(0, 0, 0, 0.55);
+    transform: translateY(-1px);
+    filter: none;
+  }
+  .dark .btn-primary:active,
+  html.dark .btn-primary:active {
+    background: #1e3a8a;
+    transform: translateY(0);
+  }
   .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+  .dark .btn-primary:disabled,
+  html.dark .btn-primary:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
 
   .btn-ghost {
     padding: 0.5rem 1rem; border-radius: 14px; font-weight: 600; font-size: 0.875rem;
@@ -103,6 +163,15 @@
     transition: all 0.15s ease;
   }
   .btn-ghost:hover { background: hsl(var(--muted)); }
+  .dark .btn-ghost {
+    border: 1px solid hsl(var(--border));
+    background: hsl(222 47% 12%);
+    color: hsl(var(--foreground));
+  }
+  .dark .btn-ghost:hover {
+    background: hsl(222 47% 17%);
+    color: #ffffff;
+  }
 
   .input {
     width: 100%; padding: 0.625rem 0.875rem; border-radius: 14px;
@@ -110,6 +179,16 @@
     transition: all 0.15s ease; outline: none;
   }
   .input:focus { border-color: hsl(var(--primary)); box-shadow: 0 0 0 3px hsl(var(--primary) / 0.12); }
+  .dark .input {
+    background: hsl(222 47% 10%);
+    color: hsl(var(--foreground));
+    border-color: hsl(var(--border));
+  }
+  .dark .input:focus {
+    border-color: hsl(var(--primary));
+    box-shadow: 0 0 0 3px hsl(var(--primary) / 0.25);
+  }
+
   .no-spinners::-webkit-outer-spin-button,
   .no-spinners::-webkit-inner-spin-button {
     -webkit-appearance: none;
@@ -117,6 +196,7 @@
   }
   .no-spinners {
     -moz-appearance: textfield;
+    appearance: textfield;
   }
 
   .app-sidebar-panel {
@@ -126,35 +206,39 @@
     background: linear-gradient(180deg, hsl(0 0% 100% / 0.92) 0%, hsl(210 40% 99% / 0.94) 100%);
     box-shadow: 0 22px 70px -32px hsl(var(--primary) / 0.22);
   }
+  .dark .app-sidebar-panel {
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: linear-gradient(180deg, hsl(222 47% 11% / 0.96) 0%, hsl(222 47% 8% / 0.98) 100%);
+    box-shadow: 0 22px 70px -32px rgba(0, 0, 0, 0.85);
+  }
+
   .app-sidebar-nav-item {
     display: flex; align-items: center; gap: 0.75rem; padding: 0.7rem 0.75rem;
     border-radius: 16px; font-weight: 600; font-size: 0.875rem; transition: all 0.15s ease;
   }
-  /* Group headers (Plan, PPPoE, Settings) are section labels, not links —
-     drop the bold weight the shared item class applies so they read lighter
-     than the leaf items underneath them. */
   .app-sidebar-nav-item-header {
     font-weight: 500;
   }
   .app-sidebar-nav-item-idle { color: rgb(100 116 139); }
   .app-sidebar-nav-item-idle:hover { background: rgba(255,255,255,0.8); color: rgb(51 65 85); }
+  .dark .app-sidebar-nav-item-idle { color: rgb(148 163 184); }
+  .dark .app-sidebar-nav-item-idle:hover { background: rgba(255, 255, 255, 0.06); color: rgb(241 245 249); }
   .app-sidebar-nav-item-active {
     background: linear-gradient(135deg, hsl(211 100% 20% / 0.1) 0%, hsl(211 100% 20% / 0.04) 100%);
     color: #003164;
     box-shadow: 0 14px 34px -24px hsl(211 100% 20% / 0.3);
   }
+  .dark .app-sidebar-nav-item-active {
+    background: linear-gradient(135deg, hsl(217 91% 60% / 0.18) 0%, hsl(217 91% 60% / 0.08) 100%);
+    color: #60a5fa;
+    box-shadow: 0 14px 34px -24px hsl(217 91% 60% / 0.4);
+  }
 
-  /* Sidebar collapse. The panel edge and the page's left edge share one duration
-     and one curve, so the content can never drift away from the panel it's
-     following. Icons keep their x through both states — only the edge travels. */
   .app-sidebar-motion { transition: width 320ms cubic-bezier(0.16, 1, 0.3, 1); }
   .app-content-motion { transition: margin-left 320ms cubic-bezier(0.16, 1, 0.3, 1); }
-  /* Labels ride the closing edge: they leave immediately toward the icon column,
-     and on the way back they wait for the panel to make room for them. */
   .app-sidebar-label { transition: opacity 150ms ease-out, transform 260ms cubic-bezier(0.16, 1, 0.3, 1); }
   .app-sidebar-label-in { opacity: 1; transform: none; transition-delay: 110ms; }
   .app-sidebar-label-out { opacity: 0; transform: translateX(-8px); transition-delay: 0ms; }
-  /* The profile card sheds its container on the rail, leaving just the avatar. */
   .app-sidebar-profile { transition: padding 320ms cubic-bezier(0.16, 1, 0.3, 1), background-color 220ms ease-out, border-color 220ms ease-out; }
 
   .pill { display: inline-flex; align-items: center; padding: 0.15rem 0.6rem; border-radius: 999px; font-size: 0.7rem; font-weight: 700; border: 1px solid; }
@@ -163,6 +247,12 @@
   .pill.warning { background: rgb(255 251 235); color: rgb(217 119 6); border-color: rgb(254 243 199); }
   .pill.danger { background: rgb(255 241 242); color: rgb(225 29 72); border-color: rgb(255 228 230); }
   .pill.info { background: rgb(239 246 255); color: rgb(37 99 235); border-color: rgb(219 234 254); }
+
+  .dark .pill.success { background: rgba(5, 150, 105, 0.18); color: rgb(52 211 153); border-color: rgba(5, 150, 105, 0.35); }
+  .dark .pill.secondary { background: rgb(30 41 59); color: rgb(203 213 225); border-color: rgb(51 65 85); }
+  .dark .pill.warning { background: rgba(217, 119, 6, 0.18); color: rgb(251 191 36); border-color: rgba(217, 119, 6, 0.35); }
+  .dark .pill.danger { background: rgba(225, 29, 72, 0.18); color: rgb(251 113 133); border-color: rgba(225, 29, 72, 0.35); }
+  .dark .pill.info { background: rgba(37, 99, 235, 0.18); color: rgb(96 165 250); border-color: rgba(37, 99, 235, 0.35); }
 
   table thead th {
     background: hsl(var(--primary)); color: white !important; font-weight: 600;
@@ -173,6 +263,16 @@
   table thead th:last-child { border-top-right-radius: 16px; }
   table tbody td { padding: 0.7rem 1rem; font-size: 0.85rem; border-bottom: 1px solid hsl(var(--border)); }
 
+  .dark table thead th {
+    background: hsl(222 47% 14%);
+    color: #f8fafc !important;
+    border-bottom: 1px solid hsl(217 33% 20%);
+  }
+  .dark table tbody td {
+    color: hsl(210 40% 95%);
+    border-bottom-color: hsl(var(--border));
+  }
+
   @keyframes progressSlide {
     0% { transform: translateX(-100%); }
     50% { transform: translateX(0%); }
@@ -182,10 +282,6 @@
     animation: progressSlide 1.6s ease-in-out infinite;
   }
 
-  /* Left-to-right reveal for charts — a CSS clip-path wipe rather than relying
-     on Recharts' own animation, which doesn't fire in this app/library
-     combination (verified: its SVG paths render at final state immediately,
-     no interpolation). Applied via ResponsiveContainer's className prop. */
   @keyframes chartReveal {
     from { clip-path: inset(0 100% 0 0); }
     to { clip-path: inset(0 0% 0 0); }
@@ -195,11 +291,263 @@
   }
   @media (prefers-reduced-motion: reduce) {
     .chart-reveal { animation: none; }
-    /* The collapse still has to land — it just lands at once. */
     .app-sidebar-motion, .app-content-motion, .app-sidebar-label, .app-sidebar-profile {
       transition-duration: 1ms;
       transition-delay: 0ms;
     }
+  }
+}
+
+/* ==============================================================
+   SCREEN-ONLY DARK MODE SYNCHRONIZATION
+   Ensures buttons, text, inputs, cards, and modals never show blinding
+   white background in dark mode, while keeping print layout intact.
+   ============================================================== */
+@media screen {
+  html.dark {
+    color-scheme: dark;
+  }
+
+  /* Buttons in Dark Mode: Synchronized, no white background */
+  html.dark button.bg-white,
+  html.dark a.bg-white,
+  html.dark [role="button"].bg-white,
+  html.dark .btn-white {
+    background-color: hsl(222 47% 12%) !important;
+    color: hsl(210 40% 95%) !important;
+    border-color: hsl(217 33% 20%) !important;
+  }
+
+  html.dark button.bg-white:hover,
+  html.dark a.bg-white:hover,
+  html.dark [role="button"].bg-white:hover,
+  html.dark .btn-white:hover {
+    background-color: hsl(222 47% 17%) !important;
+    color: #ffffff !important;
+    border-color: hsl(217 33% 30%) !important;
+  }
+
+  /* General backgrounds in dark mode — NO bright whites or pale surfaces */
+  html.dark .bg-white:not(.keep-white),
+  html.dark [class*="bg-white"]:not(.keep-white) {
+    background-color: hsl(222 47% 10%) !important;
+  }
+
+  html.dark .bg-slate-50,
+  html.dark [class*="bg-slate-50"] {
+    background-color: hsl(222 47% 9% / 0.85) !important;
+  }
+
+  html.dark .bg-slate-100,
+  html.dark [class*="bg-slate-100"] {
+    background-color: hsl(222 47% 14%) !important;
+  }
+
+  html.dark .bg-slate-200,
+  html.dark [class*="bg-slate-200"] {
+    background-color: hsl(222 47% 18%) !important;
+  }
+
+  /* All pastel icon containers and soft badges (-50 and -100) become elegant translucent dark colors */
+  html.dark .bg-emerald-50,
+  html.dark .bg-emerald-100,
+  html.dark [class*="bg-emerald-50"],
+  html.dark [class*="bg-emerald-100"] {
+    background-color: rgba(6, 78, 59, 0.38) !important;
+    border-color: rgba(16, 185, 129, 0.35) !important;
+  }
+
+  html.dark .bg-blue-50,
+  html.dark .bg-blue-100,
+  html.dark [class*="bg-blue-50"],
+  html.dark [class*="bg-blue-100"] {
+    background-color: rgba(30, 58, 138, 0.38) !important;
+    border-color: rgba(59, 130, 246, 0.35) !important;
+  }
+
+  html.dark .bg-indigo-50,
+  html.dark .bg-indigo-100,
+  html.dark [class*="bg-indigo-50"],
+  html.dark [class*="bg-indigo-100"] {
+    background-color: rgba(49, 46, 129, 0.38) !important;
+    border-color: rgba(99, 102, 241, 0.35) !important;
+  }
+
+  html.dark .bg-purple-50,
+  html.dark .bg-purple-100,
+  html.dark [class*="bg-purple-50"],
+  html.dark [class*="bg-purple-100"] {
+    background-color: rgba(88, 28, 135, 0.38) !important;
+    border-color: rgba(168, 85, 247, 0.35) !important;
+  }
+
+  html.dark .bg-rose-50,
+  html.dark .bg-rose-100,
+  html.dark [class*="bg-rose-50"],
+  html.dark [class*="bg-rose-100"] {
+    background-color: rgba(136, 19, 55, 0.38) !important;
+    border-color: rgba(244, 63, 94, 0.35) !important;
+  }
+
+  html.dark .bg-amber-50,
+  html.dark .bg-amber-100,
+  html.dark [class*="bg-amber-50"],
+  html.dark [class*="bg-amber-100"] {
+    background-color: rgba(120, 53, 15, 0.38) !important;
+    border-color: rgba(245, 158, 11, 0.35) !important;
+  }
+
+  html.dark .bg-cyan-50,
+  html.dark .bg-cyan-100,
+  html.dark [class*="bg-cyan-50"],
+  html.dark [class*="bg-cyan-100"] {
+    background-color: rgba(21, 94, 117, 0.38) !important;
+    border-color: rgba(6, 182, 212, 0.35) !important;
+  }
+
+  html.dark .bg-teal-50,
+  html.dark .bg-teal-100,
+  html.dark [class*="bg-teal-50"],
+  html.dark [class*="bg-teal-100"] {
+    background-color: rgba(19, 78, 74, 0.38) !important;
+    border-color: rgba(20, 184, 166, 0.35) !important;
+  }
+
+  html.dark .bg-orange-50,
+  html.dark .bg-orange-100,
+  html.dark [class*="bg-orange-50"],
+  html.dark [class*="bg-orange-100"] {
+    background-color: rgba(124, 45, 18, 0.38) !important;
+    border-color: rgba(249, 115, 22, 0.35) !important;
+  }
+
+  html.dark .bg-violet-50,
+  html.dark .bg-violet-100,
+  html.dark [class*="bg-violet-50"],
+  html.dark [class*="bg-violet-100"] {
+    background-color: rgba(91, 33, 182, 0.38) !important;
+    border-color: rgba(139, 92, 246, 0.35) !important;
+  }
+
+  html.dark .bg-sky-50,
+  html.dark .bg-sky-100,
+  html.dark [class*="bg-sky-50"],
+  html.dark [class*="bg-sky-100"] {
+    background-color: rgba(12, 74, 110, 0.38) !important;
+    border-color: rgba(14, 165, 233, 0.35) !important;
+  }
+
+  /* Badge and Pill text color clarity in dark mode */
+  html.dark .text-emerald-700, html.dark .text-emerald-800 { color: #6ee7b7 !important; }
+  html.dark .text-rose-700, html.dark .text-rose-800 { color: #fda4af !important; }
+  html.dark .text-amber-700, html.dark .text-amber-800 { color: #fcd34d !important; }
+  html.dark .text-blue-700, html.dark .text-blue-800 { color: #93c5fd !important; }
+  html.dark .text-indigo-700, html.dark .text-indigo-800 { color: #a5b4fc !important; }
+  html.dark .text-purple-700, html.dark .text-purple-800 { color: #d8b4fe !important; }
+  html.dark .text-cyan-700, html.dark .text-cyan-800 { color: #67e8f9 !important; }
+  html.dark .text-teal-700, html.dark .text-teal-800 { color: #5eead4 !important; }
+  html.dark .text-orange-700, html.dark .text-orange-800 { color: #fdba74 !important; }
+
+  html.dark .hover\:bg-slate-50:hover,
+  html.dark [class*="hover:bg-slate-50"]:hover {
+    background-color: hsl(222 47% 15%) !important;
+  }
+
+  html.dark .hover\:bg-slate-100:hover,
+  html.dark [class*="hover:bg-slate-100"]:hover {
+    background-color: hsl(222 47% 18%) !important;
+  }
+
+  html.dark .hover\:bg-slate-200:hover,
+  html.dark [class*="hover:bg-slate-200"]:hover {
+    background-color: hsl(222 47% 22%) !important;
+  }
+
+  /* Borders */
+  html.dark .border-slate-100,
+  html.dark .border-slate-200,
+  html.dark .border-slate-300,
+  html.dark [class*="border-slate-100"],
+  html.dark [class*="border-slate-200"],
+  html.dark [class*="border-slate-300"] {
+    border-color: hsl(217 33% 20%);
+  }
+
+  html.dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]),
+  html.dark .divide-slate-200 > :not([hidden]) ~ :not([hidden]) {
+    border-color: hsl(217 33% 20%);
+  }
+
+  /* Text Contrast & Visibility in Dark Mode */
+  html.dark .text-slate-900,
+  html.dark .text-slate-800,
+  html.dark .text-slate-700 {
+    color: hsl(210 40% 95%);
+  }
+
+  html.dark .text-slate-600 {
+    color: hsl(215 20% 75%);
+  }
+
+  html.dark .text-slate-500 {
+    color: hsl(215 20% 65%);
+  }
+
+  html.dark .hover\:text-slate-900:hover,
+  html.dark .hover\:text-slate-800:hover,
+  html.dark .hover\:text-slate-700:hover {
+    color: #ffffff !important;
+  }
+
+  /* Header Text across all pages in Dark Mode is White */
+  html.dark h1,
+  html.dark h2,
+  html.dark h3,
+  html.dark h4,
+  html.dark h5,
+  html.dark h6,
+  .dark h1,
+  .dark h2,
+  .dark h3,
+  .dark h4,
+  .dark h5,
+  .dark h6 {
+    color: #ffffff !important;
+  }
+
+  /* Deep Navy Brand color (#003164) becomes crisp white for headers and labels in Dark Mode */
+  html.dark .text-\[\#003164\],
+  html.dark [class*="text-[#003164]"] {
+    color: #ffffff !important;
+  }
+
+  html.dark .hover\:text-\[\#003164\]:hover,
+  html.dark [class*="hover:text-[#003164]"]:hover {
+    color: #ffffff !important;
+  }
+
+  html.dark .border-\[\#003164\],
+  html.dark [class*="border-[#003164]"] {
+    border-color: hsl(217 33% 26%) !important;
+  }
+
+  /* Inputs, Textareas, and Selects in Dark Mode */
+  html.dark input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]):not([type="file"]),
+  html.dark textarea,
+  html.dark select {
+    background-color: hsl(222 47% 10%);
+    color: hsl(210 40% 98%);
+    border-color: hsl(217 33% 20%);
+  }
+
+  html.dark input::placeholder,
+  html.dark textarea::placeholder {
+    color: hsl(215 20% 50%);
+  }
+
+  /* Table Rows Hover */
+  html.dark table tbody tr:hover {
+    background-color: hsl(222 47% 13% / 0.6);
   }
 }
 

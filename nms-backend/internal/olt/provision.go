@@ -919,8 +919,8 @@ func (s *Service) persist(ctx context.Context, req PlanRequest, key, actor, befo
 	defer tx.Rollback()
 
 	res, err := tx.ExecContext(ctx, `
-		INSERT INTO provisioning_jobs (olt_id, operation, idempotency_key, params, requested_by, before_state)
-		VALUES (?,?,?,?,?,?)`, req.OLTID, req.Operation, key, params, actor, before)
+		INSERT INTO provisioning_jobs (olt_id, operation, idempotency_key, params, requested_by, before_state, error_summary, save_output)
+		VALUES (?,?,?,?,?,?,'','')`, req.OLTID, req.Operation, key, params, actor, before)
 	if err != nil {
 		if strings.Contains(err.Error(), "Duplicate") || strings.Contains(err.Error(), "1062") {
 			tx.Rollback()
@@ -935,8 +935,8 @@ func (s *Service) persist(ctx context.Context, req PlanRequest, key, actor, befo
 
 	for _, st := range steps {
 		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO provisioning_job_steps (job_id, seq, name, kind, command, rollback_command, expect, plan_result, plan_output)
-			VALUES (?,?,?,?,?,?,?,?,?)`,
+			INSERT INTO provisioning_job_steps (job_id, seq, name, kind, command, rollback_command, expect, plan_result, plan_output, output)
+			VALUES (?,?,?,?,?,?,?,?,?,'')`,
 			id, st.Seq, st.Name, st.Kind, strings.Join(st.Commands, "\n"), strings.Join(st.Rollback, "\n"), st.Expect,
 			st.PlanResult, st.PlanOutput); err != nil {
 			return nil, err
@@ -975,7 +975,7 @@ func (s *Service) Get(ctx context.Context, id int64) (*Job, error) {
 		return nil, err
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT seq, name, kind, command, rollback_command, expect, result, output, plan_result, plan_output
+		SELECT seq, name, kind, command, rollback_command, expect, result, output, COALESCE(plan_result, ''), COALESCE(plan_output, '')
 		FROM provisioning_job_steps WHERE job_id=? ORDER BY seq`, id)
 	if err != nil {
 		return nil, err

@@ -162,7 +162,7 @@ export default function RadiusLogs() {
   return (
     <div className="w-full space-y-6">
       <PageTitle
-        title="PPPoE User Diagnostics & RADIUS Logs"
+        title="Customer Diagnostic & RADIUS Logs"
         subtitle="Troubleshoot authentication, inspect server daemon logs, and review audit history"
         icon={<Terminal size={22} className="text-primary" />}
       />
@@ -178,7 +178,7 @@ export default function RadiusLogs() {
           }`}
           onClick={() => setActiveTab('diagnostics')}
         >
-          <Terminal size={16} /> PPPoE User Diagnostics
+          <Terminal size={16} /> Customer Diagnostic
         </button>
         <button
           className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-t-xl border-b-2 transition-all cursor-pointer ${
@@ -204,7 +204,7 @@ export default function RadiusLogs() {
         )}
       </div>
 
-      {/* Tab 1: PPPoE User Diagnostics */}
+      {/* Tab 1: Customer Diagnostic */}
       {activeTab === 'diagnostics' && (
         <GlassCard className="space-y-6 p-6">
           <div className="space-y-2">

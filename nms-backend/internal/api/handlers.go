@@ -80,7 +80,7 @@ func (s *Server) createPop(w http.ResponseWriter, r *http.Request) {
 
 const deviceCols = `d.id, d.name, d.ip, d.role, d.vendor, d.pop_id, p.name AS pop, d.parent_id, d.poll_method, d.snmp_version,
 	d.snmp_port, d.tcp_port, d.credential_ref, d.poller_id, d.enabled, d.status, d.status_since, d.last_polled_at,
-	d.sys_descr, d.uptime_seconds, d.cpu_pct, d.mem_pct`
+	d.sys_descr, d.uptime_seconds, d.cpu_pct, d.mem_pct, d.vlan, d.gem_port, d.gem_port_untagged, d.default_tag_mode, d.line_profile_id, d.srv_profile_id, d.line_profile_id_untagged, d.srv_profile_id_untagged`
 
 func (s *Server) listDevices(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
@@ -117,22 +117,30 @@ func (s *Server) getDevice(w http.ResponseWriter, r *http.Request) {
 }
 
 type deviceIn struct {
-	Name          string `json:"name"`
-	IP            string `json:"ip"`
-	Role          string `json:"role"`
-	Vendor        string `json:"vendor"`
-	PopID         *int64 `json:"pop_id"`
-	ParentID      *int64 `json:"parent_id"`
-	PollMethod    string `json:"poll_method"`
-	SNMPVersion   string `json:"snmp_version"`
-	SNMPPort      int    `json:"snmp_port"`
-	TCPPort       int    `json:"tcp_port"`
-	CredentialRef string `json:"credential_ref"`
-	PollerID      string `json:"poller_id"`
+	Name             string `json:"name"`
+	IP               string `json:"ip"`
+	Role             string `json:"role"`
+	Vendor           string `json:"vendor"`
+	PopID            *int64 `json:"pop_id"`
+	ParentID         *int64 `json:"parent_id"`
+	PollMethod       string `json:"poll_method"`
+	SNMPVersion      string `json:"snmp_version"`
+	SNMPPort         int    `json:"snmp_port"`
+	TCPPort          int    `json:"tcp_port"`
+	CredentialRef    string `json:"credential_ref"`
+	PollerID         string `json:"poller_id"`
+	Vlan             *int   `json:"vlan"`
+	GemPort          *int   `json:"gem_port"`
+	GemPortUntagged  *int   `json:"gem_port_untagged"`
+	DefaultTagMode   string `json:"default_tag_mode"`
+	LineProfileID    *int   `json:"line_profile_id"`
+	SrvProfileID     *int   `json:"srv_profile_id"`
+	LineProfileIDUntagged *int `json:"line_profile_id_untagged"`
+	SrvProfileIDUntagged  *int `json:"srv_profile_id_untagged"`
 }
 
 func (s *Server) createDevice(w http.ResponseWriter, r *http.Request) {
-	in := deviceIn{Role: "access", PollMethod: "snmp", SNMPVersion: "2c", SNMPPort: 161, TCPPort: 22, PollerID: "central"}
+	in := deviceIn{Role: "access", PollMethod: "snmp", SNMPVersion: "2c", SNMPPort: 161, TCPPort: 22, PollerID: "central", DefaultTagMode: "tagged"}
 	if !decode(w, r, &in) {
 		return
 	}
@@ -141,9 +149,9 @@ func (s *Server) createDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := s.db.ExecContext(r.Context(), `
-		INSERT INTO devices (name, ip, role, vendor, pop_id, parent_id, poll_method, snmp_version, snmp_port, tcp_port, credential_ref, poller_id, sys_descr)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'')`,
-		in.Name, in.IP, in.Role, in.Vendor, in.PopID, in.ParentID, in.PollMethod, in.SNMPVersion, in.SNMPPort, in.TCPPort, in.CredentialRef, in.PollerID)
+		INSERT INTO devices (name, ip, role, vendor, pop_id, parent_id, poll_method, snmp_version, snmp_port, tcp_port, credential_ref, poller_id, sys_descr, vlan, gem_port, gem_port_untagged, default_tag_mode, line_profile_id, srv_profile_id, line_profile_id_untagged, srv_profile_id_untagged)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'',?,?,?,?,?,?,?,?)`,
+		in.Name, in.IP, in.Role, in.Vendor, in.PopID, in.ParentID, in.PollMethod, in.SNMPVersion, in.SNMPPort, in.TCPPort, in.CredentialRef, in.PollerID, in.Vlan, in.GemPort, in.GemPortUntagged, in.DefaultTagMode, in.LineProfileID, in.SrvProfileID, in.LineProfileIDUntagged, in.SrvProfileIDUntagged)
 	if err != nil {
 		s.dbError(w, err)
 		return
@@ -158,7 +166,8 @@ func (s *Server) createDevice(w http.ResponseWriter, r *http.Request) {
 }
 
 var deviceUpdatable = map[string]bool{"name": true, "ip": true, "role": true, "vendor": true, "pop_id": true, "parent_id": true,
-	"poll_method": true, "snmp_version": true, "snmp_port": true, "tcp_port": true, "credential_ref": true, "poller_id": true, "enabled": true}
+	"poll_method": true, "snmp_version": true, "snmp_port": true, "tcp_port": true, "credential_ref": true, "poller_id": true, "enabled": true,
+	"vlan": true, "gem_port": true, "gem_port_untagged": true, "default_tag_mode": true, "line_profile_id": true, "srv_profile_id": true, "line_profile_id_untagged": true, "srv_profile_id_untagged": true}
 
 func (s *Server) updateDevice(w http.ResponseWriter, r *http.Request) {
 	id, ok := idParam(w, r, "id")

@@ -238,10 +238,10 @@ export function DualDatePicker({
               onClick={() => handleSelectBsDay(d)}
               className={`h-7 w-7 mx-auto flex items-center justify-center rounded-lg text-xs font-semibold transition-all duration-150 ${
                 isSelected
-                  ? 'bg-[#003164] text-white font-bold rounded-lg shadow-sm scale-105'
+                  ? 'bg-[#003164] dark:bg-sky-600 text-white font-bold rounded-lg shadow-sm scale-105'
                   : isToday
-                  ? 'border border-[#003164] text-[#003164] font-bold hover:bg-blue-50'
-                  : 'text-slate-700 hover:bg-slate-100'
+                  ? 'border border-[#003164] dark:border-sky-500 text-[#003164] dark:text-sky-400 font-bold hover:bg-blue-50 dark:hover:bg-slate-800'
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
               }`}
             >
               {d}
@@ -284,10 +284,10 @@ export function DualDatePicker({
               onClick={() => handleSelectAdDay(d)}
               className={`h-7 w-7 mx-auto flex items-center justify-center rounded-lg text-xs font-semibold transition-all duration-150 ${
                 isSelected
-                  ? 'bg-[#003164] text-white font-bold rounded-lg shadow-sm scale-105'
+                  ? 'bg-[#003164] dark:bg-sky-600 text-white font-bold rounded-lg shadow-sm scale-105'
                   : isToday
-                  ? 'border border-[#003164] text-[#003164] font-bold hover:bg-blue-50'
-                  : 'text-slate-700 hover:bg-slate-100'
+                  ? 'border border-[#003164] dark:border-sky-500 text-[#003164] dark:text-sky-400 font-bold hover:bg-blue-50 dark:hover:bg-slate-800'
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
               }`}
             >
               {d}
@@ -322,7 +322,7 @@ export function DualDatePicker({
           placeholder={placeholder}
           value={displayFormattedValue()}
           onClick={() => !disabled && setIsOpen(!isOpen)}
-          className="input pr-20 cursor-pointer bg-white selection:bg-transparent text-slate-800 text-xs sm:text-sm font-medium shadow-sm hover:border-slate-400 focus:border-[#003164] transition-colors"
+          className="input pr-20 cursor-pointer bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 selection:bg-transparent text-slate-800 dark:text-slate-100 text-xs sm:text-sm font-medium shadow-sm hover:border-slate-400 dark:hover:border-slate-600 focus:border-[#003164] dark:focus:border-sky-500 transition-colors"
         />
 
         <div className="absolute right-2 flex items-center gap-1">
@@ -333,7 +333,7 @@ export function DualDatePicker({
                 e.stopPropagation()
                 handleClear()
               }}
-              className="p-1 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 transition-colors"
+              className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
               title="Clear Date"
             >
               <X size={14} />
@@ -343,7 +343,7 @@ export function DualDatePicker({
           <button
             type="button"
             onClick={() => !disabled && setIsOpen(!isOpen)}
-            className="p-1.5 bg-[#003164]/10 hover:bg-[#003164]/20 text-[#003164] rounded-lg border border-[#003164]/30 transition-colors flex items-center justify-center"
+            className="p-1.5 bg-[#003164]/10 dark:bg-sky-500/20 hover:bg-[#003164]/20 dark:hover:bg-sky-500/30 text-[#003164] dark:text-sky-300 rounded-lg border border-[#003164]/30 dark:border-sky-500/30 transition-colors flex items-center justify-center"
             title="Open Calendar"
           >
             <CalendarIcon size={15} />
@@ -368,23 +368,23 @@ export function DualDatePicker({
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 8, scale: 0.98 }}
               transition={{ duration: 0.15 }}
-              className="w-[265px] bg-white rounded-2xl shadow-2xl overflow-hidden font-sans"
+              className="w-[265px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl overflow-hidden font-sans"
             >
-              {/* Header with App Primary Theme Background (#003164) */}
-              <div className="bg-[#003164] text-white p-2.5 px-3 flex items-center justify-between rounded-t-2xl shadow-inner">
+              {/* Header with App Primary Theme Background */}
+              <div className="bg-[#003164] dark:bg-slate-800 text-white p-2.5 px-3 flex items-center justify-between rounded-t-2xl shadow-inner border-b dark:border-slate-700/80">
                 <div className="flex items-center gap-1.5 min-w-0">
                   <CalendarIcon className="w-4 h-4 text-white/90 shrink-0" />
                   <span className="font-bold text-xs tracking-wide truncate">{label}</span>
                 </div>
 
                 {/* AD / BS Switch Pills */}
-                <div className="bg-black/30 p-1 rounded-full flex items-center gap-0.5">
+                <div className="bg-black/30 dark:bg-black/40 p-1 rounded-full flex items-center gap-0.5">
                   <button
                     type="button"
                     onClick={() => handleModeSwitch('AD')}
                     className={`px-3 py-1 text-xs font-bold rounded-full transition-all duration-200 ${
                       mode === 'AD'
-                        ? 'bg-white text-[#003164] shadow-md'
+                        ? 'bg-white text-[#003164] dark:text-slate-900 shadow-md'
                         : 'text-white/80 hover:text-white'
                     }`}
                   >
@@ -395,7 +395,7 @@ export function DualDatePicker({
                     onClick={() => handleModeSwitch('BS')}
                     className={`px-3 py-1 text-xs font-bold rounded-full transition-all duration-200 ${
                       mode === 'BS'
-                        ? 'bg-white text-[#003164] shadow-md'
+                        ? 'bg-white text-[#003164] dark:text-slate-900 shadow-md'
                         : 'text-white/80 hover:text-white'
                     }`}
                   >
@@ -405,11 +405,11 @@ export function DualDatePicker({
               </div>
 
               {/* Navigation Bar (Month & Year selectors with chevrons) */}
-              <div className="bg-white px-3 py-2 flex items-center justify-between relative">
+              <div className="bg-white dark:bg-slate-900 px-3 py-2 flex items-center justify-between relative border-b border-slate-100 dark:border-slate-800">
                 <button
                   type="button"
                   onClick={handlePrevMonth}
-                  className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-colors"
+                  className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-800 dark:hover:text-white transition-colors"
                 >
                   <ChevronLeft size={15} />
                 </button>
@@ -422,7 +422,7 @@ export function DualDatePicker({
                       setShowMonthDropdown(!showMonthDropdown)
                       setShowYearDropdown(false)
                     }}
-                    className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200/80 text-slate-800 font-bold text-xs flex items-center gap-1 transition-colors"
+                    className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200/80 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs flex items-center gap-1 transition-colors"
                   >
                     <span>
                       {mode === 'BS'
@@ -432,7 +432,7 @@ export function DualDatePicker({
                     <ChevronDown size={13} className="text-slate-400" />
                   </button>
 
-                  <span className="text-slate-300 font-light text-sm mx-0.5">|</span>
+                  <span className="text-slate-300 dark:text-slate-600 font-light text-sm mx-0.5">|</span>
 
                   {/* Year Dropdown Button */}
                   <button
@@ -441,7 +441,7 @@ export function DualDatePicker({
                       setShowYearDropdown(!showYearDropdown)
                       setShowMonthDropdown(false)
                     }}
-                    className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200/80 text-slate-800 font-bold text-xs flex items-center gap-1 transition-colors"
+                    className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200/80 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs flex items-center gap-1 transition-colors"
                   >
                     <span>{mode === 'BS' ? viewBsYear : viewAdYear}</span>
                     <ChevronDown size={13} className="text-slate-400" />
@@ -449,7 +449,7 @@ export function DualDatePicker({
 
                   {/* Month Dropdown Menu */}
                   {showMonthDropdown && (
-                    <div className="absolute top-full left-0 mt-1 w-36 max-h-48 overflow-y-auto bg-white rounded-xl shadow-xl z-50 py-1 scrollbar-thin">
+                    <div className="absolute top-full left-0 mt-1 w-36 max-h-48 overflow-y-auto bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-50 py-1 scrollbar-thin">
                       {(mode === 'BS' ? BS_MONTH_NAMES_EN : AD_MONTH_NAMES).map((name, idx) => (
                         <button
                           key={name}
@@ -459,10 +459,10 @@ export function DualDatePicker({
                             else setViewAdMonth(idx + 1)
                             setShowMonthDropdown(false)
                           }}
-                          className={`w-full text-left px-3 py-1.5 text-xs font-medium hover:bg-blue-50 hover:text-[#003164] transition-colors ${
+                          className={`w-full text-left px-3 py-1.5 text-xs font-medium hover:bg-blue-50 dark:hover:bg-slate-700 hover:text-[#003164] dark:hover:text-sky-300 transition-colors ${
                             (mode === 'BS' ? viewBsMonth : viewAdMonth) === idx + 1
-                              ? 'bg-blue-50 text-[#003164] font-bold'
-                              : 'text-slate-700'
+                              ? 'bg-blue-50 dark:bg-slate-700 text-[#003164] dark:text-sky-300 font-bold'
+                              : 'text-slate-700 dark:text-slate-200'
                           }`}
                         >
                           {name}
@@ -473,7 +473,7 @@ export function DualDatePicker({
 
                   {/* Year Dropdown Menu */}
                   {showYearDropdown && (
-                    <div className="absolute top-full right-0 mt-1 w-28 max-h-48 overflow-y-auto bg-white rounded-xl shadow-xl z-50 py-1 scrollbar-thin">
+                    <div className="absolute top-full right-0 mt-1 w-28 max-h-48 overflow-y-auto bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-50 py-1 scrollbar-thin">
                       {(mode === 'BS' ? bsYearsList : adYearsList).map((yr) => (
                         <button
                           key={yr}
@@ -483,10 +483,10 @@ export function DualDatePicker({
                             else setViewAdYear(yr)
                             setShowYearDropdown(false)
                           }}
-                          className={`w-full text-left px-3 py-1.5 text-xs font-medium hover:bg-blue-50 hover:text-[#003164] transition-colors ${
+                          className={`w-full text-left px-3 py-1.5 text-xs font-medium hover:bg-blue-50 dark:hover:bg-slate-700 hover:text-[#003164] dark:hover:text-sky-300 transition-colors ${
                             (mode === 'BS' ? viewBsYear : viewAdYear) === yr
-                              ? 'bg-blue-50 text-[#003164] font-bold'
-                              : 'text-slate-700'
+                              ? 'bg-blue-50 dark:bg-slate-700 text-[#003164] dark:text-sky-300 font-bold'
+                              : 'text-slate-700 dark:text-slate-200'
                           }`}
                         >
                           {yr}
@@ -499,7 +499,7 @@ export function DualDatePicker({
                 <button
                   type="button"
                   onClick={handleNextMonth}
-                  className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-colors"
+                  className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-800 dark:hover:text-white transition-colors"
                 >
                   <ChevronRight size={15} />
                 </button>
@@ -508,7 +508,7 @@ export function DualDatePicker({
               {/* Weekday Header Row */}
               <div className="grid grid-cols-7 gap-0.5 px-2 pt-2 pb-1 text-center">
                 {(mode === 'BS' ? BS_WEEKDAYS_NP : AD_WEEKDAYS_EN).map((dayName) => (
-                  <span key={dayName} className="text-slate-400 font-bold text-[10px] py-0.5">
+                  <span key={dayName} className="text-slate-400 dark:text-slate-500 font-bold text-[10px] py-0.5">
                     {dayName}
                   </span>
                 ))}
@@ -518,18 +518,18 @@ export function DualDatePicker({
               {mode === 'BS' ? renderBsGrid() : renderAdGrid()}
 
               {/* Footer Bar (Clear & Today Buttons) */}
-              <div className="px-3 py-2 flex items-center justify-between bg-slate-50/60 rounded-b-2xl">
+              <div className="px-3 py-2 flex items-center justify-between bg-slate-50/60 dark:bg-slate-800/60 border-t border-slate-100 dark:border-slate-800 rounded-b-2xl">
                 <button
                   type="button"
                   onClick={handleClear}
-                  className="text-xs font-bold text-[#003164] hover:text-blue-700 hover:underline px-2 py-0.5 transition-colors"
+                  className="text-xs font-bold text-[#003164] dark:text-sky-400 hover:text-blue-700 dark:hover:text-sky-300 hover:underline px-2 py-0.5 transition-colors"
                 >
                   Clear
                 </button>
                 <button
                   type="button"
                   onClick={handleToday}
-                  className="text-xs font-bold text-[#003164] hover:text-blue-700 hover:underline px-2 py-0.5 transition-colors"
+                  className="text-xs font-bold text-[#003164] dark:text-sky-400 hover:text-blue-700 dark:hover:text-sky-300 hover:underline px-2 py-0.5 transition-colors"
                 >
                   Today
                 </button>

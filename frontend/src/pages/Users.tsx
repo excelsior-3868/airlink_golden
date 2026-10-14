@@ -820,7 +820,7 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
             {user?.role === 'admin' && role === 'reseller' && (
               <div className="md:col-span-2">
                 <label className="text-xs font-bold text-slate-500 block mb-1.5">
-                  {pppoeOnly ? "Commission % (Admin's cut of each PPPoE recharge, optional)" : "Commission % (Admin's cut of each voucher sale)"}
+                  {pppoeOnly ? "Commission % (Reseller's cut of each PPPoE recharge, optional)" : "Commission % (Reseller's cut of each voucher sale)"}
                 </label>
                 <input
                   className="input no-spinners"
@@ -1094,7 +1094,7 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
             {user?.role === 'admin' && role === 'reseller' && (
               <div className="md:col-span-2">
                 <label className="text-xs font-bold text-slate-500 block mb-1.5">
-                  {pppoeOnly ? "Commission % (Admin's cut of each PPPoE recharge, optional)" : "Commission % (Admin's cut of each voucher sale)"}
+                  {pppoeOnly ? "Commission % (Reseller's cut of each PPPoE recharge, optional)" : "Commission % (Reseller's cut of each voucher sale)"}
                 </label>
                 <input
                   className="input no-spinners"

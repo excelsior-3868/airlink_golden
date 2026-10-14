@@ -56,10 +56,10 @@ export function OnlineUsersBadge({ onClick }: { onClick?: () => void }) {
   return (
     <button
       onClick={onClick || (() => navigate('/online-users'))}
-      className="flex items-center gap-2 bg-gradient-to-r from-cyan-50 to-sky-50/70 border border-cyan-200/80 rounded-2xl py-1.5 px-3.5 shadow-xs text-xs group hover:border-cyan-300 transition-all cursor-pointer select-none"
-      title="Click to View Online Users Page"
+      className="flex items-center gap-2 bg-gradient-to-r from-cyan-50 to-sky-50/70 dark:from-cyan-950/40 dark:to-sky-950/30 border border-cyan-200/80 dark:border-cyan-800/60 rounded-2xl py-1.5 px-3.5 shadow-xs text-xs group hover:border-cyan-300 dark:hover:border-cyan-700 transition-all cursor-pointer select-none"
+      title="Click to View Online Customers Page"
     >
-      <div className="relative w-6 h-6 rounded-lg bg-cyan-500/15 text-cyan-600 flex items-center justify-center shrink-0">
+      <div className="relative w-6 h-6 rounded-lg bg-cyan-500/15 dark:bg-cyan-500/25 text-cyan-600 dark:text-cyan-400 flex items-center justify-center shrink-0">
         <Wifi size={13} />
         <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -67,8 +67,8 @@ export function OnlineUsersBadge({ onClick }: { onClick?: () => void }) {
         </span>
       </div>
       <div className="flex flex-col leading-tight text-left">
-        <span className="text-[10px] text-cyan-600 font-extrabold tracking-wide">Online Users</span>
-        <span className="font-extrabold text-cyan-950 text-xs flex items-center gap-1">
+        <span className="text-[10px] text-cyan-600 dark:text-cyan-400 font-extrabold tracking-wide">Online Customers</span>
+        <span className="font-extrabold text-cyan-950 dark:text-cyan-200 text-xs flex items-center gap-1">
           {onlineCount !== null ? num(onlineCount) : '...'} Active
         </span>
       </div>
@@ -138,7 +138,7 @@ export function OnlineUsersModal({ open, onClose }: { open: boolean; onClose: ()
   const totalVolumeBytes = sessions.reduce((acc, s) => acc + (s.total_bytes || 0), 0)
 
   return (
-    <Modal open={open} onClose={onClose} title="Online User List" widthClassName="max-w-5xl">
+    <Modal open={open} onClose={onClose} title="Online Customer List" widthClassName="max-w-5xl">
       <div className="space-y-4">
         {/* Header bar & Refresh controls */}
         <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-100">
@@ -150,8 +150,8 @@ export function OnlineUsersModal({ open, onClose }: { open: boolean; onClose: ()
               </span>
               <span>{sessions.length} Live Sessions Connected</span>
             </div>
-            <span className="text-slate-300">|</span>
-            <span className="text-xs text-slate-500 font-semibold">Total Volume: <b className="text-slate-800">{formatBytes(totalVolumeBytes)}</b></span>
+            <span className="text-slate-300 dark:text-slate-700">|</span>
+            <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold">Total Volume: <b className="text-slate-800 dark:text-slate-200">{formatBytes(totalVolumeBytes)}</b></span>
           </div>
 
           <div className="flex items-center gap-2">
@@ -162,13 +162,13 @@ export function OnlineUsersModal({ open, onClose }: { open: boolean; onClose: ()
                 placeholder="Search username, IP, MAC..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-full text-xs pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 bg-white focus:outline-none focus:border-cyan-500"
+                className="w-full text-xs pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-cyan-500"
               />
             </div>
             <button
               onClick={fetchOnlineUsers}
               disabled={loading}
-              className="p-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 transition-all flex items-center gap-1 text-xs font-bold px-2.5"
+              className="p-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-all flex items-center gap-1 text-xs font-bold px-2.5"
             >
               <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
               <span>Refresh</span>
@@ -190,12 +190,12 @@ export function OnlineUsersModal({ open, onClose }: { open: boolean; onClose: ()
         )}
 
         {/* Online Sessions Table */}
-        <div className="overflow-x-auto border border-slate-200/80 rounded-2xl bg-white shadow-xs max-h-[60dvh]">
+        <div className="overflow-x-auto border border-slate-200/80 dark:border-slate-800 rounded-2xl bg-white dark:bg-slate-900 shadow-xs max-h-[60dvh]">
           {loading && sessions.length === 0 ? (
             <div className="py-12"><Spinner /></div>
           ) : (
             <table className="w-full text-xs">
-              <thead className="sticky top-0 bg-slate-100/90 backdrop-blur-md z-10">
+              <thead className="sticky top-0 bg-slate-100/90 dark:bg-slate-800/90 backdrop-blur-md z-10">
                 <tr>
                   <th>Username / Voucher</th>
                   <th>IP Address</th>
@@ -213,9 +213,9 @@ export function OnlineUsersModal({ open, onClose }: { open: boolean; onClose: ()
                     key={s.radacctid}
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
-                    className={s.is_stale_session ? 'bg-amber-50/60 hover:bg-amber-50' : 'hover:bg-slate-50/70'}
+                    className={s.is_stale_session ? 'bg-amber-50/60 dark:bg-amber-950/30 hover:bg-amber-50 dark:hover:bg-amber-950/50' : 'hover:bg-slate-50/70 dark:hover:bg-slate-800/50'}
                   >
-                    <td className="font-semibold text-slate-800">
+                    <td className="font-semibold text-slate-800 dark:text-slate-100">
                       <div className="flex items-center gap-1.5">
                         <span>{s.voucher_code || s.username}</span>
                         {s.is_stale_session && (
@@ -288,7 +288,7 @@ export function OnlineUsersModal({ open, onClose }: { open: boolean; onClose: ()
             </table>
           )}
           {!loading && sessions.length === 0 && (
-            <EmptyState>No active online users connected at the moment.</EmptyState>
+            <EmptyState>No active online customers connected at the moment.</EmptyState>
           )}
         </div>
       </div>

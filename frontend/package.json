@@ -9,6 +9,8 @@
     "preview": "vite preview --host"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.104.2",
+    "@types/node": "^20.19.43",
     "axios": "^1.7.7",
     "framer-motion": "^11.5.4",
     "lucide-react": "^0.441.0",
