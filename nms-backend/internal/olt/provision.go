@@ -133,7 +133,7 @@ func idemKey(r PlanRequest) string {
 
 // inlineService reports whether an add_service_port request carries its own service instead of a template.
 func inlineService(r PlanRequest) bool {
-	return (r.Operation == "add_service_port" || r.Operation == "register_ont") && r.TemplateID == 0 && r.ServiceVLAN != 0
+	return (r.Operation == "add_service_port" || r.Operation == "register_ont" || r.Operation == "change_vlan") && r.TemplateID == 0 && r.ServiceVLAN != 0
 }
 
 func inlineTemplate(r PlanRequest) (*template, error) {
@@ -881,19 +881,41 @@ func (s *Service) planChangeVLAN(p *planner, r PlanRequest, t *template) (string
 	if err != nil {
 		return "", fmt.Errorf("%w: %v", ErrConflict, err)
 	}
+	// What the old service-port really is comes from the ONT's own listing; the request only overrides it.
 	oldUser, oldGem, oldTr := r.OldUserVLAN, r.OldGem, r.OldTransform
-	if oldUser == 0 {
-		oldUser = r.OldVLAN
+	oldUntagged := oldTr == "default"
+	for _, ex := range ParseServicePorts(before) {
+		if ex.Index == r.OldServicePortID {
+			oldUntagged = oldUntagged || IsUntaggedFlow(ex)
+			if oldGem == 0 {
+				oldGem = ex.Gem
+			}
+			continue
+		}
+		if t.Untagged && ex.Gem == t.Gem && IsUntaggedFlow(ex) {
+			return "", fmt.Errorf("%w: this ONT also has untagged service-port %d on GEM port %d; a second untagged service on the same GEM can conflict, so verify the design first", ErrConflict, ex.Index, t.Gem)
+		}
+	}
+	if oldUntagged {
+		oldUser, oldTr = 0, "default"
+	} else {
+		if oldUser == 0 {
+			oldUser = r.OldVLAN
+		}
+		if oldTr == "" {
+			oldTr = "translate"
+		}
 	}
 	if oldGem == 0 {
 		oldGem = t.Gem
 	}
-	if oldTr == "" {
-		oldTr = "translate"
-	}
-	newSP := ServicePort{ID: newID, VLAN: t.ServiceVLAN, F: d.F, S: d.S, P: d.P, OntID: d.OntID, Gem: t.Gem, UserVLAN: t.UserVLAN, Transform: t.Transform}
-	oldSP := ServicePort{ID: r.OldServicePortID, VLAN: r.OldVLAN, F: d.F, S: d.S, P: d.P, OntID: d.OntID, Gem: oldGem, UserVLAN: oldUser, Transform: oldTr}
+	newSP := ServicePort{ID: newID, VLAN: t.ServiceVLAN, F: d.F, S: d.S, P: d.P, OntID: d.OntID, Gem: t.Gem, UserVLAN: t.UserVLAN, Untagged: t.Untagged, Transform: t.Transform}
+	oldSP := ServicePort{ID: r.OldServicePortID, VLAN: r.OldVLAN, F: d.F, S: d.S, P: d.P, OntID: d.OntID, Gem: oldGem, UserVLAN: oldUser, Untagged: oldUntagged, Transform: oldTr}
 	oldAdd, err := ServicePortAdd(oldSP) // validates the rollback command now, not mid-incident
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", ErrConflict, err)
+	}
+	newAdd, err := ServicePortAdd(newSP)
 	if err != nil {
 		return "", fmt.Errorf("%w: %v", ErrConflict, err)
 	}
@@ -902,9 +924,17 @@ func (s *Service) planChangeVLAN(p *planner, r PlanRequest, t *template) (string
 	p.add("check_old_service_port", "read", fmt.Sprintf("contains:%d", r.OldVLAN), []Cmd{showOld}, nil)
 	p.add("check_vlan", "read", "vlan_exists", []Cmd{vlanCmd}, nil)
 	p.add("check_service_port_free", "read", fmt.Sprintf("next_free:%d", newID), []Cmd{DisplayNextFreeServicePort()}, nil)
-	p.add("service_port_add", "write", "", []Cmd{must(ServicePortAdd(newSP))}, []Cmd{must(ServicePortUndo(newID))})
-	p.add("verify_new_service_port", "verify", fmt.Sprintf("contains:%d", t.ServiceVLAN), []Cmd{must(DisplayServicePort(newID))}, nil)
-	p.add("service_port_remove_old", "write", "", []Cmd{must(ServicePortUndo(r.OldServicePortID))}, []Cmd{oldAdd})
+	if t.Untagged {
+		// Two untagged service-ports on one GEM conflict, so the old one goes first; if the add then fails the
+		// executor rolls the removal back by re-adding it.
+		p.add("service_port_remove_old", "write", "", []Cmd{must(ServicePortUndo(r.OldServicePortID))}, []Cmd{oldAdd})
+		p.add("service_port_add", "write", "", []Cmd{newAdd}, []Cmd{must(ServicePortUndo(newID))})
+		p.add("verify_new_service_port", "verify", fmt.Sprintf("contains:%d", t.ServiceVLAN), []Cmd{must(DisplayServicePort(newID))}, nil)
+	} else {
+		p.add("service_port_add", "write", "", []Cmd{newAdd}, []Cmd{must(ServicePortUndo(newID))})
+		p.add("verify_new_service_port", "verify", fmt.Sprintf("contains:%d", t.ServiceVLAN), []Cmd{must(DisplayServicePort(newID))}, nil)
+		p.add("service_port_remove_old", "write", "", []Cmd{must(ServicePortUndo(r.OldServicePortID))}, []Cmd{oldAdd})
+	}
 	p.add("verify_old_removed", "verify", "absent", []Cmd{showOld}, nil)
 	p.add("verify_other_services_preserved", "verify", fmt.Sprintf("preserved:%d", r.OldServicePortID), []Cmd{showOnt}, nil)
 	return before, nil

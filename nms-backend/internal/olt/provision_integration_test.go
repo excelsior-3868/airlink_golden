@@ -2,9 +2,9 @@
 
 package olt
 
-
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"regexp"
@@ -254,16 +254,34 @@ type fakeDialer struct{ f *fakeOLT }
 
 func (d fakeDialer) Dial(context.Context, int64) (Executor, error) { return d.f, nil }
 
+// mustInsert runs an INSERT and returns the new row's id.
+func mustInsert(t *testing.T, db *sql.DB, ctx context.Context, q string, args ...any) int64 {
+	t.Helper()
+	res, err := db.ExecContext(ctx, q, args...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
 func setup(t *testing.T) (*Service, *fakeOLT, int64, int64, context.Context) {
 	pool := testdb.Open(t)
 	ctx := context.Background()
-	var dev int64
-	pool.QueryRow(ctx, `INSERT INTO devices(name,ip,role,poll_method) VALUES('olt-bijule','10.9.9.1','olt','tcp') RETURNING id`).Scan(&dev)
-	pool.Exec(ctx, `INSERT INTO olts(device_id) VALUES($1)`, dev)
-	pool.Exec(ctx, `INSERT INTO olt_profiles(olt_id,profile_type,profile_id) VALUES($1,'line',40),($1,'srv',40)`, dev)
-	var tpl int64
-	pool.QueryRow(ctx, `INSERT INTO service_templates(name,service_vlan,user_vlan,gem_index,line_profile_id,srv_profile_id)
-		VALUES('PPPoE-100',100,100,1,40,40) RETURNING id`).Scan(&tpl)
+	// the schema persists between tests, so start each one from empty tables
+	for _, q := range []string{`DELETE FROM provisioning_job_steps`, `DELETE FROM provisioning_jobs`, `DELETE FROM service_templates`, `DELETE FROM devices`} {
+		if _, err := pool.ExecContext(ctx, q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	dev := mustInsert(t, pool, ctx, `INSERT INTO devices(name,ip,role,poll_method,sys_descr) VALUES('olt-bijule','10.9.9.1','olt','tcp','')`)
+	mustInsert(t, pool, ctx, `INSERT INTO olts(device_id,ssh_host_key,pon_ports) VALUES(?,'','')`, dev)
+	mustInsert(t, pool, ctx, `INSERT INTO olt_profiles(olt_id,profile_type,profile_id,detail) VALUES(?,'line',40,''),(?,'srv',40,'')`, dev, dev)
+	tpl := mustInsert(t, pool, ctx, `INSERT INTO service_templates(name,service_vlan,user_vlan,gem_index,line_profile_id,srv_profile_id)
+		VALUES('PPPoE-100',100,100,1,40,40)`)
 	f := newFake()
 	f.autofind[sn1], f.autofind[sn2] = "0/4/7", "0/4/7" // both test ONTs are connected on 0/4/7 and not registered yet
 	svc := NewService(pool, fakeDialer{f}, false)
@@ -309,7 +327,7 @@ func TestRegisterONTHappyPathAndIdempotency(t *testing.T) {
 		t.Fatalf("device state wrong: onts=%v sps=%v", f.onts, f.sps)
 	}
 	var n int
-	svc.pool.QueryRow(ctx, `SELECT count(*) FROM ont_inventory WHERE serial_number=$1 AND pon_port=7`, sn1).Scan(&n)
+	svc.db.QueryRowContext(ctx, `SELECT count(*) FROM ont_inventory WHERE serial_number=? AND pon_port=7`, sn1).Scan(&n)
 	if n != 1 {
 		t.Fatal("inventory not updated")
 	}
@@ -349,7 +367,7 @@ func TestVerificationFailureRollsBack(t *testing.T) {
 		t.Fatalf("rollback left residue: onts=%v sps=%v", f.onts, f.sps)
 	}
 	var n int
-	svc.pool.QueryRow(ctx, `SELECT count(*) FROM ont_inventory`).Scan(&n)
+	svc.db.QueryRowContext(ctx, `SELECT count(*) FROM ont_inventory`).Scan(&n)
 	if n != 0 {
 		t.Fatal("failed job must not create inventory")
 	}
@@ -370,15 +388,13 @@ func TestServicePortFailureUndoesONT(t *testing.T) {
 
 func TestPlanRefusesUnverifiedProfilesAndMissingVLAN(t *testing.T) {
 	svc, f, dev, _, ctx := setup(t)
-	var bad int64
-	svc.pool.QueryRow(ctx, `INSERT INTO service_templates(name,service_vlan,user_vlan,gem_index,line_profile_id,srv_profile_id)
-		VALUES('uncatalogued',100,100,1,99,99) RETURNING id`).Scan(&bad)
+	bad := mustInsert(t, svc.db, ctx, `INSERT INTO service_templates(name,service_vlan,user_vlan,gem_index,line_profile_id,srv_profile_id)
+		VALUES('uncatalogued',100,100,1,99,99)`)
 	if _, err := svc.Plan(ctx, PlanRequest{OLTID: dev, Operation: "register_ont", Serial: sn1, Slot: 4, Port: 7, TemplateID: bad}, "op"); !errors.Is(err, ErrConflict) {
 		t.Fatalf("unverified profile ids must be refused, got %v", err)
 	}
-	var novlan int64
-	svc.pool.QueryRow(ctx, `INSERT INTO service_templates(name,service_vlan,user_vlan,gem_index,line_profile_id,srv_profile_id)
-		VALUES('vlan-missing',777,777,1,40,40) RETURNING id`).Scan(&novlan)
+	novlan := mustInsert(t, svc.db, ctx, `INSERT INTO service_templates(name,service_vlan,user_vlan,gem_index,line_profile_id,srv_profile_id)
+		VALUES('vlan-missing',777,777,1,40,40)`)
 	if _, err := svc.Plan(ctx, PlanRequest{OLTID: dev, Operation: "register_ont", Serial: sn1, Slot: 4, Port: 7, TemplateID: novlan}, "op"); !errors.Is(err, ErrConflict) {
 		t.Fatalf("missing VLAN must be refused, got %v", err)
 	}
@@ -581,7 +597,7 @@ func TestAddServiceFallsBackWhenBySNIsUnsupported(t *testing.T) {
 	if _, err := svc.Plan(ctx, req, "alice"); !errors.Is(err, ErrConflict) || !strings.Contains(err.Error(), "not in the synced inventory") {
 		t.Fatalf("without an inventory row there is nothing to fall back on: %v", err)
 	}
-	if _, err := svc.pool.Exec(ctx, `INSERT INTO ont_inventory(serial_number, olt_id, frame, slot, pon_port, ont_id) VALUES($1,$2,0,4,7,3)`, sn1, dev); err != nil {
+	if _, err := svc.db.ExecContext(ctx, `INSERT INTO ont_inventory(serial_number, olt_id, frame, slot, pon_port, ont_id) VALUES(?,?,0,4,7,3)`, sn1, dev); err != nil {
 		t.Fatal(err)
 	}
 	job, err := svc.Plan(ctx, req, "alice")
@@ -631,7 +647,7 @@ func TestRegisterONTInlineService(t *testing.T) {
 		ServiceVLAN: 100, Gem: 1, LineProfileID: 40, SrvProfileID: 40}
 
 	// A stale inventory row must not block it: the live OLT decides whether the serial is new.
-	if _, err := svc.pool.Exec(ctx, `INSERT INTO ont_inventory(serial_number, olt_id, frame, slot, pon_port, ont_id) VALUES($1,$2,0,4,7,9)`, sn1, dev); err != nil {
+	if _, err := svc.db.ExecContext(ctx, `INSERT INTO ont_inventory(serial_number, olt_id, frame, slot, pon_port, ont_id) VALUES(?,?,0,4,7,9)`, sn1, dev); err != nil {
 		t.Fatal(err)
 	}
 	job, err := svc.Plan(ctx, req, "alice")
@@ -872,7 +888,7 @@ func TestAddServiceInlineWithoutTemplate(t *testing.T) {
 func TestTamperedStepIsRefused(t *testing.T) {
 	svc, f, dev, tpl, ctx := setup(t)
 	job, _ := svc.Plan(ctx, PlanRequest{OLTID: dev, Operation: "register_ont", Serial: sn1, Slot: 4, Port: 7, TemplateID: tpl}, "op")
-	svc.pool.Exec(ctx, `UPDATE provisioning_job_steps SET command='reboot' WHERE job_id=$1 AND name='ont_add'`, job.ID)
+	svc.db.ExecContext(ctx, `UPDATE provisioning_job_steps SET command='reboot' WHERE job_id=? AND name='ont_add'`, job.ID)
 	done, err := svc.Apply(ctx, job.ID, "op")
 	if err != nil {
 		t.Fatal(err)
@@ -893,7 +909,7 @@ func TestReadOnlySyncPopulatesInventory(t *testing.T) {
 	f.onts[sn2] = 1
 	f.sps[969] = "x"
 	// the OLT's profile catalogue was entered by hand earlier; sync must replace it with the live truth
-	svc.pool.Exec(ctx, `INSERT INTO olt_profiles(olt_id,profile_type,profile_id,profile_name) VALUES($1,'line',99,'stale')`, dev)
+	svc.db.ExecContext(ctx, `INSERT INTO olt_profiles(olt_id,profile_type,profile_id,profile_name,detail) VALUES(?,'line',99,'stale','')`, dev)
 
 	run, err := svc.Sync(ctx, dev, "tester")
 	if err != nil {
@@ -909,12 +925,12 @@ func TestReadOnlySyncPopulatesInventory(t *testing.T) {
 		}
 	}
 	var stale int
-	svc.pool.QueryRow(ctx, `SELECT count(*) FROM olt_profiles WHERE profile_id=99`).Scan(&stale)
+	svc.db.QueryRowContext(ctx, `SELECT count(*) FROM olt_profiles WHERE profile_id=99`).Scan(&stale)
 	if stale != 0 {
 		t.Error("profile removed from the OLT must leave the catalogue")
 	}
 	var ver string
-	svc.pool.QueryRow(ctx, `SELECT detected_version FROM olts WHERE device_id=$1`, dev).Scan(&ver)
+	svc.db.QueryRowContext(ctx, `SELECT detected_version FROM olts WHERE device_id=?`, dev).Scan(&ver)
 	if ver != "MA5600V800R015C00" {
 		t.Errorf("version=%q", ver)
 	}
@@ -924,7 +940,7 @@ func TestReadOnlySyncPopulatesInventory(t *testing.T) {
 		}
 	}
 	var snaps int
-	svc.pool.QueryRow(ctx, `SELECT count(*) FROM olt_snapshots WHERE olt_id=$1`, dev).Scan(&snaps)
+	svc.db.QueryRowContext(ctx, `SELECT count(*) FROM olt_snapshots WHERE olt_id=?`, dev).Scan(&snaps)
 	if snaps < 8 {
 		t.Errorf("only %d raw snapshots stored", snaps)
 	}
@@ -942,7 +958,7 @@ func TestReadOnlySyncPopulatesInventory(t *testing.T) {
 		t.Fatalf("status=%s, want partial when a layout is unrecognised", run2.Status)
 	}
 	var vlans int
-	svc.pool.QueryRow(ctx, `SELECT count(*) FROM olt_vlans WHERE olt_id=$1`, dev).Scan(&vlans)
+	svc.db.QueryRowContext(ctx, `SELECT count(*) FROM olt_vlans WHERE olt_id=?`, dev).Scan(&vlans)
 	if vlans != 2 {
 		t.Fatalf("existing VLANs were wiped (%d left)", vlans)
 	}
@@ -970,5 +986,45 @@ func TestReadOnlyExecRefusesWrites(t *testing.T) {
 	}
 	if len(f.log) != 0 {
 		t.Fatal("refused command reached the device")
+	}
+}
+
+// Untagged customer moved from VLAN 2190 to 100 on GEM 1: the old untagged service-port is removed first
+// (two untagged services on one GEM conflict) and the new one is untagged too.
+func TestChangeVLANUntaggedKeepsGemAndRemovesOldFirst(t *testing.T) {
+	svc, f, dev, _, ctx := setup(t)
+	f.onts[sn1] = 3
+	f.vlans[2190] = true
+	f.sps[32] = "service-port 32 vlan 2190 gpon 0/4/7 ont 3 gemport 1 multi-service user-vlan untagged tag-transform default"
+
+	req := PlanRequest{OLTID: dev, Operation: "change_vlan", Serial: sn1, ServiceVLAN: 100, Gem: 1, LineProfileID: 40, Untagged: true, OldServicePortID: 32, OldVLAN: 2190}
+	job, err := svc.Plan(ctx, req, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var writes []Step
+	for _, s := range job.Steps {
+		if s.Kind == "write" {
+			writes = append(writes, s)
+		}
+	}
+	if len(writes) != 2 || writes[0].Name != "service_port_remove_old" || writes[1].Name != "service_port_add" {
+		t.Fatalf("untagged change must remove the old service-port first: %+v", writes)
+	}
+	if !strings.HasSuffix(writes[1].Commands[0], "gemport 1 multi-service user-vlan untagged tag-transform default") {
+		t.Fatalf("new service-port wrong: %q", writes[1].Commands[0])
+	}
+	if !strings.HasSuffix(writes[0].Rollback[0], "vlan 2190 gpon 0/4/7 ont 3 gemport 1 multi-service user-vlan untagged tag-transform default") {
+		t.Fatalf("rollback must restore the untagged service-port: %q", writes[0].Rollback[0])
+	}
+	if err := svc.Approve(ctx, job.ID, "bob"); err != nil {
+		t.Fatal(err)
+	}
+	done, err := svc.Apply(ctx, job.ID, "alice")
+	if err != nil || done.Status != "succeeded" {
+		t.Fatalf("apply: %v %+v", err, done)
+	}
+	if _, old := f.sps[32]; old || len(f.sps) != 1 {
+		t.Fatalf("expected only the new service-port, got %v", f.sps)
 	}
 }
