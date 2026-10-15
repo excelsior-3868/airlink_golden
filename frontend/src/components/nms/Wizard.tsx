@@ -2,7 +2,7 @@ import { ReactNode, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, ArrowRight, Check, CheckCircle2, Loader2 } from 'lucide-react'
-import { nmsApi, errMsg, Job } from '../../lib/nmsApi'
+import { nmsApi, errMsg, Job, Olt } from '../../lib/nmsApi'
 import { dateTime } from '../../lib/nmsFormat'
 import { ApplyCard, ChangeCard, ChecksList, SaveCard, StepList, Troubleshooting, spState, useJob } from './JobPanel'
 import { Card, ErrorBox, Loading, StatusText, Table, Td, Tr } from './NmsUi'
@@ -295,7 +295,7 @@ function DoneStep({
   const j = h.q.data
   if (!j) return <ErrorBox msg="Job not found" />
   const ok = j.status === 'succeeded'
-  const verify = (j.steps ?? []).find((s) => s.name === 'verify_service_port')
+  const verify = (j.steps ?? []).find((s) => s.name === 'verify_service_port' || s.name === 'verify_new_service_port')
   const state = verify ? spState(verify.output) : ''
   const writes = (j.steps ?? []).filter((s) => s.kind === 'write' && s.name !== 'save_configuration')
 
@@ -346,6 +346,8 @@ export interface ShellProps<F extends object> {
   forNext: (f: F) => F
   kind: 'service' | 'registration'
   restartLabel: string
+  olts: Olt[]
+  target: (f: F) => { oltId: number; serial: string }
   step1: (a: { f: F; set: (p: Partial<F>) => void; next: () => void }) => ReactNode
   step2: (a: { f: F; set: (p: Partial<F>) => void; back: () => void; next: () => void }) => ReactNode
   checks: (a: {
@@ -398,9 +400,18 @@ export function WizardShell<F extends object>(p: ShellProps<F>) {
   }
 
   if (step === null) return <Loading />
+  const tgt = p.target(f)
+  const tgtOlt = p.olts.find((o) => o.id === tgt.oltId)
+  const tgtSerial = toOltSerial(tgt.serial)
   return (
     <div className="space-y-4">
       <Stepper labels={p.labels} step={step} onGo={(n) => setStep(n)} />
+      {step >= 2 && tgtOlt && SN_RE.test(tgtSerial) && (
+        <div className="glass-card px-4 py-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs sm:text-sm">
+          <div><span className="text-slate-400">OLT:</span> <span className="font-bold">{tgtOlt.name}</span> <span className="font-mono text-slate-500">({tgtOlt.ip})</span></div>
+          <div><span className="text-slate-400">ONT Serial:</span> <span className="font-mono font-bold">{tgtSerial}</span></div>
+        </div>
+      )}
       <div className="glass-card p-6">
         {step === 1 && p.step1({ f, set, next: () => setStep(2) })}
         {step === 2 && p.step2({ f, set, back: () => setStep(1), next: () => setStep(3) })}

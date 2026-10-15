@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import {
   BadgeCheck as IcoBadgeCheck, PackagePlus as IcoPackagePlus,
-  Radar, Search, Layers, Loader2, CheckCircle2, UserCheck
+  Radar, Search, Layers, Loader2, CheckCircle2, UserCheck, ArrowRightLeft
 } from 'lucide-react'
 import { nmsApi, errMsg, Olt, OltProfile, Ont } from '../../lib/nmsApi'
 import { useAuth } from '../../lib/auth'
@@ -505,6 +505,8 @@ function NewWizard({ olts }: { olts: Olt[] }) {
       })}
       forNext={(f) => ({ ...f, serial: '', desc: '' })}
       kind="registration"
+      olts={olts}
+      target={(f) => ({ oltId: f.oltId, serial: f.serial })}
       restartLabel="Register Another ONT"
       step1={({ f, set, next }) => <NewOntStep f={f} set={set} olts={olts} onNext={next} />}
       step2={({ f, set, back, next }) => <NewServiceStep f={f} set={set} olts={olts} onBack={back} onNext={next} />}
@@ -923,6 +925,8 @@ function ExistingWizard({ olts }: { olts: Olt[] }) {
       })}
       forNext={(f) => ({ ...f, serial: '' })}
       kind="service"
+      olts={olts}
+      target={(f) => ({ oltId: f.oltId, serial: f.serial })}
       restartLabel="Add Another Service Port"
       step1={({ f, set, next }) => <ExistingOntStep f={f} set={set} olts={olts} onNext={next} />}
       step2={({ f, set, back, next }) => <ExistingServiceStep f={f} set={set} olts={olts} onBack={back} onNext={next} />}
@@ -964,13 +968,340 @@ function ExistingWizard({ olts }: { olts: Olt[] }) {
 }
 
 // =========================================================================
+// TAB 3: Change VLAN (move an existing service-port to another VLAN)
+// =========================================================================
+
+const CHANGE_LABELS = ['ONT & Current Service', 'Target VLAN', 'Safety Pre-Checks', 'Review & Approve', 'Completion']
+
+interface ChangeForm {
+  oltId: number
+  serial: string
+  oldSp: string
+  oldVlan: string
+  oldGem: string
+  oldUntagged: boolean
+  vlan: string
+  gem: string
+  untagged: boolean
+}
+
+const isUntaggedRow = (r: Record<string, unknown>) =>
+  `${r.flow_type ?? ''} ${r.flow_para ?? ''}`.toLowerCase().includes('untag')
+
+function oltModeDefaults(olt: Olt | undefined, untagged: boolean) {
+  const gem = untagged ? olt?.gem_port_untagged ?? olt?.gem_port ?? 1 : olt?.gem_port ?? 1
+  return { gem: String(gem), vlan: olt?.vlan ? String(olt.vlan) : '100' }
+}
+
+function ChangeOntStep({
+  f,
+  set,
+  olts,
+  onNext,
+}: {
+  f: ChangeForm
+  set: (p: Partial<ChangeForm>) => void
+  olts: Olt[]
+  onNext: () => void
+}) {
+  const ontsQuery = useQuery({
+    queryKey: ['onts', f.oltId],
+    queryFn: async () => (await nmsApi.get<Ont[]>(`/olts/${f.oltId}/onts`)).data,
+    enabled: !!f.oltId,
+  })
+  const portsQuery = useQuery({
+    queryKey: ['inv', f.oltId, 'service-ports'],
+    queryFn: async () => (await nmsApi.get<Record<string, unknown>[]>(`/olts/${f.oltId}/inventory/service-ports`)).data,
+    enabled: !!f.oltId,
+  })
+  const oltSerial = toOltSerial(f.serial)
+  const valid = SN_RE.test(oltSerial)
+  const known = valid
+    ? ontsQuery.data?.find((o) => (o?.serial_number ? String(o.serial_number).toUpperCase() === oltSerial : false))
+    : undefined
+
+  const services = useMemo(() => {
+    if (!known || !portsQuery.data) return []
+    return portsQuery.data.filter(
+      (r) =>
+        Number(r.frame ?? 0) === (known.frame ?? 0) &&
+        Number(r.slot ?? 0) === (known.slot ?? 0) &&
+        Number(r.port ?? r.pon_port ?? 0) === (known.pon_port ?? 0) &&
+        Number(r.ont_id ?? 0) === (known.ont_id ?? 0),
+    )
+  }, [known, portsQuery.data])
+
+  const pick = (r: Record<string, unknown>) => {
+    const untagged = isUntaggedRow(r)
+    const olt = olts.find((o) => o.id === f.oltId)
+    set({
+      oldSp: String(r.sp_index),
+      oldVlan: String(r.vlan ?? r.vlan_id),
+      oldGem: String(r.gem),
+      oldUntagged: untagged,
+      untagged,
+      ...oltModeDefaults(olt, untagged),
+    })
+  }
+
+  // An ONT with exactly one service-port needs no choosing.
+  useEffect(() => {
+    if (services.length === 1 && f.oldSp !== String(services[0].sp_index)) pick(services[0])
+    if (services.length !== 1 && f.oldSp && !services.some((r) => String(r.sp_index) === f.oldSp)) set({ oldSp: '' })
+  }, [services]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <>
+      <StepHead
+        n={1}
+        total={CHANGE_LABELS.length}
+        title="Which ONT and Which Service?"
+        hint="Choose the registered ONT and the service-port that should move to the new VLAN."
+      />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+        <div className="space-y-4">
+          {olts.length > 1 && (
+            <Field label="Target Optical Line Terminal (OLT)">
+              <CustomSelect
+                value={String(f.oltId)}
+                onChange={(v) => set({ oltId: Number(v), oldSp: '' })}
+                options={olts.map((o) => ({ value: String(o.id), label: `${o.name} (${o.ip})` }))}
+              />
+            </Field>
+          )}
+          <Field label="ONT Serial Number">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+              <input
+                autoFocus
+                value={f.serial}
+                onChange={(e) => set({ serial: e.target.value.trim(), oldSp: '' })}
+                className={`${inputCls} pl-9 font-mono`}
+                placeholder="e.g. 48575443AA960FC8 or ZTEGCF50D2C2"
+              />
+            </div>
+          </Field>
+        </div>
+
+        <aside className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/40 p-4 text-xs sm:text-sm space-y-2.5">
+          {!valid && <p className="text-slate-500">Enter a valid 16-character serial.</p>}
+          {valid && ontsQuery.isLoading && <p className="text-slate-500">Looking up the ONT...</p>}
+          {valid && ontsQuery.data && !known && (
+            <p className="text-amber-600 dark:text-amber-400 font-semibold">
+              This ONT is not in the last sync snapshot, so its service-ports cannot be listed here. Run an OLT sync first.
+            </p>
+          )}
+          {known && (
+            <>
+              <p className="text-emerald-600 dark:text-emerald-400 font-semibold">
+                ONT Found: Port {known.frame}/{known.slot}/{known.pon_port}, ONT-ID #{known.ont_id} ({known.run_state || 'unknown'}).
+              </p>
+              {services.length === 0 ? (
+                <p className="text-slate-500 text-xs">No service-ports recorded on this ONT. Use "Already Registered ONT" to add one instead.</p>
+              ) : (
+                <div className="space-y-1.5">
+                  <p className="font-bold text-slate-700 dark:text-slate-200 text-xs">Service-port to move:</p>
+                  {services.map((r) => {
+                    const sel = f.oldSp === String(r.sp_index)
+                    return (
+                      <label
+                        key={String(r.sp_index)}
+                        className={`flex items-center gap-2 p-2.5 rounded-lg border cursor-pointer text-xs font-mono transition-all ${
+                          sel ? 'border-primary ring-1 ring-primary bg-primary/5' : 'border-slate-200 dark:border-slate-800'
+                        }`}
+                      >
+                        <input type="radio" name="change_old_sp" checked={sel} onChange={() => pick(r)} className="accent-primary" />
+                        <span className="font-bold text-primary">#{String(r.sp_index)}</span>
+                        <span>VLAN {String(r.vlan ?? r.vlan_id)}</span>
+                        <span className="text-slate-400">GEM {String(r.gem)}</span>
+                        <span className="text-slate-400">{isUntaggedRow(r) ? 'untagged' : 'tagged'}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+              )}
+            </>
+          )}
+        </aside>
+      </div>
+      <Nav onNext={onNext} nextDisabled={!valid || !f.oldSp} hint={!f.oldSp ? 'Select the service-port to move.' : undefined} />
+    </>
+  )
+}
+
+function ChangeTargetStep({
+  f,
+  set,
+  olts,
+  onBack,
+  onNext,
+}: {
+  f: ChangeForm
+  set: (p: Partial<ChangeForm>) => void
+  olts: Olt[]
+  onBack: () => void
+  onNext: () => void
+}) {
+  const currentOlt = olts.find((o) => o.id === f.oltId)
+  const ok =
+    Number(f.vlan) >= 1 &&
+    Number(f.vlan) <= 4094 &&
+    Number(f.vlan) !== Number(f.oldVlan) &&
+    f.gem !== '' &&
+    Number(f.gem) >= 0 &&
+    Number(f.gem) <= 1023
+
+  return (
+    <>
+      <StepHead
+        n={2}
+        total={CHANGE_LABELS.length}
+        title="Target VLAN"
+        hint="The service-port is moved to this VLAN. Another administrator must approve the change before it runs."
+      />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="New Service VLAN ID">
+              <input value={f.vlan} onChange={(e) => set({ vlan: e.target.value.trim() })} className={`${inputCls} font-semibold`} placeholder="100" inputMode="numeric" />
+              <span className="text-[11px] text-muted-foreground mt-0.5 block">Default from OLT Device Details</span>
+            </Field>
+            <Field label="GEM Port Index">
+              <input value={f.gem} onChange={(e) => set({ gem: e.target.value.trim() })} className={`${inputCls} font-semibold`} placeholder="1" inputMode="numeric" />
+              <span className="text-[11px] text-muted-foreground mt-0.5 block">Default for {f.untagged ? 'Untagged' : 'Tagged'} Mode</span>
+            </Field>
+          </div>
+          {Number(f.vlan) === Number(f.oldVlan) && (
+            <p className="text-xs text-amber-600 dark:text-amber-400 font-semibold">The new VLAN is the same as the current one ({f.oldVlan}).</p>
+          )}
+
+          <div className="space-y-2 pt-2">
+            <span className="block font-bold text-slate-700 dark:text-slate-200 text-xs sm:text-sm">Tag Transformation Mode</span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {[
+                { untagged: false, label: 'Translate (Tagged)' },
+                { untagged: true, label: 'Default (Untagged)' },
+              ].map((m) => (
+                <label
+                  key={m.label}
+                  className={`p-3.5 rounded-xl border text-xs sm:text-sm cursor-pointer transition-all ${
+                    f.untagged === m.untagged ? 'border-primary ring-1 ring-primary bg-primary/5' : 'border-slate-200 dark:border-slate-800'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="change_tag_mode"
+                    checked={f.untagged === m.untagged}
+                    onChange={() => set({ untagged: m.untagged, gem: oltModeDefaults(currentOlt, m.untagged).gem })}
+                    className="mr-2 accent-primary"
+                  />
+                  <span className="font-bold">{m.label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-4 bg-slate-50 dark:bg-slate-900/40 text-xs sm:text-sm space-y-2">
+          <p className="font-bold text-slate-700 dark:text-slate-200">What will happen</p>
+          <p className="text-slate-500">
+            Service-port #{f.oldSp} (VLAN {f.oldVlan}, GEM {f.oldGem}, {f.oldUntagged ? 'untagged' : 'tagged'}) is replaced by a service-port on VLAN {f.vlan || '?'}, GEM {f.gem || '?'} ({f.untagged ? 'untagged' : 'tagged'}).
+          </p>
+          {f.untagged && (
+            <p className="text-slate-500">
+              An untagged service cannot share a GEM port with another untagged one, so the old service-port is removed first. The customer is offline for a few seconds, and the old service-port is restored automatically if the new one fails.
+            </p>
+          )}
+        </div>
+      </div>
+      <Nav onBack={onBack} onNext={onNext} nextDisabled={!ok} />
+    </>
+  )
+}
+
+function ChangeWizard({ olts }: { olts: Olt[] }) {
+  const [sp] = useSearchParams()
+  const defaultOlt = olts[0]
+  const initialForm: ChangeForm = {
+    oltId: defaultOlt?.id ?? 1,
+    serial: sp.get('sn') || '',
+    oldSp: '',
+    oldVlan: '',
+    oldGem: '',
+    oldUntagged: false,
+    untagged: defaultOlt?.default_tag_mode === 'untagged',
+    ...oltModeDefaults(defaultOlt, defaultOlt?.default_tag_mode === 'untagged'),
+  }
+
+  return (
+    <WizardShell<ChangeForm>
+      labels={CHANGE_LABELS}
+      initial={initialForm}
+      sigOf={(f) => `${f.oltId}:${f.serial}:${f.oldSp}:${f.oldVlan}:${f.oldGem}:${f.vlan}:${f.gem}:${f.untagged}`}
+      fromJob={(p) => ({
+        oltId: Number(p.olt_id),
+        serial: String(p.serial ?? ''),
+        oldSp: String(p.old_service_port_id ?? ''),
+        oldVlan: String(p.old_vlan ?? ''),
+        oldGem: String(p.old_gem ?? ''),
+        oldUntagged: p.old_transform === 'default',
+        vlan: String(p.service_vlan ?? ''),
+        gem: String(p.gem ?? '1'),
+        untagged: !!p.untagged,
+      })}
+      forNext={(f) => ({ ...f, serial: '', oldSp: '' })}
+      kind="service"
+      olts={olts}
+      target={(f) => ({ oltId: f.oltId, serial: f.serial })}
+      restartLabel="Change Another VLAN"
+      step1={({ f, set, next }) => <ChangeOntStep f={f} set={set} olts={olts} onNext={next} />}
+      step2={({ f, set, back, next }) => <ChangeTargetStep f={f} set={set} olts={olts} onBack={back} onNext={next} />}
+      checks={({ f, jobId, staleJobId, onPlanned, back, next }) => {
+        const oltSerial = toOltSerial(f.serial)
+        const body = {
+          olt_id: f.oltId,
+          operation: 'change_vlan',
+          serial: oltSerial,
+          service_vlan: Number(f.vlan),
+          gem: Number(f.gem),
+          untagged: f.untagged,
+          old_service_port_id: Number(f.oldSp),
+          old_vlan: Number(f.oldVlan),
+          old_gem: f.oldGem ? Number(f.oldGem) : undefined,
+          old_transform: f.oldUntagged ? 'default' : undefined,
+        }
+        return (
+          <ChecksStep
+            total={CHANGE_LABELS.length}
+            summary={
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div><span className="text-slate-400">Serial:</span> <span className="font-mono font-bold">{oltSerial}</span></div>
+                <div><span className="text-slate-400">From:</span> <span className="font-bold">VLAN {f.oldVlan} (#{f.oldSp})</span></div>
+                <div><span className="text-slate-400">To:</span> <span className="font-bold">VLAN {f.vlan}, GEM {f.gem}</span></div>
+                <div><span className="text-slate-400">Mode:</span> <span className="font-bold">{f.untagged ? 'Untagged' : 'Tagged'}</span></div>
+              </div>
+            }
+            body={body}
+            jobId={jobId}
+            staleJobId={staleJobId}
+            onPlanned={onPlanned}
+            onBack={back}
+            onNext={next}
+          />
+        )
+      }}
+    />
+  )
+}
+
+// =========================================================================
 // Main Provisioning Hub with Tabs
 // =========================================================================
 
 export default function NmsProvisioning() {
   const [sp, setSp] = useSearchParams()
   const tabParam = sp.get('tab')
-  const [tab, setTab] = useState<'new' | 'existing'>(tabParam === 'new' ? 'new' : 'existing')
+  const [tab, setTab] = useState<'new' | 'existing' | 'vlan'>(tabParam === 'new' ? 'new' : tabParam === 'vlan' ? 'vlan' : 'existing')
 
   const olts = useQuery({
     queryKey: ['olts'],
@@ -980,9 +1311,10 @@ export default function NmsProvisioning() {
   useEffect(() => {
     if (tabParam === 'new' && tab !== 'new') setTab('new')
     if (tabParam === 'existing' && tab !== 'existing') setTab('existing')
+    if (tabParam === 'vlan' && tab !== 'vlan') setTab('vlan')
   }, [tabParam, tab])
 
-  const switchTab = (t: 'new' | 'existing') => {
+  const switchTab = (t: 'new' | 'existing' | 'vlan') => {
     setTab(t)
     setSp((prev) => {
       const next = new URLSearchParams(prev)
@@ -1023,6 +1355,17 @@ export default function NmsProvisioning() {
         >
           <Layers className="h-4 w-4" /> New Registration
         </button>
+        <button
+          type="button"
+          onClick={() => switchTab('vlan')}
+          className={`py-3 px-5 text-xs sm:text-sm font-bold flex items-center gap-2 border-b-2 transition-all ${
+            tab === 'vlan'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+          }`}
+        >
+          <ArrowRightLeft className="h-4 w-4" /> Change VLAN
+        </button>
       </div>
 
       {olts.isLoading ? (
@@ -1035,6 +1378,7 @@ export default function NmsProvisioning() {
         <>
           {tab === 'existing' && <ExistingWizard olts={olts.data!} />}
           {tab === 'new' && <NewWizard olts={olts.data!} />}
+          {tab === 'vlan' && <ChangeWizard olts={olts.data!} />}
           <History operations={['register_ont', 'add_service_port', 'change_vlan']} />
         </>
       )}
