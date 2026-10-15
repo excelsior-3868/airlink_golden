@@ -397,7 +397,7 @@ export function ApplyCard({ j, h }: { j: Job; h: JobHandle }) {
 
 export function SaveCard({ j, h }: { j: Job; h: JobHandle }) {
   const { user } = useAuth()
-  const isAdmin = user?.role === 'admin'
+  const canSave = user?.role === 'admin' || user?.role === 'reseller'
   const [confirmSave, setConfirmSave] = useState(false)
   if (j.status !== 'succeeded') return null
 
@@ -412,7 +412,7 @@ export function SaveCard({ j, h }: { j: Job; h: JobHandle }) {
           <p className="mb-3 text-xs sm:text-sm text-slate-600 dark:text-slate-300">
             The change is live on the OLT running configuration. Saving writes it permanently so that it survives reboots.
           </p>
-          {isAdmin ? (
+          {canSave ? (
             <>
               <label className="mb-3 flex items-start gap-2.5 text-xs sm:text-sm text-slate-700 dark:text-slate-200 cursor-pointer">
                 <input type="checkbox" className="mt-1 h-4 w-4 rounded accent-primary cursor-pointer" checked={confirmSave} onChange={(e) => setConfirmSave(e.target.checked)} />
@@ -428,7 +428,7 @@ export function SaveCard({ j, h }: { j: Job; h: JobHandle }) {
               </button>
             </>
           ) : (
-            <p className="text-xs text-slate-500">An administrator must approve and save configuration.</p>
+            <p className="text-xs text-slate-500">Only an administrator or reseller can save configuration.</p>
           )}
         </>
       )}

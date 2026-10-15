@@ -112,7 +112,7 @@ func (s *Server) Handler() http.Handler {
 			r.With(need("admin")).Post("/jobs/{id}/approve", s.approveJob)
 			r.With(need("operator")).Post("/jobs/{id}/apply", s.applyJob)
 			r.With(need("operator")).Post("/jobs/{id}/reject", s.rejectJob)
-			r.With(need("admin")).Post("/jobs/{id}/save", s.saveJob)
+			r.With(need("operator")).Post("/jobs/{id}/save", s.saveJob)
 
 			r.With(need("admin")).Get("/audit", s.listAudit)
 		})
