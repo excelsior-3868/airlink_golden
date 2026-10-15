@@ -269,6 +269,10 @@ func preserved(before, after, skipID string) error {
 		if norm == "" || strings.HasPrefix(norm, "-") {
 			continue
 		}
+		// An ONT with no service-ports answers with this failure line; it is the absence of a service, not one to preserve.
+		if strings.Contains(norm, "No service virtual port can be operated") {
+			continue
+		}
 		if f := strings.Fields(norm); skipID != "" && len(f) > 0 && f[0] == skipID {
 			continue
 		}
