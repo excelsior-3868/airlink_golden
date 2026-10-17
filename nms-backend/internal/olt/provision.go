@@ -45,6 +45,7 @@ func NewService(db *sql.DB, d Dialer, saveAfter bool) *Service {
 
 type PlanRequest struct {
 	OLTID          int64  `json:"olt_id"`
+	ResellerID     *int64 `json:"reseller_id,omitempty"`
 	Operation      string `json:"operation"` // register_ont | add_service_port | change_vlan
 	Serial         string `json:"serial"`
 	Frame          int    `json:"frame"`
@@ -65,6 +66,9 @@ type PlanRequest struct {
 	UplinkPort    string `json:"uplink_port,omitempty"`    // optional F/S/P the VLAN must be carried on
 	// register_ont: register an ONT the OLT has not detected with autofind yet (for example a CPE that is not connected).
 	AllowUndetected bool `json:"allow_undetected,omitempty"`
+	// add_service_port, untagged: remove the ONT's existing untagged service-port on the same GEM first (two
+	// untagged services on one GEM cannot coexist). Opt-in; the removal is rolled back by re-adding it.
+	ReplaceUntagged bool `json:"replace_untagged,omitempty"`
 
 	// change_vlan: the service being replaced, as recorded in the customer record.
 	OldServicePortID int    `json:"old_service_port_id,omitempty"`
@@ -92,6 +96,7 @@ type Step struct {
 type Job struct {
 	ID             int64           `json:"id"`
 	OLTID          int64           `json:"olt_id"`
+	ResellerID     *int64          `json:"reseller_id,omitempty"`
 	Operation      string          `json:"operation"`
 	IdempotencyKey string          `json:"idempotency_key"`
 	Params         json.RawMessage `json:"params"`
@@ -127,7 +132,7 @@ func idemKey(r PlanRequest) string {
 	if r.IdempotencyKey != "" {
 		return "client:" + r.IdempotencyKey
 	}
-	h := sha256.Sum256([]byte(fmt.Sprintf("%s|%d|%s|%d/%d/%d|%d|%d|%d|%d|%t|%s|%d|%d|%t", r.Operation, r.OLTID, strings.ToUpper(r.Serial), r.Frame, r.Slot, r.Port, r.TemplateID, r.OldServicePortID, r.ServiceVLAN, r.Gem, r.Untagged, r.UplinkPort, r.LineProfileID, r.SrvProfileID, r.AllowUndetected)))
+	h := sha256.Sum256([]byte(fmt.Sprintf("%s|%d|%s|%d/%d/%d|%d|%d|%d|%d|%t|%s|%d|%d|%t|%t", r.Operation, r.OLTID, strings.ToUpper(r.Serial), r.Frame, r.Slot, r.Port, r.TemplateID, r.OldServicePortID, r.ServiceVLAN, r.Gem, r.Untagged, r.UplinkPort, r.LineProfileID, r.SrvProfileID, r.AllowUndetected, r.ReplaceUntagged)))
 	return "auto:" + hex.EncodeToString(h[:12])
 }
 
@@ -454,7 +459,9 @@ func (s *Service) planRegister(p *planner, r PlanRequest, t *template) (string, 
 		return "", err
 	}
 	mapping := ParseLineProfileMapping(lpOut)
-	if !gemMapsVLAN(mapping, t.Gem, mapVLAN) {
+	// An untagged service-port rides the GEM chosen on the service-port itself, not a VLAN-to-GEM line-profile
+	// mapping, so the mapping is only a hard requirement for tagged services.
+	if !t.Untagged && !gemMapsVLAN(mapping, t.Gem, mapVLAN) {
 		return "", fmt.Errorf("%w: line profile %d does not map VLAN %d to GEM port %d (it maps: %s). Choose a profile or GEM port that carries the VLAN; this tool never edits a profile because other ONTs share it",
 			ErrConflict, t.LineProfileID, mapVLAN, t.Gem, describeMapping(mapping))
 	}
@@ -534,7 +541,14 @@ func (s *Service) planRegister(p *planner, r PlanRequest, t *template) (string, 
 	if afNote != "" {
 		p.note("check_autofind", afNote)
 	}
-	p.addRead("check_line_profile_gem_mapping", fmt.Sprintf("gem_maps:%d:%d", t.Gem, mapVLAN), lpCmd, lpEvidence, nil, "")
+	lpExpect := fmt.Sprintf("gem_maps:%d:%d", t.Gem, mapVLAN)
+	if t.Untagged {
+		lpExpect = "" // informational only for untagged, see above
+	}
+	p.addRead("check_line_profile_gem_mapping", lpExpect, lpCmd, lpEvidence, nil, "")
+	if t.Untagged {
+		p.note("check_line_profile_gem_mapping", fmt.Sprintf("Untagged service: the profile's VLAN-to-GEM mapping is shown for reference and is not required to carry VLAN %d on GEM %d.", mapVLAN, t.Gem))
+	}
 	p.addRead("check_service_profile", "", srvCmd, srvOut, nil, "")
 	p.addRead("check_ont_absent", "ont_absent", bySN, snOut, snErr, "")
 	p.addRead("check_ont_id_free", fmt.Sprintf("ont_id_free:%d", ontID), portCmd, tbl, nil, "")
@@ -733,12 +747,23 @@ func (s *Service) planAddServicePort(p *planner, r PlanRequest, t *template) (st
 	}
 	existing := ParseServicePorts(before)
 	var existsExpect string
+	var replaced *ServicePortRow
 	if t.Untagged {
 		existsExpect = fmt.Sprintf("no_untagged_gem:%d", t.Gem)
 		for _, ex := range existing {
 			if ex.Gem == t.Gem && IsUntaggedFlow(ex) {
-				return "", fmt.Errorf("%w: this ONT already has untagged service-port %d on GEM port %d; a second untagged service on the same GEM can conflict, so verify the design before adding another", ErrConflict, ex.Index, t.Gem)
+				if !r.ReplaceUntagged {
+					return "", fmt.Errorf("%w: this ONT already has untagged service-port %d on GEM port %d; two untagged services cannot share a GEM, so tick \"Replace the existing untagged service-port\" to swap it, or use another GEM", ErrConflict, ex.Index, t.Gem)
+				}
+				if replaced != nil {
+					return "", fmt.Errorf("%w: this ONT has more than one untagged service-port on GEM port %d (%d and %d); replace only handles a single one", ErrConflict, t.Gem, replaced.Index, ex.Index)
+				}
+				ex := ex
+				replaced = &ex
 			}
+		}
+		if replaced != nil {
+			existsExpect = "" // the conflicting service-port is the one being replaced
 		}
 	} else {
 		existsExpect = fmt.Sprintf("no_vlan:%d", t.ServiceVLAN)
@@ -769,7 +794,9 @@ func (s *Service) planAddServicePort(p *planner, r PlanRequest, t *template) (st
 		return "", err
 	}
 	mapping := ParseLineProfileMapping(lpOut)
-	if !gemMapsVLAN(mapping, t.Gem, mapVLAN) {
+	// An untagged service-port rides the GEM chosen on the service-port itself, not a VLAN-to-GEM line-profile
+	// mapping, so the mapping is only a hard requirement for tagged services.
+	if !t.Untagged && !gemMapsVLAN(mapping, t.Gem, mapVLAN) {
 		return "", fmt.Errorf("%w: line profile %d does not map VLAN %d to GEM port %d (it maps: %s). Use a GEM/VLAN that matches the profile, or add the mapping on the OLT first; this tool never edits a profile because other ONTs share it",
 			ErrConflict, lpID, mapVLAN, t.Gem, describeMapping(mapping))
 	}
@@ -803,6 +830,13 @@ func (s *Service) planAddServicePort(p *planner, r PlanRequest, t *template) (st
 		return "", err
 	}
 
+	if replaced != nil {
+		// The old service-port is deleted first, so its number is free again and the new service reuses it.
+		spID = replaced.Index
+		freeExpect = ""
+		freeNote = fmt.Sprintf("Service-port %d is deleted first and its number is reused for the new VLAN %d service.", replaced.Index, t.ServiceVLAN)
+	}
+
 	sp := ServicePort{ID: spID, VLAN: t.ServiceVLAN, F: d.F, S: d.S, P: d.P, OntID: d.OntID, Gem: t.Gem, UserVLAN: t.UserVLAN, Untagged: t.Untagged, Transform: t.Transform}
 	spAdd, err := ServicePortAdd(sp)
 	if err != nil {
@@ -821,7 +855,14 @@ func (s *Service) planAddServicePort(p *planner, r PlanRequest, t *template) (st
 		p.note(findStep, "This release does not accept the by-position form of `display ont info`, so that confirmation step is skipped.")
 	}
 	p.addRead("check_existing_services", existsExpect, showOnt, before, showErr, "")
-	p.addRead("check_line_profile_gem_mapping", fmt.Sprintf("gem_maps:%d:%d", t.Gem, mapVLAN), lpCmd, lpEvidence, nil, "")
+	lpExpect := fmt.Sprintf("gem_maps:%d:%d", t.Gem, mapVLAN)
+	if t.Untagged {
+		lpExpect = "" // informational only for untagged, see above
+	}
+	p.addRead("check_line_profile_gem_mapping", lpExpect, lpCmd, lpEvidence, nil, "")
+	if t.Untagged {
+		p.note("check_line_profile_gem_mapping", fmt.Sprintf("Untagged service: the profile's VLAN-to-GEM mapping is shown for reference and is not required to carry VLAN %d on GEM %d.", mapVLAN, t.Gem))
+	}
 	p.addRead("check_vlan", "vlan_has_uplink", vlanCmd, vlanOut, nil, "")
 	if ups := UplinkPorts(vlanOut); len(ups) > 0 {
 		p.note("check_vlan", "Uplink ports that carry this VLAN: "+strings.Join(ups, ", "))
@@ -833,9 +874,20 @@ func (s *Service) planAddServicePort(p *planner, r PlanRequest, t *template) (st
 	if freeNote != "" {
 		p.note("check_service_port_free", freeNote)
 	}
+	preservedSkip := ""
+	if replaced != nil {
+		// The old untagged service-port goes first; if the add then fails the executor re-adds it exactly as it was.
+		oldAdd, err := ServicePortAdd(ServicePort{ID: replaced.Index, VLAN: replaced.VLAN, F: d.F, S: d.S, P: d.P, OntID: d.OntID, Gem: replaced.Gem, Untagged: true, Transform: "default"})
+		if err != nil {
+			return "", fmt.Errorf("%w: %v", ErrConflict, err)
+		}
+		p.note("check_existing_services", fmt.Sprintf("Untagged service-port %d (VLAN %d, GEM %d) will be removed and replaced by the new service; it is re-added automatically if the new one fails.", replaced.Index, replaced.VLAN, replaced.Gem))
+		p.add("service_port_remove_old", "write", "", []Cmd{must(ServicePortUndo(replaced.Index))}, []Cmd{oldAdd})
+		preservedSkip = fmt.Sprint(replaced.Index)
+	}
 	p.add("service_port_add", "write", "", []Cmd{spAdd}, []Cmd{must(ServicePortUndo(spID))})
 	p.add("verify_service_port", "verify", fmt.Sprintf("contains:%d", t.ServiceVLAN), []Cmd{must(DisplayServicePort(spID))}, nil)
-	p.add("verify_existing_services_preserved", "verify", "preserved:", []Cmd{showOnt}, nil)
+	p.add("verify_existing_services_preserved", "verify", "preserved:"+preservedSkip, []Cmd{showOnt}, nil)
 	p.add("verify_new_service_listed", "verify", fmt.Sprintf("sp_listed:%d:%d", spID, t.ServiceVLAN), []Cmd{showOnt}, nil)
 	return before, nil
 }
@@ -949,8 +1001,8 @@ func (s *Service) persist(ctx context.Context, req PlanRequest, key, actor, befo
 	defer tx.Rollback()
 
 	res, err := tx.ExecContext(ctx, `
-		INSERT INTO provisioning_jobs (olt_id, operation, idempotency_key, params, requested_by, before_state, error_summary, save_output)
-		VALUES (?,?,?,?,?,?,'','')`, req.OLTID, req.Operation, key, params, actor, before)
+		INSERT INTO provisioning_jobs (olt_id, reseller_id, operation, idempotency_key, params, requested_by, before_state, error_summary, save_output)
+		VALUES (?,?,?,?,?,?,?,'','')`, req.OLTID, req.ResellerID, req.Operation, key, params, actor, before)
 	if err != nil {
 		if strings.Contains(err.Error(), "Duplicate") || strings.Contains(err.Error(), "1062") {
 			tx.Rollback()
@@ -997,9 +1049,9 @@ func (s *Service) byKey(ctx context.Context, key string) (*Job, error) {
 func (s *Service) Get(ctx context.Context, id int64) (*Job, error) {
 	j := &Job{}
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, olt_id, operation, idempotency_key, params, status, requested_by, approved_by, before_state,
+		SELECT id, olt_id, reseller_id, operation, idempotency_key, params, status, requested_by, approved_by, before_state,
 		       error_summary, created_at, started_at, completed_at, saved_at, saved_by FROM provisioning_jobs WHERE id=?`, id).
-		Scan(&j.ID, &j.OLTID, &j.Operation, &j.IdempotencyKey, &j.Params, &j.Status, &j.RequestedBy, &j.ApprovedBy,
+		Scan(&j.ID, &j.OLTID, &j.ResellerID, &j.Operation, &j.IdempotencyKey, &j.Params, &j.Status, &j.RequestedBy, &j.ApprovedBy,
 			&j.BeforeState, &j.ErrorSummary, &j.CreatedAt, &j.StartedAt, &j.CompletedAt, &j.SavedAt, &j.SavedBy)
 	if err != nil {
 		return nil, err
@@ -1031,11 +1083,20 @@ func splitLines(s string) []string {
 	return strings.Split(s, "\n")
 }
 
-func (s *Service) List(ctx context.Context, limit int) ([]Job, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, olt_id, operation, idempotency_key, params, status, requested_by, approved_by, before_state,
+func (s *Service) List(ctx context.Context, limit int, resellerID ...int64) ([]Job, error) {
+	sqlQuery := `
+		SELECT id, olt_id, reseller_id, operation, idempotency_key, params, status, requested_by, approved_by, before_state,
 		       error_summary, created_at, started_at, completed_at, saved_at, saved_by
-		FROM provisioning_jobs ORDER BY id DESC LIMIT ?`, limit)
+		FROM provisioning_jobs`
+	var args []any
+	if len(resellerID) > 0 && resellerID[0] > 0 {
+		sqlQuery += ` WHERE reseller_id=? OR olt_id IN (SELECT olt_id FROM olt_resellers WHERE reseller_id=?)`
+		args = append(args, resellerID[0], resellerID[0])
+	}
+	sqlQuery += ` ORDER BY id DESC LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := s.db.QueryContext(ctx, sqlQuery, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -1043,7 +1104,7 @@ func (s *Service) List(ctx context.Context, limit int) ([]Job, error) {
 	out := []Job{}
 	for rows.Next() {
 		var j Job
-		if err := rows.Scan(&j.ID, &j.OLTID, &j.Operation, &j.IdempotencyKey, &j.Params, &j.Status, &j.RequestedBy, &j.ApprovedBy,
+		if err := rows.Scan(&j.ID, &j.OLTID, &j.ResellerID, &j.Operation, &j.IdempotencyKey, &j.Params, &j.Status, &j.RequestedBy, &j.ApprovedBy,
 			&j.BeforeState, &j.ErrorSummary, &j.CreatedAt, &j.StartedAt, &j.CompletedAt, &j.SavedAt, &j.SavedBy); err != nil {
 			return nil, err
 		}

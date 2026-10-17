@@ -84,6 +84,9 @@ services:
       LEGACY_DB_USERNAME: airlink
       LEGACY_DB_PASSWORD: ${DB_PASSWORD:-airlink_pass}
       APP_KEY: ${APP_KEY}
+      RECAPTCHA_SITE_KEY: ${RECAPTCHA_SITE_KEY:-}
+      RECAPTCHA_SECRET_KEY: ${RECAPTCHA_SECRET_KEY:-}
+      RECAPTCHA_MIN_SCORE: ${RECAPTCHA_MIN_SCORE:-0.5}
       APP_ENV: production
       APP_DEBUG: "false"
       # Creates the whole schema on first boot and seeds the default admin
@@ -195,6 +198,9 @@ services:
       LEGACY_DB_USERNAME: airlink
       LEGACY_DB_PASSWORD: ${DB_PASSWORD:-airlink_pass}
       APP_KEY: ${APP_KEY}
+      RECAPTCHA_SITE_KEY: ${RECAPTCHA_SITE_KEY:-}
+      RECAPTCHA_SECRET_KEY: ${RECAPTCHA_SECRET_KEY:-}
+      RECAPTCHA_MIN_SCORE: ${RECAPTCHA_MIN_SCORE:-0.5}
       APP_ENV: production
       APP_DEBUG: "false"
       RUN_MIGRATIONS: 0
@@ -221,6 +227,9 @@ services:
       LEGACY_DB_USERNAME: airlink
       LEGACY_DB_PASSWORD: ${DB_PASSWORD:-airlink_pass}
       APP_KEY: ${APP_KEY}
+      RECAPTCHA_SITE_KEY: ${RECAPTCHA_SITE_KEY:-}
+      RECAPTCHA_SECRET_KEY: ${RECAPTCHA_SECRET_KEY:-}
+      RECAPTCHA_MIN_SCORE: ${RECAPTCHA_MIN_SCORE:-0.5}
       APP_ENV: production
       APP_DEBUG: "false"
       RUN_MIGRATIONS: 0

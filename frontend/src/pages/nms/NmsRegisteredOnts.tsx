@@ -1,13 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Copy, RefreshCw, Search, ListChecks as IcoListChecks, Loader2, ArrowRight, Radio, CheckCircle2, AlertCircle, Filter } from 'lucide-react'
+import {
+  Copy, RefreshCw, Search, ListChecks as IcoListChecks, Loader2,
+  ArrowRight, Radio, CheckCircle2, AlertCircle, Filter, Users, Edit2, X
+} from 'lucide-react'
 import { nmsApi, errMsg, Olt, Ont } from '../../lib/nmsApi'
 import { useAuth } from '../../lib/auth'
 import { ago } from '../../lib/nmsFormat'
 import { CustomSelect, StatCard } from '../../components/ui'
 import SyncButton from '../../components/nms/SyncButton'
-import { Card, ErrorBox, Loading, StatusText, Table, Td, Tr, inputCls, PageTitle } from '../../components/nms/NmsUi'
+import { Card, ErrorBox, Field, Loading, StatusText, Table, Td, Tr, inputCls, PageTitle } from '../../components/nms/NmsUi'
 
 const PAGE_SIZE = 50
 
@@ -50,8 +53,109 @@ function VlanChips({ list, onSelectVlan }: { list?: Svc[]; onSelectVlan?: (vlan:
   )
 }
 
+function ReassignResellerModal({
+  ont,
+  oltId,
+  onClose,
+  onSuccess,
+}: {
+  ont: Ont
+  oltId: number
+  onClose: () => void
+  onSuccess: () => void
+}) {
+  const [selectedReseller, setSelectedReseller] = useState<string>(
+    ont.reseller_id ? String(ont.reseller_id) : ''
+  )
+  const [err, setErr] = useState('')
+
+  const resellersQuery = useQuery({
+    queryKey: ['olt-resellers', oltId],
+    queryFn: async () =>
+      (await nmsApi.get<{ id: number; username: string; name: string }[]>(`/olts/${oltId}/resellers`)).data,
+  })
+
+  const reassign = useMutation({
+    mutationFn: async () => {
+      const rid = selectedReseller ? Number(selectedReseller) : null
+      return (await nmsApi.patch(`/olts/${oltId}/onts/${ont.id}/reseller`, { reseller_id: rid })).data
+    },
+    onSuccess: () => {
+      onSuccess()
+      onClose()
+    },
+    onError: (e) => setErr(errMsg(e)),
+  })
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+      <div className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl">
+        <header className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 px-5 py-4 bg-slate-50/50 dark:bg-slate-900/60">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-primary/10 text-primary">
+              <Users size={18} />
+            </div>
+            <div>
+              <h2 className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-100">
+                Reassign Reseller
+              </h2>
+              <p className="text-xs text-slate-500 font-mono">{ont.serial_number}</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+          >
+            <X size={18} />
+          </button>
+        </header>
+
+        <div className="p-5 space-y-4">
+          {err && <ErrorBox msg={err} />}
+
+          <Field label="Designated Reseller">
+            <CustomSelect
+              value={selectedReseller}
+              onChange={setSelectedReseller}
+              options={[
+                { value: '', label: 'Unassigned (Admin Direct)' },
+                ...(resellersQuery.data ?? []).map((r) => ({
+                  value: String(r.id),
+                  label: `${r.name || r.username} (@${r.username})`,
+                })),
+              ]}
+            />
+          </Field>
+
+          <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+            <button
+              type="button"
+              onClick={onClose}
+              className="btn-secondary py-2 px-4 rounded-xl font-bold text-xs sm:text-sm"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={reassign.isPending}
+              onClick={() => reassign.mutate()}
+              className="btn-primary py-2 px-5 rounded-xl font-bold text-xs sm:text-sm flex items-center gap-2"
+            >
+              {reassign.isPending && <Loader2 size={16} className="animate-spin" />}
+              Save Assignment
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function OntList({ olt }: { olt: Olt }) {
+  const qc = useQueryClient()
   const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
   const isOperatorOrAdmin = user?.role === 'admin' || user?.role === 'reseller'
   const onts = useQuery({
     queryKey: ['onts', olt.id],
@@ -63,8 +167,10 @@ function OntList({ olt }: { olt: Olt }) {
   const [state, setState] = useState('')
   const [pon, setPon] = useState('')
   const [vlanFilter, setVlanFilter] = useState('')
+  const [resellerFilter, setResellerFilter] = useState('')
   const [page, setPage] = useState(1)
   const [copied, setCopied] = useState<string | null>(null)
+  const [reassigningOnt, setReassigningOnt] = useState<Ont | null>(null)
 
   const copy = (sn: string) => {
     navigator.clipboard.writeText(sn)
@@ -109,6 +215,16 @@ function OntList({ olt }: { olt: Olt }) {
   const all = onts.data ?? []
   const ponPorts = useMemo(() => Array.from(new Set(all.map((o) => `${o.frame}/${o.slot}/${o.pon_port}`))).sort(), [all])
 
+  const resellersList = useMemo(() => {
+    const map = new Map<number, string>()
+    for (const o of all) {
+      if (o.reseller_id) {
+        map.set(o.reseller_id, o.reseller_name || o.reseller_username || `Reseller #${o.reseller_id}`)
+      }
+    }
+    return Array.from(map.entries()).map(([id, label]) => ({ id, label }))
+  }, [all])
+
   const allVlans = useMemo(() => {
     const s = new Set<number>()
     for (const svcs of svcsByOnt.values()) {
@@ -124,7 +240,7 @@ function OntList({ olt }: { olt: Olt }) {
     return all.filter((o) => {
       const svcs = svcsByOnt.get(keyOf(o)) ?? []
       if (needle) {
-        const text = `${o.serial_number} ${o.description || ''}`.toLowerCase()
+        const text = `${o.serial_number} ${o.description || ''} ${o.reseller_name || ''} ${o.reseller_username || ''}`.toLowerCase()
         const matchesText = text.includes(needle)
         const matchesVlan = svcs.some((s) => String(s.vlan).includes(needle))
         if (!matchesText && !matchesVlan) return false
@@ -132,17 +248,40 @@ function OntList({ olt }: { olt: Olt }) {
       if (state && o.run_state !== state) return false
       if (pon && `${o.frame}/${o.slot}/${o.pon_port}` !== pon) return false
       if (vlanFilter && !svcs.some((s) => String(s.vlan) === vlanFilter)) return false
+      if (isAdmin && resellerFilter) {
+        if (resellerFilter === 'unassigned') {
+          if (o.reseller_id) return false
+        } else if (String(o.reseller_id) !== resellerFilter) {
+          return false
+        }
+      }
       return true
     })
-  }, [all, q, state, pon, vlanFilter, svcsByOnt])
+  }, [all, q, state, pon, vlanFilter, resellerFilter, svcsByOnt, isAdmin])
 
-  useEffect(() => setPage(1), [q, state, pon, vlanFilter])
+  useEffect(() => setPage(1), [q, state, pon, vlanFilter, resellerFilter])
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const slice = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
   const onlineCount = all.filter((o) => o.run_state === 'online').length
 
+  const tableHead = isAdmin
+    ? ['Serial Number', 'Position (F/S/P/ONT-ID)', 'Reseller', 'Operational State', 'Active Service-Ports (VLAN)', 'Optical Rx Power', 'Last Seen Online', 'Quick Actions']
+    : ['Serial Number', 'Position (F/S/P/ONT-ID)', 'Operational State', 'Active Service-Ports (VLAN)', 'Optical Rx Power', 'Last Seen Online', 'Quick Actions']
+
   return (
     <div className="space-y-4">
+      {reassigningOnt && (
+        <ReassignResellerModal
+          ont={reassigningOnt}
+          oltId={olt.id}
+          onClose={() => setReassigningOnt(null)}
+          onSuccess={() => {
+            qc.invalidateQueries({ queryKey: ['onts', olt.id] })
+            qc.invalidateQueries({ queryKey: ['olts'] })
+          }}
+        />
+      )}
+
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <StatCard
           label="Total Registered ONTs"
@@ -209,7 +348,7 @@ function OntList({ olt }: { olt: Olt }) {
           />
         </div>
 
-        <div className="w-48">
+        <div className="w-44">
           <CustomSelect
             value={vlanFilter}
             onChange={setVlanFilter}
@@ -219,6 +358,20 @@ function OntList({ olt }: { olt: Olt }) {
             ]}
           />
         </div>
+
+        {isAdmin && (
+          <div className="w-52">
+            <CustomSelect
+              value={resellerFilter}
+              onChange={setResellerFilter}
+              options={[
+                { value: '', label: 'All Resellers' },
+                { value: 'unassigned', label: 'Unassigned Reseller' },
+                ...resellersList.map((r) => ({ value: String(r.id), label: r.label })),
+              ]}
+            />
+          </div>
+        )}
       </div>
 
       {onts.isLoading || ports.isLoading ? (
@@ -228,7 +381,7 @@ function OntList({ olt }: { olt: Olt }) {
       ) : (
         <>
           <Table
-            head={['Serial Number', 'Position (F/S/P/ONT-ID)', 'Operational State', 'Active Service-Ports (VLAN)', 'Optical Rx Power', 'Last Seen Online', 'Quick Actions']}
+            head={tableHead}
             empty={filtered.length === 0 ? 'No Registered ONTs Match The Active Filter.' : undefined}
           >
             {slice.map((o) => {
@@ -251,6 +404,30 @@ function OntList({ olt }: { olt: Olt }) {
                     {o.description && <div className="text-xs text-slate-500 truncate max-w-xs">{o.description}</div>}
                   </Td>
                   <Td className="tabular-nums font-mono text-xs">{o.frame}/{o.slot}/{o.pon_port} <span className="font-bold text-primary">#{o.ont_id}</span></Td>
+                  {isAdmin && (
+                    <Td>
+                      <div className="flex items-center gap-1.5">
+                        {o.reseller_username ? (
+                          <span className="inline-flex items-center gap-1 rounded-md border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 text-xs font-bold">
+                            <Users size={12} />
+                            {o.reseller_name || o.reseller_username}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-slate-400 font-mono text-xs">
+                            Unassigned
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setReassigningOnt(o)}
+                          className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-primary transition-colors"
+                          title="Reassign Reseller"
+                        >
+                          <Edit2 size={12} />
+                        </button>
+                      </div>
+                    </Td>
+                  )}
                   <Td><StatusText s={o.run_state} /></Td>
                   <Td><VlanChips list={svcs} onSelectVlan={(v) => setVlanFilter(String(v))} /></Td>
                   <Td className="tabular-nums font-semibold text-xs">

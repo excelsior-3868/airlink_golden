@@ -9,15 +9,54 @@ use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Http;
 
 class AuthController extends Controller
 {
+    public function recaptchaConfig(): JsonResponse
+    {
+        $enabled = config('services.recaptcha.site_key') && config('services.recaptcha.secret_key');
+
+        return $this->ok(['site_key' => $enabled ? config('services.recaptcha.site_key') : null]);
+    }
+
+    /** Verifies a reCAPTCHA v3 token with Google. Always passes when reCAPTCHA isn't configured. */
+    private function recaptchaPasses(?string $token, ?string $ip): bool
+    {
+        $secret = config('services.recaptcha.secret_key');
+        if (! $secret || ! config('services.recaptcha.site_key')) {
+            return true;
+        }
+        if (! $token) {
+            return false;
+        }
+
+        try {
+            $res = Http::asForm()->timeout(8)->post('https://www.google.com/recaptcha/api/siteverify', [
+                'secret' => $secret, 'response' => $token, 'remoteip' => $ip,
+            ])->json();
+        } catch (\Throwable $e) {
+            report($e);
+
+            return false;
+        }
+
+        return ($res['success'] ?? false)
+            && ($res['action'] ?? 'login') === 'login'
+            && ($res['score'] ?? 0) >= config('services.recaptcha.min_score');
+    }
+
     public function login(Request $request): JsonResponse
     {
         $data = $request->validate([
             'username' => ['required', 'string'],
             'password' => ['required', 'string'],
+            'recaptcha_token' => ['nullable', 'string'],
         ]);
+
+        if (! $this->recaptchaPasses($data['recaptcha_token'] ?? null, $request->ip())) {
+            return $this->fail('reCAPTCHA verification failed. Please try again.', 422);
+        }
 
         $user = User::where('username', $data['username'])->first();
 

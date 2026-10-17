@@ -233,6 +233,12 @@ func (s *Service) execSync(ctx context.Context, oltID, runID int64) (*SyncRun, e
 				}
 			}
 		}
+		// The OLT answered for this port, so anything recorded here that it no longer lists was deleted on the
+		// OLT (or moved to another port). Drop it, otherwise the provisioning wizard keeps calling the serial
+		// "already registered" and its old ONT-ID keeps blocking reuse. A port that returned a CLI error is left alone.
+		if err := s.pruneONTs(ctx, oltID, p, rows); err != nil {
+			return finish("failed", "prune ONTs: "+err.Error())
+		}
 	}
 	counts["pon_ports_scanned"] = len(ports)
 	counts["pon_ports_with_onts"] = portsWithONTs
@@ -294,6 +300,20 @@ func replaceRows(ctx context.Context, s *Service, oltID int64, table string, n i
 		return 0, err
 	}
 	return n, tx.Commit()
+}
+
+// pruneONTs deletes inventory rows for one PON port whose serial the OLT did not list in the last scan.
+func (s *Service) pruneONTs(ctx context.Context, oltID int64, p [3]int, seen []ONTRow) error {
+	q := `DELETE FROM ont_inventory WHERE olt_id=? AND frame=? AND slot=? AND pon_port=?`
+	args := []any{oltID, p[0], p[1], p[2]}
+	if len(seen) > 0 {
+		q += ` AND serial_number NOT IN (?` + strings.Repeat(",?", len(seen)-1) + `)`
+		for _, r := range seen {
+			args = append(args, r.SN)
+		}
+	}
+	_, err := s.db.ExecContext(ctx, q, args...)
+	return err
 }
 
 func upsertONT(ctx context.Context, s *Service, oltID int64, r ONTRow) error {

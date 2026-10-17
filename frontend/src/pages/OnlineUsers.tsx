@@ -15,6 +15,10 @@ interface OnlineSession {
   pppoe_customer_id?: number
   connection_type?: 'hotspot' | 'pppoe'
   username: string
+  cpe_serial_number?: string | null
+  onu_serial_number?: string | null
+  ont_rx_power?: number | null
+  ont_optical_updated_at?: string | null
   ip_address?: string
   mac_address?: string
   nas_ip?: string
@@ -386,15 +390,13 @@ export default function OnlineUsers() {
               <thead>
                 <tr>
                   <th>Username / Voucher</th>
-                  {!isSeller && <th>Type</th>}
-                  <th>IP Address</th>
-                  <th>MAC Address</th>
+                  <th>CPE & Optical Signal</th>
+                  <th>IP & MAC Address</th>
                   <th>Connected Via</th>
                   <th>Internet Plan</th>
                   <th>Connected Since</th>
                   <th>Data Volume</th>
                   <th>Attribution</th>
-                  <th className="text-center">Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -433,36 +435,84 @@ export default function OnlineUsers() {
                         <div className="text-xs text-slate-400 font-mono">User: {s.customer_username}</div>
                       )}
                     </td>
-                    {!isSeller && (
-                      <td>
-                        {s.connection_type === 'pppoe' ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200/70 dark:bg-indigo-950/40 dark:text-indigo-300">
-                            <Activity size={10} /> PPPoE
+                    <td>
+                      {s.cpe_serial_number || s.onu_serial_number ? (
+                        <div className="flex flex-col gap-1 items-start">
+                          <span className="font-mono text-xs font-semibold text-slate-700 dark:text-slate-200">
+                            {s.cpe_serial_number || s.onu_serial_number}
                           </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-50 text-cyan-700 border border-cyan-200/70 dark:bg-cyan-950/40 dark:text-cyan-300">
-                            <Wifi size={10} /> Hotspot
-                          </span>
-                        )}
-                      </td>
-                    )}
-                    <td className="font-mono text-slate-600 text-xs">
-                      {s.ip_address && /^\d{1,3}(\.\d{1,3}){3}$/.test(s.ip_address) ? (
-                        <a
-                          href={`http://${s.ip_address}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          title={`Open http://${s.ip_address} in a new tab`}
-                          className="text-indigo-600 hover:text-indigo-800 hover:underline underline-offset-2"
-                        >
-                          {s.ip_address}
-                        </a>
+                          {s.connection_type === 'pppoe' ? (
+                            s.ont_rx_power != null ? (
+                              <div
+                                className="flex items-center gap-1.5"
+                                title={`ONT Optical Signal (Rx): ${s.ont_rx_power.toFixed(2)} dBm${
+                                  s.ont_optical_updated_at ? ` • Updated: ${datet(s.ont_optical_updated_at)}` : ''
+                                }${
+                                  s.ont_rx_power >= -24.0
+                                    ? ' (Optimal Signal Quality)'
+                                    : s.ont_rx_power >= -27.0
+                                    ? ' (Acceptable / Fair Signal)'
+                                    : ' (High Optical Loss / Critical)'
+                                }`}
+                              >
+                                <span
+                                  className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full font-mono text-[11px] font-bold border transition-colors shadow-2xs ${
+                                    s.ont_rx_power >= -24.0
+                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
+                                      : s.ont_rx_power >= -27.0
+                                      ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800'
+                                      : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800'
+                                  }`}
+                                >
+                                  <span
+                                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                                      s.ont_rx_power >= -24.0
+                                        ? 'bg-emerald-500'
+                                        : s.ont_rx_power >= -27.0
+                                        ? 'bg-amber-500'
+                                        : 'bg-rose-500 animate-ping'
+                                    }`}
+                                  />
+                                  <span>{s.ont_rx_power.toFixed(2)} dBm</span>
+                                </span>
+                              </div>
+                            ) : (
+                              <span
+                                className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono text-slate-400 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700"
+                                title="Signal power will appear after OLT optical synchronization"
+                              >
+                                Pending Sync
+                              </span>
+                            )
+                          ) : null}
+                        </div>
                       ) : (
-                        s.ip_address || 'Dynamic'
+                        <span className="text-xs text-slate-400 font-mono">—</span>
                       )}
                     </td>
-                    <td className="font-mono text-xs text-slate-500">{s.mac_address || 'Active'}</td>
+                    <td className="font-mono text-xs">
+                      <div className="flex flex-col gap-0.5">
+                        <div>
+                          {s.ip_address && /^\d{1,3}(\.\d{1,3}){3}$/.test(s.ip_address) ? (
+                            <a
+                              href={`http://${s.ip_address}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              title={`Open http://${s.ip_address} in a new tab`}
+                              className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 font-semibold hover:underline underline-offset-2"
+                            >
+                              {s.ip_address}
+                            </a>
+                          ) : (
+                            <span className="text-slate-600 dark:text-slate-300">{s.ip_address || 'Dynamic'}</span>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-slate-400 dark:text-slate-500">
+                          {s.mac_address || 'Active'}
+                        </div>
+                      </div>
+                    </td>
                     {/* Which router the session came in on. Registered NAS
                         devices resolve to their friendly name with the IP
                         underneath; an unregistered gateway shows the bare IP. */}
@@ -506,27 +556,6 @@ export default function OnlineUsers() {
                     <td className="text-xs text-slate-500">
                       <div>{s.reseller_name || s.reseller_username || 'Admin Direct'}</div>
                       {s.seller_name && <div className="text-[10px] text-slate-400">{s.seller_name}</div>}
-                    </td>
-                    <td className="text-center" onClick={(e) => e.stopPropagation()}>
-                      <div className="flex items-center justify-center gap-1.5">
-                        <button
-                          onClick={() => setSelectedForUsage(s)}
-                          aria-label={`View Data Usage Graph for ${s.voucher_code || s.username}`}
-                          className="w-8 h-8 rounded-xl bg-cyan-50 border border-cyan-200 text-cyan-700 hover:bg-cyan-100 transition-all flex items-center justify-center cursor-pointer shadow-xs"
-                          title={`View live data usage graph for ${s.voucher_code || s.username}`}
-                        >
-                          <Activity size={14} className="text-cyan-600" />
-                        </button>
-                        <button
-                          onClick={() => setConfirmDisconnect({ open: true, username: s.username, label: s.voucher_code || s.username })}
-                          disabled={disconnecting === s.username}
-                          aria-label={`Disconnect ${s.voucher_code || s.username}`}
-                          className="w-8 h-8 rounded-xl bg-rose-50 border border-rose-200 text-rose-600 hover:bg-rose-100 disabled:opacity-60 transition-all flex items-center justify-center cursor-pointer shadow-xs"
-                          title={`Disconnect live session for ${s.voucher_code || s.username} via CoA`}
-                        >
-                          <Power size={14} className={disconnecting === s.username ? 'animate-pulse' : ''} />
-                        </button>
-                      </div>
                     </td>
                   </motion.tr>
                 ))}

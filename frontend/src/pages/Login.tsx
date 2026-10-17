@@ -6,11 +6,13 @@ import { useAuth } from '../lib/auth'
 import { useBranding } from '../lib/branding'
 import { apiError } from '../lib/api'
 import { ThemeToggle } from '../lib/theme'
+import { useRecaptcha } from '../lib/recaptcha'
 
 export default function Login() {
   const { login, user } = useAuth()
   const { branding } = useBranding()
   const nav = useNavigate()
+  const getRecaptchaToken = useRecaptcha('login')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -24,7 +26,7 @@ export default function Login() {
     setErr('')
     setBusy(true)
     try {
-      await login(username, password)
+      await login(username, password, await getRecaptchaToken())
       nav('/', { replace: true })
     } catch (e) {
       setErr(apiError(e))

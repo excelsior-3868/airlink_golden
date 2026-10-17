@@ -46,7 +46,12 @@ type ctxKey int
 
 const userKey ctxKey = 1
 
-type principal struct{ Name, Role string }
+type principal struct {
+	ID           int64  `json:"id"`
+	Name         string `json:"name"`
+	Role         string `json:"role"`
+	OriginalRole string `json:"original_role"`
+}
 
 var roleRank = map[string]int{"viewer": 1, "operator": 2, "admin": 3}
 
@@ -91,11 +96,14 @@ func (s *Server) Handler() http.Handler {
 
 			r.Get("/olts", s.listOLTs)
 			r.With(need("admin")).Post("/olts", s.createOLT)
+			r.Get("/olts/{id}/resellers", s.getOLTResellers)
+			r.With(need("admin")).Put("/olts/{id}/resellers", s.updateOLTResellers)
 			r.With(need("admin")).Post("/olts/{id}/credentials", s.updateOLTLogin)
 			r.With(need("admin")).Post("/olts/{id}/test", s.testOLT)
 			r.With(need("admin")).Post("/olts/{id}/host-key/fetch", s.fetchHostKey)
 			r.With(need("admin")).Post("/olts/{id}/host-key/trust", s.trustHostKey)
 			r.Get("/olts/{id}/onts", s.listONTs)
+			r.With(need("admin")).Patch("/olts/{id}/onts/{ontId}/reseller", s.updateONTReseller)
 			r.With(need("operator")).Get("/olts/{id}/autofind", s.autofind)
 			r.With(need("operator")).Post("/olts/{id}/sync", s.startSync)
 			r.Get("/olts/{id}/sync-runs", s.syncRuns)
@@ -142,7 +150,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 				fail(w, 500, "could not issue token")
 				return
 			}
-			writeJSON(w, 200, map[string]any{"token": tok, "user": principal{u.Name, u.Role}})
+			writeJSON(w, 200, map[string]any{"token": tok, "user": principal{Name: u.Name, Role: u.Role, OriginalRole: u.Role}})
 			return
 		}
 	}
@@ -160,6 +168,7 @@ func (s *Server) auth(next http.Handler) http.Handler {
 		raw = strings.TrimSpace(raw)
 
 		// 1. Try Airlink Sanctum SSO token verification against personal_access_tokens
+		var userID int64
 		var username, role, status string
 		var tokenHash string
 		var tokenID int64
@@ -179,18 +188,18 @@ func (s *Server) auth(next http.Handler) http.Handler {
 		var queryErr error
 		if tokenID > 0 {
 			queryErr = s.db.QueryRowContext(r.Context(), `
-				SELECT u.username, u.role, u.status
+				SELECT u.id, u.username, u.role, u.status
 				FROM personal_access_tokens t
 				JOIN users u ON u.id = t.tokenable_id
 				WHERE t.id = ? AND t.token = ? AND (t.expires_at IS NULL OR t.expires_at > NOW())`,
-				tokenID, tokenHash).Scan(&username, &role, &status)
+				tokenID, tokenHash).Scan(&userID, &username, &role, &status)
 		} else {
 			queryErr = s.db.QueryRowContext(r.Context(), `
-				SELECT u.username, u.role, u.status
+				SELECT u.id, u.username, u.role, u.status
 				FROM personal_access_tokens t
 				JOIN users u ON u.id = t.tokenable_id
 				WHERE t.token = ? AND (t.expires_at IS NULL OR t.expires_at > NOW())`,
-				tokenHash).Scan(&username, &role, &status)
+				tokenHash).Scan(&userID, &username, &role, &status)
 		}
 
 		if queryErr == nil && status == "active" {
@@ -200,7 +209,7 @@ func (s *Server) auth(next http.Handler) http.Handler {
 			} else if role == "reseller" {
 				nmsRole = "operator"
 			}
-			ctx := context.WithValue(r.Context(), userKey, principal{Name: username, Role: nmsRole})
+			ctx := context.WithValue(r.Context(), userKey, principal{ID: userID, Name: username, Role: nmsRole, OriginalRole: role})
 			next.ServeHTTP(w, r.WithContext(ctx))
 			return
 		}
@@ -213,7 +222,13 @@ func (s *Server) auth(next http.Handler) http.Handler {
 				name, _ := c["sub"].(string)
 				role, _ := c["role"].(string)
 				if roleRank[role] > 0 && name != "" {
-					ctx := context.WithValue(r.Context(), userKey, principal{Name: name, Role: role})
+					var uid int64
+					var origRole string
+					_ = s.db.QueryRowContext(r.Context(), `SELECT id, role FROM users WHERE username=?`, name).Scan(&uid, &origRole)
+					if origRole == "" {
+						origRole = role
+					}
+					ctx := context.WithValue(r.Context(), userKey, principal{ID: uid, Name: name, Role: role, OriginalRole: origRole})
 					next.ServeHTTP(w, r.WithContext(ctx))
 					return
 				}
@@ -222,6 +237,23 @@ func (s *Server) auth(next http.Handler) http.Handler {
 
 		fail(w, 401, "invalid token")
 	})
+}
+
+func (s *Server) canAccessOLT(ctx context.Context, r *http.Request, oltID int64) bool {
+	u := userFrom(r)
+	if u.Role == "admin" || u.OriginalRole == "admin" {
+		return true
+	}
+	if u.OriginalRole == "reseller" && u.ID > 0 {
+		var exists int
+		err := s.db.QueryRowContext(ctx, `SELECT 1 FROM olt_resellers WHERE olt_id=? AND reseller_id=?`, oltID, u.ID).Scan(&exists)
+		return err == nil && exists == 1
+	}
+	// For backward-compatibility with any operator user without specific reseller mapping
+	if u.Role == "operator" && u.OriginalRole != "reseller" {
+		return true
+	}
+	return false
 }
 
 func need(minRole string) func(http.Handler) http.Handler {

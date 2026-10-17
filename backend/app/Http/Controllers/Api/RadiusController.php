@@ -36,12 +36,22 @@ class RadiusController extends Controller
             ->leftJoin('pppoe_customers as pc', 'pc.username', '=', 'radacct.username')
             ->leftJoin('internet_plans as pp', 'pp.id', '=', 'pc.plan_id')
             ->leftJoin('users as pppoe_reseller', 'pppoe_reseller.id', '=', 'pc.reseller_id')
+            ->leftJoin('ont_inventory as oi', 'oi.serial_number', '=', 'pc.onu_serial_number')
             ->select(
                 'radacct.radacctid',
                 'vouchers.id as voucher_id',
                 'vouchers.code as voucher_code',
                 'radacct.username',
                 'pc.id as pppoe_customer_id',
+                'pc.onu_serial_number as cpe_serial_number',
+                'oi.rx_power_dbm as ont_rx_power',
+                'oi.run_state as ont_run_state',
+                'oi.last_seen_at as ont_optical_updated_at',
+                'oi.olt_id as ont_olt_id',
+                'oi.frame as ont_frame',
+                'oi.slot as ont_slot',
+                'oi.pon_port as ont_pon_port',
+                'oi.ont_id as ont_ont_id',
                 DB::raw("CASE WHEN pc.id IS NOT NULL THEN 'pppoe' ELSE 'hotspot' END as connection_type"),
                 DB::raw('CASE WHEN pc.id IS NOT NULL THEN pc.full_name ELSE vouchers.customer_username END as customer_username'),
                 DB::raw('CASE WHEN pc.id IS NOT NULL THEN COALESCE(pc.contract_price, pp.selling_price) ELSE vouchers.price END as price'),
@@ -122,6 +132,7 @@ class RadiusController extends Controller
                   ->orWhere('p.name', 'like', "%{$search}%")
                   ->orWhere('pc.full_name', 'like', "%{$search}%")
                   ->orWhere('pc.phone', 'like', "%{$search}%")
+                  ->orWhere('pc.onu_serial_number', 'like', "%{$search}%")
                   ->orWhere('pp.name', 'like', "%{$search}%")
                   // Let operators search by router name, not just its IP.
                   ->orWhereIn('radacct.nasipaddress', function ($sub) use ($search) {

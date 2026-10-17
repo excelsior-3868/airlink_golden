@@ -43,7 +43,9 @@ class PppoeCustomerController extends Controller
                   ->orWhere('full_name', 'like', "%{$search}%")
                   ->orWhere('phone', 'like', "%{$search}%")
                   ->orWhere('customer_code', 'like', "%{$search}%")
-                  ->orWhere('address', 'like', "%{$search}%");
+                  ->orWhere('address', 'like', "%{$search}%")
+                  ->orWhere('onu_serial_number', 'like', "%{$search}%")
+                  ->orWhere('mac_address', 'like', "%{$search}%");
             });
         }
 

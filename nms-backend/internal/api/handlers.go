@@ -18,19 +18,33 @@ func (s *Server) summary(w http.ResponseWriter, r *http.Request) {
 			out[key] = rows[0]
 		}
 	}
-	one("devices", `SELECT count(*) AS total,
-		COALESCE(SUM(status='up'), 0) AS up,
-		COALESCE(SUM(status='down'), 0) AS down,
-		COALESCE(SUM(status='unknown'), 0) AS unknown FROM devices WHERE enabled=1`)
+	u := userFrom(r)
+	if u.OriginalRole == "reseller" && u.ID > 0 {
+		one("devices", `SELECT count(*) AS total,
+			COALESCE(SUM(status='up'), 0) AS up,
+			COALESCE(SUM(status='down'), 0) AS down,
+			COALESCE(SUM(status='unknown'), 0) AS unknown
+			FROM devices WHERE enabled=1 AND id IN (SELECT olt_id FROM olt_resellers WHERE reseller_id=?)`, u.ID)
+		one("onts", `SELECT count(*) AS total,
+			COALESCE(SUM(run_state='online'), 0) AS online,
+			COALESCE(SUM(run_state<>'online'), 0) AS not_online
+			FROM ont_inventory
+			WHERE olt_id IN (SELECT olt_id FROM olt_resellers WHERE reseller_id=?) AND reseller_id=?`, u.ID, u.ID)
+	} else {
+		one("devices", `SELECT count(*) AS total,
+			COALESCE(SUM(status='up'), 0) AS up,
+			COALESCE(SUM(status='down'), 0) AS down,
+			COALESCE(SUM(status='unknown'), 0) AS unknown FROM devices WHERE enabled=1`)
+		one("onts", `SELECT count(*) AS total,
+			COALESCE(SUM(run_state='online'), 0) AS online,
+			COALESCE(SUM(run_state<>'online'), 0) AS not_online FROM ont_inventory`)
+	}
 	one("alerts", `SELECT
 		COALESCE(SUM(state<>'resolved' AND suppressed_by IS NULL AND severity='P1'), 0) AS p1,
 		COALESCE(SUM(state<>'resolved' AND suppressed_by IS NULL AND severity='P2'), 0) AS p2,
 		COALESCE(SUM(state<>'resolved' AND suppressed_by IS NULL AND severity='P3'), 0) AS p3,
 		COALESCE(SUM(state='open' AND suppressed_by IS NULL), 0) AS unacknowledged,
 		COALESCE(SUM(state<>'resolved' AND suppressed_by IS NOT NULL), 0) AS suppressed FROM alerts`)
-	one("onts", `SELECT count(*) AS total,
-		COALESCE(SUM(run_state='online'), 0) AS online,
-		COALESCE(SUM(run_state<>'online'), 0) AS not_online FROM ont_inventory`)
 	one("mtta", `SELECT COALESCE(AVG(TIMESTAMPDIFF(SECOND, opened_at, acknowledged_at)), 0) AS seconds
 		FROM alerts WHERE acknowledged_at IS NOT NULL AND opened_at > NOW() - INTERVAL 30 DAY`)
 	if rows, err := s.queryJSON(ctx, `
@@ -80,12 +94,25 @@ func (s *Server) createPop(w http.ResponseWriter, r *http.Request) {
 
 const deviceCols = `d.id, d.name, d.ip, d.role, d.vendor, d.pop_id, p.name AS pop, d.parent_id, d.poll_method, d.snmp_version,
 	d.snmp_port, d.tcp_port, d.credential_ref, d.poller_id, d.enabled, d.status, d.status_since, d.last_polled_at,
-	d.sys_descr, d.uptime_seconds, d.cpu_pct, d.mem_pct, d.vlan, d.gem_port, d.gem_port_untagged, d.default_tag_mode, d.line_profile_id, d.srv_profile_id, d.line_profile_id_untagged, d.srv_profile_id_untagged`
+	d.sys_descr, d.uptime_seconds, d.cpu_pct, d.mem_pct, d.vlan, d.gem_port, d.gem_port_untagged, d.default_tag_mode, d.line_profile_id, d.srv_profile_id, d.line_profile_id_untagged, d.srv_profile_id_untagged,
+	res.reseller_ids`
 
 func (s *Server) listDevices(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	sqlQuery := `SELECT ` + deviceCols + ` FROM devices d LEFT JOIN pops p ON p.id=d.pop_id WHERE 1=1`
+	sqlQuery := `SELECT ` + deviceCols + ` FROM devices d 
+		LEFT JOIN pops p ON p.id=d.pop_id 
+		LEFT JOIN (
+			SELECT olt_id, GROUP_CONCAT(reseller_id ORDER BY reseller_id SEPARATOR ',') AS reseller_ids
+			FROM olt_resellers
+			GROUP BY olt_id
+		) res ON res.olt_id = d.id
+		WHERE 1=1`
 	args := []any{}
+	u := userFrom(r)
+	if u.OriginalRole == "reseller" && u.ID > 0 {
+		sqlQuery += ` AND d.id IN (SELECT olt_id FROM olt_resellers WHERE reseller_id=?)`
+		args = append(args, u.ID)
+	}
 	for _, f := range []string{"status", "role"} {
 		if v := q.Get(f); v != "" {
 			args = append(args, v)
@@ -104,7 +131,18 @@ func (s *Server) getDevice(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	rows, err := s.queryJSON(r.Context(), `SELECT `+deviceCols+` FROM devices d LEFT JOIN pops p ON p.id=d.pop_id WHERE d.id=?`, id)
+	if !s.canAccessOLT(r.Context(), r, id) {
+		fail(w, 403, "access denied to this device")
+		return
+	}
+	rows, err := s.queryJSON(r.Context(), `SELECT `+deviceCols+` FROM devices d 
+		LEFT JOIN pops p ON p.id=d.pop_id 
+		LEFT JOIN (
+			SELECT olt_id, GROUP_CONCAT(reseller_id ORDER BY reseller_id SEPARATOR ',') AS reseller_ids
+			FROM olt_resellers
+			GROUP BY olt_id
+		) res ON res.olt_id = d.id
+		WHERE d.id=?`, id)
 	if err != nil {
 		s.dbError(w, err)
 		return
@@ -195,14 +233,15 @@ func (s *Server) updateDevice(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "no fields")
 		return
 	}
-	args = append(args, id)
-	res, err := s.db.ExecContext(r.Context(), fmt.Sprintf(`UPDATE devices SET %s WHERE id=?`, strings.Join(set, ",")), args...)
-	if err != nil {
-		s.dbError(w, err)
+	var exists int
+	if err := s.db.QueryRowContext(r.Context(), `SELECT 1 FROM devices WHERE id=?`, id).Scan(&exists); err != nil {
+		fail(w, 404, "not found")
 		return
 	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		fail(w, 404, "not found")
+	args = append(args, id)
+	_, err := s.db.ExecContext(r.Context(), fmt.Sprintf(`UPDATE devices SET %s WHERE id=?`, strings.Join(set, ",")), args...)
+	if err != nil {
+		s.dbError(w, err)
 		return
 	}
 	s.audit(r, "device.update", fmt.Sprint("device:", id), "")

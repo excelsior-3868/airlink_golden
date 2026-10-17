@@ -526,7 +526,7 @@ export default function PppoeCustomers() {
                 <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
-                  placeholder="Search username, name, phone, IP, MAC..."
+                  placeholder="Search username, name, phone, IP, MAC, CPE Serial..."
                   value={search}
                   onChange={(e) => { setSearch(e.target.value); setPage(1) }}
                   className="w-full pl-9 pr-3.5 py-2 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
@@ -615,7 +615,7 @@ export default function PppoeCustomers() {
                       <th className="py-3 px-4">Subscriber</th>
                       <th className="py-3 px-4">Internet Plan</th>
                       <th className="py-3 px-4">Subscription Expiry</th>
-                      <th className="py-3 px-4">Contract Price</th>
+                      <th className="py-3 px-4">Online Status</th>
                       <th className="py-3 px-4">IP & MAC Lock</th>
                       <th className="py-3 px-4">Status</th>
                       <th className="py-3 px-4 text-right">Actions</th>
@@ -659,12 +659,48 @@ export default function PppoeCustomers() {
                             )}
                           </td>
                           <td className="py-3 px-4">
-                            <div className="font-bold text-slate-900 dark:text-white">
-                              {rs(c.contract_price !== null && c.contract_price !== undefined ? c.contract_price : (c.plan?.selling_price || 0))}
+                            <div className="flex flex-col items-start gap-1">
+                              {c.is_online ? (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/80">
+                                  <span className="relative flex h-2 w-2">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                                  </span>
+                                  Online
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 dark:bg-slate-800/80 text-slate-500 dark:text-slate-400 border border-slate-200/70 dark:border-slate-700/70">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-slate-400 dark:bg-slate-500" />
+                                  Offline
+                                </span>
+                              )}
+
+                              {c.onu_serial_number ? (
+                                <div className="font-mono text-[11px] font-bold text-slate-800 dark:text-slate-200 tracking-tight" title={`CPE Serial: ${c.onu_serial_number}`}>
+                                  {c.onu_serial_number}
+                                </div>
+                              ) : (
+                                <div className="text-[10px] text-slate-400 font-mono">—</div>
+                              )}
+
+                              {c.is_online ? (
+                                c.session_start && (
+                                  <span className="text-[10px] text-slate-400 font-mono">
+                                    Since {date(c.session_start)}
+                                  </span>
+                                )
+                              ) : (
+                                c.last_session_at ? (
+                                  <span className="text-[10px] text-slate-400 font-mono" title={`Last active: ${datet(c.last_session_at)}`}>
+                                    Seen {date(c.last_session_at)}
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] text-slate-400 font-mono">
+                                    Never Connected
+                                  </span>
+                                )
+                              )}
                             </div>
-                            {c.contract_price !== null && (
-                              <div className="text-[10px] text-indigo-600 dark:text-indigo-400 font-medium">Custom Rate</div>
-                            )}
                           </td>
                           <td className="py-3 px-4">
                             <div className="space-y-0.5">

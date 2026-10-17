@@ -2,8 +2,9 @@ import { FormEvent, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
-import { Plus, PlusCircle as IcoPlusCircle, Server as IcoServer, Loader2, ArrowLeft, Edit2 } from 'lucide-react'
+import { Plus, PlusCircle as IcoPlusCircle, Server as IcoServer, Loader2, ArrowLeft, Edit2, Users } from 'lucide-react'
 import { nmsApi, Device, errMsg } from '../../lib/nmsApi'
+import { api } from '../../lib/api'
 import { useAuth } from '../../lib/auth'
 import { ago } from '../../lib/nmsFormat'
 import { CustomSelect } from '../../components/ui'
@@ -40,6 +41,15 @@ export default function NmsDevices() {
   const pops = useQuery({
     queryKey: ['pops'],
     queryFn: async () => (await nmsApi.get<{ id: number; name: string }[]>('/pops')).data,
+  })
+
+  const resellersQuery = useQuery({
+    queryKey: ['resellers-list'],
+    queryFn: async () => {
+      const res = await api.get('/users', { params: { role: 'reseller', per_page: 200 } })
+      return (res.data.data?.data || res.data.data || []) as { id: number; name: string; username: string }[]
+    },
+    enabled: !!canManage,
   })
 
   const create = useMutation({
@@ -164,7 +174,7 @@ export default function NmsDevices() {
                 <Field label="OLT Password">
                   <input name="olt_pass" type="password" className={inputCls} autoComplete="new-password" required />
                 </Field>
-                <Field label="PON Ports (optional)">
+                <Field label="PON Ports (Optional)">
                   <input name="pon_ports" className={inputCls} placeholder="0/4/0,0/4/1" />
                 </Field>
               </>
@@ -238,7 +248,7 @@ export default function NmsDevices() {
         <Table
           head={
             canManage
-              ? ['Operational Status', 'OLT Name', 'Management IP', 'Role', 'VLAN', 'Tagged GEM', 'Untagged GEM', 'Default Mode', 'Last Polled', 'Actions']
+              ? ['Operational Status', 'OLT Name', 'Management IP', 'Role', 'Linked Resellers', 'VLAN', 'Tagged GEM', 'Untagged GEM', 'Default Mode', 'Last Polled', 'Actions']
               : ['Operational Status', 'OLT Name', 'Management IP', 'Role', 'VLAN', 'Tagged GEM', 'Untagged GEM', 'Default Mode', 'Last Polled']
           }
           empty={list.data?.length === 0 ? 'No OLTs Found Matching Criteria.' : undefined}
@@ -249,6 +259,37 @@ export default function NmsDevices() {
               <Td className="font-bold text-slate-800 dark:text-slate-100">{d.name}</Td>
               <Td className="tabular-nums font-mono text-xs">{d.ip}</Td>
               <Td className="capitalize font-medium">{d.role}</Td>
+              {canManage && (
+                <Td>
+                  {d.role === 'olt' ? (
+                    (() => {
+                      const ids = (d.reseller_ids || '').split(',').map((x) => Number(x.trim())).filter(Boolean)
+                      if (ids.length === 0) {
+                        return <span className="text-xs text-slate-400 italic">None</span>
+                      }
+                      return (
+                        <div className="flex flex-wrap gap-1 max-w-[200px]">
+                          {ids.map((id) => {
+                            const r = resellersQuery.data?.find((u) => u.id === id)
+                            return (
+                              <span
+                                key={id}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-primary/10 text-primary border border-primary/20"
+                                title={`Reseller ID: ${id}`}
+                              >
+                                <Users size={10} />
+                                {r?.name || r?.username || `ID ${id}`}
+                              </span>
+                            )
+                          })}
+                        </div>
+                      )
+                    })()
+                  ) : (
+                    <span className="text-slate-400 text-xs">-</span>
+                  )}
+                </Td>
+              )}
               <Td className="tabular-nums font-semibold text-slate-700 dark:text-slate-200">{d.vlan ?? '-'}</Td>
               <Td className="tabular-nums font-semibold text-slate-700 dark:text-slate-200">{d.gem_port ?? '-'}</Td>
               <Td className="tabular-nums font-semibold text-slate-700 dark:text-slate-200">{d.gem_port_untagged ?? d.gem_port ?? '-'}</Td>

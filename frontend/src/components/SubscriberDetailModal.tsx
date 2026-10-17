@@ -1,9 +1,10 @@
 import { useEffect, useState, ReactNode } from 'react'
-import { Users2 } from 'lucide-react'
+import { Users2, Activity, Power, RefreshCw } from 'lucide-react'
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from 'recharts'
 import { api } from '../lib/api'
 import { rs, num, date, datet, bsDate, formatBytes, statusPill } from '../lib/format'
-import { Modal, Pill, Spinner } from './ui'
+import { Modal, Pill, Spinner, ConfirmModal } from './ui'
+import { LiveUsageGraphModal } from './LiveUsageGraphModal'
 
 type Tab = 'info' | 'usage' | 'sessions' | 'recharges'
 
@@ -103,6 +104,43 @@ export default function SubscriberDetailModal({
     return () => { cancelled = true }
   }, [customerId, tab, usageDays])
 
+  const [disconnecting, setDisconnecting] = useState(false)
+  const [confirmDisconnect, setConfirmDisconnect] = useState(false)
+  const [showUsageGraph, setShowUsageGraph] = useState(false)
+  const [actionMsg, setActionMsg] = useState<{ ok: boolean; text: string } | null>(null)
+
+  const reloadData = () => {
+    if (!customerId) return
+    setLoading(true)
+    Promise.all([
+      api.get(`/pppoe/customers/${customerId}`),
+      api.get(`/pppoe/customers/${customerId}/sessions`, { params: { per_page: 100 } }),
+    ])
+      .then(([full, res]) => {
+        setCustomer(full.data?.data ?? null)
+        const rows = res.data?.data?.data
+        setSessions(Array.isArray(rows) ? rows : [])
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }
+
+  const handleDisconnect = async () => {
+    if (!c?.username) return
+    setDisconnecting(true)
+    setActionMsg(null)
+    try {
+      const res = await api.post('/radius/disconnect-user', { username: c.username })
+      setActionMsg({ ok: true, text: res.data?.message || `Disconnected session for ${c.username}.` })
+      reloadData()
+    } catch (e: any) {
+      setActionMsg({ ok: false, text: e.response?.data?.message || `Failed to disconnect ${c.username}.` })
+    } finally {
+      setDisconnecting(false)
+      setConfirmDisconnect(false)
+    }
+  }
+
   const c = customer
   const live = c?.current_session
   const recharges: any[] = c?.recharges || []
@@ -137,11 +175,60 @@ export default function SubscriberDetailModal({
         <div className="py-10 text-center text-xs text-rose-500">{error}</div>
       ) : c ? (
         <div className="space-y-4">
-          <div className="flex items-center border-b border-slate-200 dark:border-slate-800">
-            {tabBtn('info', 'Overview')}
-            {tabBtn('usage', 'Usage History')}
-            {tabBtn('sessions', `Session History (${sessions.length})`)}
-            {tabBtn('recharges', `Recharge History (${recharges.length})`)}
+          {actionMsg && (
+            <div
+              className={`p-3 rounded-xl text-xs font-medium flex items-center justify-between ${
+                actionMsg.ok
+                  ? 'bg-emerald-50 text-emerald-800 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300'
+                  : 'bg-rose-50 text-rose-800 border border-rose-200 dark:bg-rose-950/40 dark:text-rose-300'
+              }`}
+            >
+              <span>{actionMsg.text}</span>
+              <button
+                type="button"
+                onClick={() => setActionMsg(null)}
+                className="text-[10px] font-bold underline ml-2"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center justify-between border-b border-slate-200 dark:border-slate-800 gap-2 pb-1">
+            <div className="flex items-center">
+              {tabBtn('info', 'Overview')}
+              {tabBtn('usage', 'Usage History')}
+              {tabBtn('sessions', `Session History (${sessions.length})`)}
+              {tabBtn('recharges', `Recharge History (${recharges.length})`)}
+            </div>
+
+            {/* Action Buttons in Detail Page */}
+            <div className="flex items-center gap-2 pb-1">
+              {c.is_online && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setShowUsageGraph(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-cyan-50 border border-cyan-200 text-cyan-700 hover:bg-cyan-100 transition shadow-2xs cursor-pointer"
+                    title="View live bandwidth usage graph"
+                  >
+                    <Activity size={14} className="text-cyan-600" />
+                    <span>Live Graph</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDisconnect(true)}
+                    disabled={disconnecting}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-rose-50 border border-rose-200 text-rose-600 hover:bg-rose-100 disabled:opacity-60 transition shadow-2xs cursor-pointer"
+                    title="Disconnect active live session via CoA"
+                  >
+                    <Power size={14} className={disconnecting ? 'animate-pulse text-rose-500' : 'text-rose-600'} />
+                    <span>{disconnecting ? 'Disconnecting...' : 'Disconnect Session'}</span>
+                  </button>
+                </>
+              )}
+            </div>
           </div>
 
           {tab === 'info' && (
@@ -411,6 +498,30 @@ export default function SubscriberDetailModal({
           )}
         </div>
       ) : null}
+
+      <ConfirmModal
+        open={confirmDisconnect}
+        onClose={() => setConfirmDisconnect(false)}
+        onConfirm={handleDisconnect}
+        title="Disconnect Session"
+        message={`Are you sure you want to disconnect live session for '${c?.username}'?`}
+        confirmText="Disconnect"
+        tone="danger"
+      />
+
+      <LiveUsageGraphModal
+        open={showUsageGraph}
+        onClose={() => setShowUsageGraph(false)}
+        username={c?.username || null}
+        sessionMeta={{
+          customer: c?.full_name || c?.username,
+          plan: c?.plan?.name,
+          ip_address: live?.framedipaddress || c?.current_ip,
+          mac_address: live?.callingstationid || c?.mac_address,
+          start_time: live?.acctstarttime,
+          nas_name: c?.nas_device?.name || live?.nasipaddress,
+        }}
+      />
     </Modal>
   )
 }

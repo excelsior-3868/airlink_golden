@@ -2,6 +2,7 @@ package olt
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -285,14 +286,46 @@ func (s *Service) syncInventory(ctx context.Context, oltID int64, req PlanReques
 	if !d.Found {
 		return
 	}
+	var resellerID *int64 = req.ResellerID
+	if resellerID == nil {
+		var jResellerID sql.NullInt64
+		_ = s.db.QueryRowContext(ctx, `SELECT reseller_id FROM provisioning_jobs WHERE olt_id=? AND operation='register_ont' AND JSON_EXTRACT(params, '$.serial')=? ORDER BY id DESC LIMIT 1`, oltID, req.Serial).Scan(&jResellerID)
+		if jResellerID.Valid {
+			resellerID = &jResellerID.Int64
+		}
+	}
+	if resellerID == nil {
+		var pcResellerID sql.NullInt64
+		_ = s.db.QueryRowContext(ctx, `SELECT reseller_id FROM pppoe_customers WHERE onu_serial_number=? LIMIT 1`, req.Serial).Scan(&pcResellerID)
+		if pcResellerID.Valid {
+			resellerID = &pcResellerID.Int64
+		}
+	}
+	if resellerID == nil {
+		// If this OLT has exactly one linked reseller, use that reseller
+		var count int
+		var soleResellerID int64
+		if s.db.QueryRowContext(ctx, `SELECT count(*), COALESCE(MAX(reseller_id), 0) FROM olt_resellers WHERE olt_id=?`, oltID).Scan(&count, &soleResellerID) == nil && count == 1 {
+			resellerID = &soleResellerID
+		}
+	}
+
+	lp := req.LineProfileID
+	sp := req.SrvProfileID
+	if req.TemplateID > 0 {
+		_ = s.db.QueryRowContext(ctx, `SELECT line_profile_id, srv_profile_id FROM service_templates WHERE id=?`, req.TemplateID).Scan(&lp, &sp)
+	}
+
 	if _, err := s.db.ExecContext(ctx, `
-		INSERT INTO ont_inventory (serial_number, olt_id, frame, slot, pon_port, ont_id, description, line_profile_id, srv_profile_id, run_state, config_state, match_state)
-		SELECT ?,?,?,?,?,?,?, t.line_profile_id, t.srv_profile_id, ?,?,? FROM service_templates t WHERE t.id=?
-		ON DUPLICATE KEY UPDATE olt_id=VALUES(olt_id), frame=VALUES(frame), slot=VALUES(slot),
-		  pon_port=VALUES(pon_port), ont_id=VALUES(ont_id), description=VALUES(description),
-		  line_profile_id=VALUES(line_profile_id), srv_profile_id=VALUES(srv_profile_id)`,
-		req.Serial, oltID, d.F, d.S, d.P, d.OntID, req.Description,
-		strings.ToLower(d.RunState), strings.ToLower(d.ConfigState), strings.ToLower(d.MatchState), req.TemplateID); err != nil {
+		INSERT INTO ont_inventory (serial_number, olt_id, reseller_id, frame, slot, pon_port, ont_id, description, line_profile_id, srv_profile_id, run_state, config_state, match_state)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+		ON DUPLICATE KEY UPDATE olt_id=VALUES(olt_id), reseller_id=COALESCE(VALUES(reseller_id), ont_inventory.reseller_id),
+		  frame=VALUES(frame), slot=VALUES(slot), pon_port=VALUES(pon_port), ont_id=VALUES(ont_id), description=VALUES(description),
+		  line_profile_id=COALESCE(VALUES(line_profile_id), ont_inventory.line_profile_id),
+		  srv_profile_id=COALESCE(VALUES(srv_profile_id), ont_inventory.srv_profile_id),
+		  run_state=VALUES(run_state), config_state=VALUES(config_state), match_state=VALUES(match_state)`,
+		req.Serial, oltID, resellerID, d.F, d.S, d.P, d.OntID, req.Description,
+		lp, sp, strings.ToLower(d.RunState), strings.ToLower(d.ConfigState), strings.ToLower(d.MatchState)); err != nil {
 		slog.Warn("inventory sync", "err", err)
 	}
 }

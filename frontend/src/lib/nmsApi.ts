@@ -77,6 +77,7 @@ export interface Device {
   srv_profile_id?: number | null
   line_profile_id_untagged?: number | null
   srv_profile_id_untagged?: number | null
+  reseller_ids?: string | null
 }
 
 export interface Alert {
@@ -143,6 +144,7 @@ export interface Olt {
   srv_profile_id?: number | null
   line_profile_id_untagged?: number | null
   srv_profile_id_untagged?: number | null
+  reseller_ids?: string | null
 }
 
 export interface Ont {
@@ -158,6 +160,9 @@ export interface Ont {
   match_state: string
   rx_power_dbm: number | null
   last_seen_at: string | null
+  reseller_id?: number | null
+  reseller_username?: string
+  reseller_name?: string
 }
 
 export interface Template {

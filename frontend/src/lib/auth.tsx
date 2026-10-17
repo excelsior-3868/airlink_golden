@@ -23,7 +23,7 @@ export interface AuthUser {
 interface AuthState {
   user: AuthUser | null
   loading: boolean
-  login: (username: string, password: string) => Promise<void>
+  login: (username: string, password: string, recaptchaToken?: string) => Promise<void>
   logout: () => Promise<void>
   refresh: () => Promise<void>
   can: (feature?: string) => boolean
@@ -55,8 +55,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     refresh()
   }, [])
 
-  const login = async (username: string, password: string) => {
-    const { data } = await api.post('/login', { username, password })
+  const login = async (username: string, password: string, recaptchaToken?: string) => {
+    const { data } = await api.post('/login', { username, password, recaptcha_token: recaptchaToken })
     // The page-data cache (lib/cache.ts) keys entries by resource name only, not
     // by user — without this, switching accounts without a full reload would
     // flash the previous user's cached dashboard/lists (wrong balances, wrong

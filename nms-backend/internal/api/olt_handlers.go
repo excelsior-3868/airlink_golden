@@ -6,13 +6,32 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/nepalairlink/nms/internal/olt"
 )
 
 func (s *Server) listOLTs(w http.ResponseWriter, r *http.Request) {
+	u := userFrom(r)
+	if u.OriginalRole == "reseller" && u.ID > 0 {
+		s.respondRows(w, r, `
+			SELECT o.device_id AS id, d.name, d.ip, d.status, o.software_version, o.ssh_port, o.pon_ports,
+			       o.detected_version, o.detected_patch, o.last_sync_at,
+			       o.protocol, o.login_user, (o.login_pass_enc IS NOT NULL AND o.login_pass_enc<>'') AS has_password,
+			       (o.protocol='telnet' OR o.ssh_host_key<>'') AS host_key_pinned,
+			       (SELECT count(*) FROM ont_inventory i WHERE i.olt_id=o.device_id AND i.reseller_id=?) AS onts,
+			       (SELECT count(*) FROM ont_inventory i WHERE i.olt_id=o.device_id AND i.run_state='online' AND i.reseller_id=?) AS onts_online,
+			       d.vlan, d.gem_port, d.gem_port_untagged, d.default_tag_mode, d.line_profile_id, d.srv_profile_id, d.line_profile_id_untagged, d.srv_profile_id_untagged
+			FROM olts o
+			JOIN devices d ON d.id=o.device_id
+			JOIN olt_resellers rel ON rel.olt_id=o.device_id AND rel.reseller_id=?
+			ORDER BY d.name`, u.ID, u.ID, u.ID)
+		return
+	}
+
 	s.respondRows(w, r, `
 		SELECT o.device_id AS id, d.name, d.ip, d.status, o.software_version, o.ssh_port, o.pon_ports,
 		       o.detected_version, o.detected_patch, o.last_sync_at,
@@ -20,8 +39,86 @@ func (s *Server) listOLTs(w http.ResponseWriter, r *http.Request) {
 		       (o.protocol='telnet' OR o.ssh_host_key<>'') AS host_key_pinned,
 		       (SELECT count(*) FROM ont_inventory i WHERE i.olt_id=o.device_id) AS onts,
 		       (SELECT count(*) FROM ont_inventory i WHERE i.olt_id=o.device_id AND i.run_state='online') AS onts_online,
-		       d.vlan, d.gem_port, d.gem_port_untagged, d.default_tag_mode, d.line_profile_id, d.srv_profile_id, d.line_profile_id_untagged, d.srv_profile_id_untagged
+		       d.vlan, d.gem_port, d.gem_port_untagged, d.default_tag_mode, d.line_profile_id, d.srv_profile_id, d.line_profile_id_untagged, d.srv_profile_id_untagged,
+		       (SELECT GROUP_CONCAT(reseller_id) FROM olt_resellers r WHERE r.olt_id=o.device_id) AS reseller_ids
 		FROM olts o JOIN devices d ON d.id=o.device_id ORDER BY d.name`)
+}
+
+func (s *Server) getOLTResellers(w http.ResponseWriter, r *http.Request) {
+	id, ok := idParam(w, r, "id")
+	if !ok {
+		return
+	}
+	s.respondRows(w, r, `
+		SELECT u.id, u.username, u.name,
+		       (EXISTS(SELECT 1 FROM olt_resellers r WHERE r.olt_id=? AND r.reseller_id=u.id)=1) AS assigned
+		FROM users u
+		WHERE u.role='reseller' AND u.status='active'
+		ORDER BY u.name, u.username`, id)
+}
+
+func (s *Server) updateOLTResellers(w http.ResponseWriter, r *http.Request) {
+	id, ok := idParam(w, r, "id")
+	if !ok {
+		return
+	}
+	var in struct {
+		ResellerIDs []int64 `json:"reseller_ids"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	tx, err := s.db.BeginTx(r.Context(), nil)
+	if err != nil {
+		s.dbError(w, err)
+		return
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(r.Context(), `DELETE FROM olt_resellers WHERE olt_id=?`, id); err != nil {
+		s.dbError(w, err)
+		return
+	}
+	for _, rid := range in.ResellerIDs {
+		if rid <= 0 {
+			continue
+		}
+		if _, err := tx.ExecContext(r.Context(), `INSERT INTO olt_resellers (olt_id, reseller_id) VALUES (?,?)`, id, rid); err != nil {
+			s.dbError(w, err)
+			return
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		s.dbError(w, err)
+		return
+	}
+	s.audit(r, "olt.update_resellers", fmt.Sprint("olt:", id), fmt.Sprintf("resellers: %v", in.ResellerIDs))
+	writeJSON(w, 200, map[string]any{"ok": true, "olt_id": id, "reseller_ids": in.ResellerIDs})
+}
+
+func (s *Server) updateONTReseller(w http.ResponseWriter, r *http.Request) {
+	oltID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		fail(w, 400, "invalid olt id")
+		return
+	}
+	ontID, err := strconv.ParseInt(chi.URLParam(r, "ontId"), 10, 64)
+	if err != nil {
+		fail(w, 400, "invalid ont id")
+		return
+	}
+	var in struct {
+		ResellerID *int64 `json:"reseller_id"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	if _, err := s.db.ExecContext(r.Context(), `UPDATE ont_inventory SET reseller_id=? WHERE olt_id=? AND id=?`, in.ResellerID, oltID, ontID); err != nil {
+		s.dbError(w, err)
+		return
+	}
+	s.audit(r, "ont.reassign_reseller", fmt.Sprintf("ont:%d", ontID), fmt.Sprintf("olt:%d reseller:%v", oltID, in.ResellerID))
+	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
 func validPonPorts(list string) bool {
@@ -279,15 +376,37 @@ func (s *Server) listONTs(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !s.canAccessOLT(r.Context(), r, id) {
+		fail(w, 403, "access denied to this OLT")
+		return
+	}
+	u := userFrom(r)
+	if u.OriginalRole == "reseller" && u.ID > 0 {
+		s.respondRows(w, r, `
+			SELECT id, serial_number, frame, slot, pon_port, ont_id, description, line_profile_id, srv_profile_id,
+			       run_state, config_state, match_state, rx_power_dbm, last_seen_at, reseller_id
+			FROM ont_inventory
+			WHERE olt_id=? AND (reseller_id=? OR (reseller_id IS NULL AND EXISTS (SELECT 1 FROM pppoe_customers pc WHERE pc.onu_serial_number=ont_inventory.serial_number AND pc.reseller_id=?)))
+			ORDER BY frame, slot, pon_port, ont_id`, id, u.ID, u.ID)
+		return
+	}
 	s.respondRows(w, r, `
-		SELECT id, serial_number, frame, slot, pon_port, ont_id, description, line_profile_id, srv_profile_id,
-		       run_state, config_state, match_state, rx_power_dbm, last_seen_at
-		FROM ont_inventory WHERE olt_id=? ORDER BY frame, slot, pon_port, ont_id`, id)
+		SELECT oi.id, oi.serial_number, oi.frame, oi.slot, oi.pon_port, oi.ont_id, oi.description, oi.line_profile_id, oi.srv_profile_id,
+		       oi.run_state, oi.config_state, oi.match_state, oi.rx_power_dbm, oi.last_seen_at, oi.reseller_id,
+		       COALESCE(u.username, '') AS reseller_username, COALESCE(u.name, '') AS reseller_name
+		FROM ont_inventory oi
+		LEFT JOIN users u ON u.id = oi.reseller_id
+		WHERE oi.olt_id=?
+		ORDER BY oi.frame, oi.slot, oi.pon_port, oi.ont_id`, id)
 }
 
 func (s *Server) autofind(w http.ResponseWriter, r *http.Request) {
 	id, ok := idParam(w, r, "id")
 	if !ok {
+		return
+	}
+	if !s.canAccessOLT(r.Context(), r, id) {
+		fail(w, 403, "access denied to this OLT")
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
@@ -314,6 +433,10 @@ func (s *Server) autofind(w http.ResponseWriter, r *http.Request) {
 func (s *Server) listProfiles(w http.ResponseWriter, r *http.Request) {
 	id, ok := idParam(w, r, "id")
 	if !ok {
+		return
+	}
+	if !s.canAccessOLT(r.Context(), r, id) {
+		fail(w, 403, "access denied to this OLT")
 		return
 	}
 	s.respondRows(w, r, `SELECT id, profile_type, profile_id, profile_name, verified_at FROM olt_profiles WHERE olt_id=? ORDER BY profile_type, profile_id`, id)
@@ -404,7 +527,14 @@ func (s *Server) createTemplate(w http.ResponseWriter, r *http.Request) {
 // ---- provisioning jobs ----
 
 func (s *Server) listJobs(w http.ResponseWriter, r *http.Request) {
-	jobs, err := s.olts.List(r.Context(), 200)
+	u := userFrom(r)
+	var jobs []olt.Job
+	var err error
+	if u.OriginalRole == "reseller" && u.ID > 0 {
+		jobs, err = s.olts.List(r.Context(), 200, u.ID)
+	} else {
+		jobs, err = s.olts.List(r.Context(), 200)
+	}
 	if err != nil {
 		s.dbError(w, err)
 		return
@@ -420,6 +550,10 @@ func (s *Server) getJob(w http.ResponseWriter, r *http.Request) {
 	j, err := s.olts.Get(r.Context(), id)
 	if err != nil {
 		s.dbError(w, err)
+		return
+	}
+	if !s.canAccessOLT(r.Context(), r, j.OLTID) {
+		fail(w, 403, "access denied to this job's OLT")
 		return
 	}
 	writeJSON(w, 200, j)
@@ -443,9 +577,17 @@ func (s *Server) planJob(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &req) {
 		return
 	}
+	if !s.canAccessOLT(r.Context(), r, req.OLTID) {
+		fail(w, 403, "access denied to this OLT")
+		return
+	}
+	u := userFrom(r)
+	if u.OriginalRole == "reseller" && u.ID > 0 {
+		req.ResellerID = &u.ID
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 55*time.Second)
 	defer cancel()
-	j, err := s.olts.Plan(ctx, req, userFrom(r).Name)
+	j, err := s.olts.Plan(ctx, req, u.Name)
 	if err != nil {
 		if errors.Is(err, olt.ErrConflict) || errors.Is(err, olt.ErrBusy) || errors.Is(err, olt.ErrState) {
 			s.jobError(w, err)
@@ -463,6 +605,15 @@ func (s *Server) approveJob(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	j, err := s.olts.Get(r.Context(), id)
+	if err != nil {
+		s.jobError(w, err)
+		return
+	}
+	if !s.canAccessOLT(r.Context(), r, j.OLTID) {
+		fail(w, 403, "access denied to this job's OLT")
+		return
+	}
 	if err := s.olts.Approve(r.Context(), id, userFrom(r).Name); err != nil {
 		s.jobError(w, err)
 		return
@@ -475,9 +626,18 @@ func (s *Server) saveJob(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	j, err := s.olts.Get(r.Context(), id)
+	if err != nil {
+		s.jobError(w, err)
+		return
+	}
+	if !s.canAccessOLT(r.Context(), r, j.OLTID) {
+		fail(w, 403, "access denied to this job's OLT")
+		return
+	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 2*time.Minute)
 	defer cancel()
-	j, err := s.olts.SaveConfig(ctx, id, userFrom(r).Name)
+	j, err = s.olts.SaveConfig(ctx, id, userFrom(r).Name)
 	if err != nil {
 		if errors.Is(err, olt.ErrConflict) || errors.Is(err, olt.ErrBusy) || errors.Is(err, olt.ErrState) {
 			s.jobError(w, err)
@@ -494,6 +654,15 @@ func (s *Server) rejectJob(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	j, err := s.olts.Get(r.Context(), id)
+	if err != nil {
+		s.jobError(w, err)
+		return
+	}
+	if !s.canAccessOLT(r.Context(), r, j.OLTID) {
+		fail(w, 403, "access denied to this job's OLT")
+		return
+	}
 	if err := s.olts.Reject(r.Context(), id, userFrom(r).Name); err != nil {
 		s.jobError(w, err)
 		return
@@ -506,9 +675,18 @@ func (s *Server) applyJob(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	j, err := s.olts.Get(r.Context(), id)
+	if err != nil {
+		s.jobError(w, err)
+		return
+	}
+	if !s.canAccessOLT(r.Context(), r, j.OLTID) {
+		fail(w, 403, "access denied to this job's OLT")
+		return
+	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 10*time.Minute)
 	defer cancel()
-	j, err := s.olts.Apply(ctx, id, userFrom(r).Name)
+	j, err = s.olts.Apply(ctx, id, userFrom(r).Name)
 	if err != nil {
 		s.jobError(w, err)
 		return
