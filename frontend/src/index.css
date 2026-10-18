@@ -613,7 +613,7 @@
   }
 
   table.rt-cards tbody tr, table.rt-cards tfoot tr {
-    margin: 0 0 0.75rem; padding: 0.25rem 0.875rem;
+    margin: 0 0 0.75rem; padding: 0.5rem 1rem;
     background: hsl(var(--card, 0 0% 100%));
     border: 1px solid hsl(var(--border));
     border-radius: 16px;
@@ -621,23 +621,27 @@
   }
   table.rt-cards tbody tr:hover { background: hsl(var(--card, 0 0% 100%)); }
 
+  /* Stacked cell: small label above the value. Cell content can be any markup
+     (multi-line names, badges, button groups), so it must flow as a block
+     rather than being squeezed into a row beside the label. */
   table.rt-cards tbody td, table.rt-cards tfoot td {
-    display: flex; align-items: center; justify-content: space-between; gap: 1rem;
-    width: auto; padding: 0.55rem 0; text-align: right !important;
-    border-bottom: 1px dashed hsl(var(--border));
-    min-height: 2.5rem; overflow-wrap: anywhere;
+    display: block; width: auto; padding: 0.5rem 0; text-align: left !important;
+    border: 0; border-bottom: 1px solid hsl(var(--border) / 0.6);
+    overflow-wrap: anywhere; word-break: normal; min-width: 0;
   }
   table.rt-cards tbody td:last-child, table.rt-cards tfoot td:last-child { border-bottom: 0; }
+  table.rt-cards td:empty { display: none; }
+  /* Inline rows inside a cell (name + badge + phone) wrap instead of squeezing. */
+  table.rt-cards td .flex:not(.flex-col) { flex-wrap: wrap; }
   table.rt-cards td::before {
-    content: attr(data-label);
-    flex: 0 0 38%; max-width: 40%; text-align: left;
-    font-size: 0.7rem; font-weight: 700; letter-spacing: 0.03em;
+    content: attr(data-label); display: block; margin-bottom: 0.2rem;
+    font-size: 0.65rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
     color: hsl(var(--muted-foreground, 215 16% 47%));
   }
-  /* Unlabelled cells (action buttons, checkboxes) and full-width cells use the whole row. */
+  /* Unlabelled cells (action buttons, checkboxes) and full-width cells. */
   table.rt-cards td:not([data-label])::before, table.rt-cards td[data-full]::before { content: none; }
-  table.rt-cards td:not([data-label]), table.rt-cards td[data-full] { justify-content: flex-end; flex-wrap: wrap; }
-  table.rt-cards td[data-full] { justify-content: center; text-align: center !important; }
+  table.rt-cards td:not([data-label]) { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+  table.rt-cards td[data-full] { text-align: center !important; }
 
   /* Let wrapper scrollers stop clipping the cards. */
   .overflow-x-auto:has(> table.rt-cards) { overflow-x: visible; }
