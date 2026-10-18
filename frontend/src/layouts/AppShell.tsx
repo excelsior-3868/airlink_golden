@@ -535,7 +535,7 @@ export default function AppShell() {
           same curve as the panel edge. */}
       <div
         style={{ ['--app-sidebar-offset' as string]: collapsed ? CONTENT_OFFSET_RAIL : CONTENT_OFFSET_FULL } as React.CSSProperties}
-        className="app-content-motion flex-1 min-w-0 px-3 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:px-4 md:p-0 md:ml-[var(--app-sidebar-offset)]"
+        className="app-content-motion flex-1 min-w-0 max-w-full overflow-x-clip px-3 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:px-4 md:p-0 md:ml-[var(--app-sidebar-offset)]"
       >
         <motion.main initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
           <Outlet />

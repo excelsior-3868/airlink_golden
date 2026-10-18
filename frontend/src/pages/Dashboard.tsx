@@ -169,7 +169,7 @@ export default function Dashboard() {
         icon={<LayoutDashboard size={22} className="text-blue-500" />}
         showOnlineUsers={true}
         action={
-          <div className="flex items-center divide-x divide-slate-200 rounded-full border border-slate-200 bg-white overflow-hidden shadow-sm">
+          <div className="flex items-center divide-x divide-slate-200 rounded-full border border-slate-200 bg-white overflow-x-auto max-w-full shadow-sm">
             {showQuickFund && (
               <motion.button
                 whileTap={{ scale: 0.95 }}

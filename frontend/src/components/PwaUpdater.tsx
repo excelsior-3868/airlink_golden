@@ -17,6 +17,19 @@ export default function PwaUpdater() {
 
   useEffect(() => {
     const updateSW = registerSW({
+      // An installed PWA is often resumed from the background rather than
+      // reloaded, so the browser never re-checks the service worker and keeps
+      // serving the old build. Check on every resume and hourly.
+      onRegisteredSW(_url, registration) {
+        if (!registration) return
+        const check = () => { registration.update().catch(() => {}) }
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') check()
+        })
+        window.addEventListener('online', check)
+        setInterval(check, 60 * 60 * 1000)
+        check()
+      },
       onNeedRefresh() {
         setNeedRefresh(true)
       },

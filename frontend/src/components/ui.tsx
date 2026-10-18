@@ -227,7 +227,7 @@ export function PageTitle({
 
   return (
     <div className="flex items-start justify-between mb-6 flex-wrap gap-4 pt-4">
-      <div className="flex items-start gap-4">
+      <div className="flex items-start gap-4 min-w-0 max-w-full">
         {icon && (
           <div className="p-3 rounded-2xl shrink-0 bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 shadow-sm flex items-center justify-center">
             {icon}
@@ -241,7 +241,7 @@ export function PageTitle({
         </div>
       </div>
       
-      <div className="flex items-center gap-2.5 flex-wrap">
+      <div className="flex items-center gap-2.5 flex-wrap min-w-0 max-w-full">
         {/* Wallet / GB balance pills and the online-users badge are independent:
             the Dashboard already shows both balances as StatCards, so it opts
             out of the pills while keeping the badge. */}
