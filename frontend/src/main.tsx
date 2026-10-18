@@ -11,6 +11,9 @@ import BottomDock from './components/BottomDock'
 import { ThemeProvider } from './lib/theme'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import './index.css'
+import { initResponsiveTables } from './lib/responsiveTables'
+
+initResponsiveTables()
 
 const queryClient = new QueryClient({
   defaultOptions: {

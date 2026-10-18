@@ -596,3 +596,51 @@
   }
 }
 
+
+/* ==============================================================
+   MOBILE: TABLES RENDER AS CARDS
+   Labels come from src/lib/responsiveTables.ts (data-label on each td).
+   ============================================================== */
+@media screen and (max-width: 767px) {
+  table.rt-cards, table.rt-cards tbody, table.rt-cards tfoot,
+  table.rt-cards tr, table.rt-cards td { display: block; width: 100%; }
+  table.rt-cards { min-width: 0 !important; border: 0; }
+
+  /* Header row is replaced by per-cell labels. */
+  table.rt-cards thead {
+    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+
+  table.rt-cards tbody tr, table.rt-cards tfoot tr {
+    margin: 0 0 0.75rem; padding: 0.25rem 0.875rem;
+    background: hsl(var(--card, 0 0% 100%));
+    border: 1px solid hsl(var(--border));
+    border-radius: 16px;
+    box-shadow: 0 1px 2px rgb(15 23 42 / 0.05);
+  }
+  table.rt-cards tbody tr:hover { background: hsl(var(--card, 0 0% 100%)); }
+
+  table.rt-cards tbody td, table.rt-cards tfoot td {
+    display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+    width: auto; padding: 0.55rem 0; text-align: right !important;
+    border-bottom: 1px dashed hsl(var(--border));
+    min-height: 2.5rem; overflow-wrap: anywhere;
+  }
+  table.rt-cards tbody td:last-child, table.rt-cards tfoot td:last-child { border-bottom: 0; }
+  table.rt-cards td::before {
+    content: attr(data-label);
+    flex: 0 0 38%; max-width: 40%; text-align: left;
+    font-size: 0.7rem; font-weight: 700; letter-spacing: 0.03em;
+    color: hsl(var(--muted-foreground, 215 16% 47%));
+  }
+  /* Unlabelled cells (action buttons, checkboxes) and full-width cells use the whole row. */
+  table.rt-cards td:not([data-label])::before, table.rt-cards td[data-full]::before { content: none; }
+  table.rt-cards td:not([data-label]), table.rt-cards td[data-full] { justify-content: flex-end; flex-wrap: wrap; }
+  table.rt-cards td[data-full] { justify-content: center; text-align: center !important; }
+
+  /* Let wrapper scrollers stop clipping the cards. */
+  .overflow-x-auto:has(> table.rt-cards) { overflow-x: visible; }
+
+  .dark table.rt-cards tbody tr, .dark table.rt-cards tfoot tr { background: hsl(222 47% 11%); }
+}
