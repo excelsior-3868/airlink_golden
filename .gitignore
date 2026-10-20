@@ -28,3 +28,7 @@ implementation_plan_formera
 # OpenVPN profile + keys for the OLT tunnel
 /vpn/
 client*.ovpn
+
+# Production DB dump and RADIUS shared secrets — never commit
+/nalrd_backup.sql
+/backend/clients.conf
