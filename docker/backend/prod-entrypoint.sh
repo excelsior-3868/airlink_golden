@@ -13,6 +13,13 @@ if [ "${RUN_MIGRATIONS:-1}" = "1" ]; then
   php artisan db:seed --force || true
 fi
 
+# Guard against files that arrived with host modes (e.g. 640 root) via docker cp
+# or a bind mount: php-fpm runs as www-data and must be able to read the code.
+chmod -R a+rX /var/www/html 2>/dev/null || true
+# ...but keep secrets readable only by the app user/group, not world-readable.
+[ -f /var/www/html/.env ] && chown root:www-data /var/www/html/.env && chmod 640 /var/www/html/.env || true
+chown -R www-data:www-data storage bootstrap/cache 2>/dev/null || true
+
 # Cache config/routes for speed (safe to re-run).
 php artisan config:cache
 php artisan route:cache
