@@ -130,4 +130,52 @@ class WalletService
             'balance_after' => $u->wallet_balance, 'reference' => $reference, 'note' => $note,
         ]);
     }
+
+    /** Credit money into user's wallet as package adjustment refund. */
+    public function refundPackageAdjustment(User $user, float $amount, string $reference, ?string $note = null): void
+    {
+        $u = User::whereKey($user->id)->lockForUpdate()->first();
+        $u->increment('wallet_balance', $amount);
+        $u->refresh();
+        WalletTransaction::create([
+            'user_id' => $u->id,
+            'type' => 'package_adjustment',
+            'amount' => $amount,
+            'balance_after' => $u->wallet_balance,
+            'reference' => $reference,
+            'note' => $note ?? 'Package adjustment refund',
+        ]);
+    }
+
+    /** Debit admin's wallet for commission reversal/clawback on package correction. */
+    public function clawbackCommission(User $admin, float $amount, string $reference, ?string $note = null): void
+    {
+        $u = User::whereKey($admin->id)->lockForUpdate()->first();
+        $u->decrement('wallet_balance', $amount);
+        $u->refresh();
+        WalletTransaction::create([
+            'user_id' => $u->id,
+            'type' => 'commission_reversal',
+            'amount' => $amount,
+            'balance_after' => $u->wallet_balance,
+            'reference' => $reference,
+            'note' => $note ?? 'Admin commission reversal on package adjustment',
+        ]);
+    }
+
+    /** Post additional charge to reseller due instead of wallet debit. */
+    public function postToDue(User $user, float $amount, string $reference, ?string $note = null): void
+    {
+        $u = User::whereKey($user->id)->lockForUpdate()->first();
+        $u->increment('wallet_due', $amount);
+        $u->refresh();
+        WalletTransaction::create([
+            'user_id' => $u->id,
+            'type' => 'package_adjustment',
+            'amount' => $amount,
+            'balance_after' => $u->wallet_balance,
+            'reference' => $reference,
+            'note' => ($note ? $note . ' ' : '') . "(Posted to Reseller Due Rs. {$amount})",
+        ]);
+    }
 }

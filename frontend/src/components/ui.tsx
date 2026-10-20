@@ -417,6 +417,7 @@ export function EmptyState({ title = 'No Data Available', subtitle = 'There are 
 export interface SelectOption {
   value: any;
   label: string;
+  sublabel?: string;
   icon?: ReactNode;
   badge?: ReactNode;
   group?: string;
@@ -636,7 +637,10 @@ export function CustomSelect({
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
                         {opt.icon && <div className="shrink-0 flex items-center justify-center">{opt.icon}</div>}
-                        <span className="whitespace-nowrap pr-2">{opt.label}</span>
+                        <div className="min-w-0">
+                          <span className="whitespace-nowrap pr-2 block">{opt.label}</span>
+                          {opt.sublabel && <span className="text-[11px] font-normal text-slate-400 block whitespace-normal mt-0.5">{opt.sublabel}</span>}
+                        </div>
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
                         {opt.badge}

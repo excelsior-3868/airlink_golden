@@ -1,10 +1,11 @@
 import { useEffect, useState, ReactNode } from 'react'
-import { Users2, Activity, Power, RefreshCw } from 'lucide-react'
+import { Users2, Activity, Power, RefreshCw, ArrowLeftRight } from 'lucide-react'
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from 'recharts'
 import { api } from '../lib/api'
 import { rs, num, date, datet, bsDate, formatBytes, statusPill } from '../lib/format'
 import { Modal, Pill, Spinner, ConfirmModal } from './ui'
 import { LiveUsageGraphModal } from './LiveUsageGraphModal'
+import ChangePackageModal from './ChangePackageModal'
 
 type Tab = 'info' | 'usage' | 'sessions' | 'recharges'
 
@@ -107,6 +108,7 @@ export default function SubscriberDetailModal({
   const [disconnecting, setDisconnecting] = useState(false)
   const [confirmDisconnect, setConfirmDisconnect] = useState(false)
   const [showUsageGraph, setShowUsageGraph] = useState(false)
+  const [changePackageOpen, setChangePackageOpen] = useState(false)
   const [actionMsg, setActionMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
   const reloadData = () => {
@@ -228,6 +230,16 @@ export default function SubscriberDetailModal({
                   </button>
                 </>
               )}
+
+              <button
+                type="button"
+                onClick={() => setChangePackageOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 transition shadow-2xs cursor-pointer"
+                title="Change Package / Plan Migration"
+              >
+                <ArrowLeftRight size={14} className="text-amber-600" />
+                <span>Change Package</span>
+              </button>
             </div>
           </div>
 
@@ -521,6 +533,13 @@ export default function SubscriberDetailModal({
           start_time: live?.acctstarttime,
           nas_name: c?.nas_device?.name || live?.nasipaddress,
         }}
+      />
+      {/* Change Package Modal */}
+      <ChangePackageModal
+        open={changePackageOpen}
+        onClose={() => setChangePackageOpen(false)}
+        customer={customer}
+        onSuccess={reloadData}
       />
     </Modal>
   )

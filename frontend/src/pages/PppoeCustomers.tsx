@@ -3,7 +3,8 @@ import { motion } from 'framer-motion'
 import {
   Users2, Plus, Zap, Pencil, Trash2, PauseCircle, PlayCircle, Unplug,
   Eye, Search, RotateCcw, Download, Router, Shield, Clock,
-  AlertTriangle, CheckCircle, Activity, CheckCircle2, XCircle, Loader2
+  AlertTriangle, CheckCircle, Activity, CheckCircle2, XCircle, Loader2,
+  ArrowLeftRight
 } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useQuery, invalidateCache } from '../lib/cache'
@@ -15,6 +16,7 @@ import {
 } from '../components/ui'
 import PppoeRechargeModal from '../components/PppoeRechargeModal'
 import SubscriberDetailModal from '../components/SubscriberDetailModal'
+import ChangePackageModal from '../components/ChangePackageModal'
 
 const PER_PAGE = 15
 
@@ -60,6 +62,8 @@ export default function PppoeCustomers() {
 
   const [rechargeModalOpen, setRechargeModalOpen] = useState(false)
   const [selectedForRecharge, setSelectedForRecharge] = useState<any>(null)
+  const [changePackageModalOpen, setChangePackageModalOpen] = useState(false)
+  const [selectedForPackageChange, setSelectedForPackageChange] = useState<any>(null)
 
   // Real-time Username Duplication Check State
   const [usernameChecking, setUsernameChecking] = useState(false)
@@ -736,6 +740,18 @@ export default function PppoeCustomers() {
                           </td>
                           <td className="py-3 px-4 text-right" onClick={(e) => e.stopPropagation()}>
                             <div className="flex items-center justify-end gap-1.5">
+                              {/* Change Package Button */}
+                              {can('create_pppoe_customer') && (
+                                <button
+                                  type="button"
+                                  onClick={() => { setSelectedForPackageChange(c); setChangePackageModalOpen(true) }}
+                                  className="p-1.5 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/50 rounded-lg transition"
+                                  title="Change Package / Plan Migration"
+                                >
+                                  <ArrowLeftRight size={15} />
+                                </button>
+                              )}
+
                               {/* Recharge Button — only rendered when subscriber is expired */}
                               {can('recharge_pppoe_customer') && (c.status === 'expired' || (c.expires_at && new Date(c.expires_at) < new Date())) && (
                                 <button
@@ -1454,6 +1470,14 @@ export default function PppoeCustomers() {
         open={rechargeModalOpen}
         onClose={() => setRechargeModalOpen(false)}
         customer={selectedForRecharge}
+        onSuccess={loadAll}
+      />
+
+      {/* Change Package Modal Component */}
+      <ChangePackageModal
+        open={changePackageModalOpen}
+        onClose={() => setChangePackageModalOpen(false)}
+        customer={selectedForPackageChange}
         onSuccess={loadAll}
       />
 

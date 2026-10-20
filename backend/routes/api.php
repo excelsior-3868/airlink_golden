@@ -174,6 +174,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get   ('/pppoe/customers/{customer}/usage',       [PppoeCustomerController::class, 'usage'])       ->middleware('permission:view_pppoe');
         Route::put   ('/pppoe/customers/{customer}',             [PppoeCustomerController::class, 'update'])      ->middleware('permission:create_pppoe_customer');
         Route::patch ('/pppoe/customers/{customer}/plan',        [PppoeCustomerController::class, 'changePlan'])  ->middleware('permission:create_pppoe_customer');
+        Route::get   ('/pppoe/customers/{customer}/change-package-preview', [PppoeCustomerController::class, 'previewChangePackage'])->middleware('permission:view_pppoe,create_pppoe_customer');
+        Route::post  ('/pppoe/customers/{customer}/change-package', [PppoeCustomerController::class, 'changePackage'])->middleware('permission:create_pppoe_customer,recharge_pppoe_customer');
         Route::patch ('/pppoe/customers/{customer}/suspend',     [PppoeCustomerController::class, 'suspend'])     ->middleware('permission:suspend_pppoe_customer');
         Route::patch ('/pppoe/customers/{customer}/resume',      [PppoeCustomerController::class, 'resume'])      ->middleware('permission:suspend_pppoe_customer');
         Route::post  ('/pppoe/customers/{customer}/disconnect',  [PppoeCustomerController::class, 'disconnect'])  ->middleware('permission:suspend_pppoe_customer');

@@ -462,6 +462,109 @@ class PppoeCustomerController extends Controller
     }
 
     /**
+     * Price/expiry overrides, free (no_wallet) changes and cash settlement are
+     * admin-only; everyone else gets the plan-derived amounts and wallet payment.
+     */
+    private function assertPackageChangeOverrideAllowed($actor, array $data): void
+    {
+        if ($actor->isAdmin()) {
+            return;
+        }
+
+        $restricted = in_array($data['mode'] ?? null, ['custom', 'no_wallet'], true)
+            || isset($data['custom_price'])
+            || isset($data['custom_expires_at'])
+            || ($data['payment_method'] ?? 'wallet') === 'cash';
+
+        if ($restricted) {
+            abort(response()->json([
+                'success' => false,
+                'message' => 'Only an administrator can use custom pricing, custom expiry, free changes or cash settlement.',
+            ], 403));
+        }
+    }
+
+    /**
+     * Preview calculation for changing subscriber package.
+     */
+    public function previewChangePackage(Request $request, PppoeCustomer $customer): JsonResponse
+    {
+        $actor = $request->user();
+        if (!$this->canAccess($actor, $customer)) {
+            return $this->fail('You do not have access to this subscriber.', 403);
+        }
+
+        $data = $request->validate([
+            'plan_id' => ['required', 'integer', 'exists:internet_plans,id'],
+            'mode' => ['nullable', 'string', 'in:replace_period,prorated,no_wallet,custom'],
+            'custom_price' => ['nullable', 'numeric', 'min:0', 'max:10000000'],
+        ]);
+
+        $this->assertPackageChangeOverrideAllowed($actor, $data);
+
+        $targetPlan = InternetPlan::where('status', 'active')->where('type', 'pppoe')->findOrFail($data['plan_id']);
+        $mode = $data['mode'] ?? 'replace_period';
+        $customPrice = isset($data['custom_price']) ? (float) $data['custom_price'] : null;
+
+        $preview = $this->rechargeService->previewPackageChange(
+            $customer,
+            $targetPlan,
+            $mode,
+            $customPrice,
+            $actor
+        );
+
+        return $this->ok($preview);
+    }
+
+    /**
+     * Apply package change with financial and validity reconciliation.
+     */
+    public function changePackage(Request $request, PppoeCustomer $customer): JsonResponse
+    {
+        $actor = $request->user();
+        if (!$this->canAccess($actor, $customer)) {
+            return $this->fail('You do not have access to this subscriber.', 403);
+        }
+
+        if (!$actor->tokenCan('pppoe.write') && !$actor->tokenCan('pppoe.recharge') && !$actor->tokenCan('*')) {
+            return $this->fail("This API token does not have permission to change packages.", 403);
+        }
+
+        $data = $request->validate([
+            'plan_id' => ['required', 'integer', 'exists:internet_plans,id'],
+            'mode' => ['nullable', 'string', 'in:replace_period,prorated,no_wallet,custom'],
+            'custom_price' => ['nullable', 'numeric', 'min:0', 'max:10000000'],
+            'custom_expires_at' => ['nullable', 'date', 'after:now', 'before:+5 years'],
+            'payment_method' => ['nullable', 'string', 'in:wallet,cash,post_to_due'],
+            'note' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $this->assertPackageChangeOverrideAllowed($actor, $data);
+
+        $targetPlan = InternetPlan::where('status', 'active')->where('type', 'pppoe')->findOrFail($data['plan_id']);
+        $mode = $data['mode'] ?? 'replace_period';
+        $customPrice = isset($data['custom_price']) ? (float) $data['custom_price'] : null;
+        $customExpiresAt = $data['custom_expires_at'] ?? null;
+        $paymentMethod = $data['payment_method'] ?? 'wallet';
+        $note = $data['note'] ?? null;
+
+        $result = $this->rechargeService->changePackage(
+            $actor,
+            $customer,
+            $targetPlan,
+            $mode,
+            $customPrice,
+            $customExpiresAt,
+            $paymentMethod,
+            $note
+        );
+
+        return $this->ok($result, 'Package changed successfully. Wallet and commission reconciled.');
+    }
+
+
+    /**
      * Disconnect active live sessions.
      */
     public function disconnect(Request $request, PppoeCustomer $customer): JsonResponse
