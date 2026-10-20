@@ -26,11 +26,14 @@ use App\Http\Controllers\Api\PppoeCustomerController;
 use App\Http\Controllers\Api\PppoeRechargeController;
 use App\Http\Controllers\Api\BrandingSettingController;
 use App\Http\Controllers\Api\MonitoringController;
+use App\Http\Controllers\Api\SecurityController;
 use Illuminate\Support\Facades\Route;
 
 // --- Public ---
 Route::get('/auth/recaptcha-config', [AuthController::class, 'recaptchaConfig']);
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:login');
+Route::post('/login/2fa/setup', [AuthController::class, 'twoFactorSetup'])->middleware('throttle:login');
+Route::post('/login/2fa/verify', [AuthController::class, 'twoFactorVerify'])->middleware('throttle:login');
 Route::get('/settings/branding', [BrandingSettingController::class, 'show']);
 
 // --- Authenticated ---
@@ -225,6 +228,9 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     Route::middleware('role:admin')->group(function () {
+        Route::get('/admin/security/totp', [SecurityController::class, 'totp']);
+        Route::put('/admin/security/totp', [SecurityController::class, 'updateTotp']);
+        Route::post('/admin/security/totp/reset/{user}', [SecurityController::class, 'resetUserTotp']);
         Route::get('/admin/system-loads', [UserController::class, 'systemLoadHistory']);
         Route::post('/admin/system-load', [UserController::class, 'systemLoad']);
         Route::patch('/users/{user}/gb-rate', [UserController::class, 'updateGbRate']);

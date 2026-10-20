@@ -84,6 +84,7 @@ const NAV: NavItem[] = [
     color: 'text-slate-500',
     children: [
       { to: '/settings/branding', label: 'Branding', roles: ['admin', 'reseller', 'seller'], icon: Palette, color: 'text-indigo-500' },
+      { to: '/settings/security', label: 'Security (2FA)', roles: ['admin'], icon: Shield, color: 'text-emerald-500' },
       { to: '/settings/payment-methods', label: 'Payment Methods', roles: ['admin'], icon: CreditCard, color: 'text-sky-500' },
       { to: '/settings/chart-of-accounts', label: 'Chart of Accounts', roles: ['admin'], icon: BookOpen, color: 'text-emerald-600' },
       { to: '/settings/system-load', label: 'System Load', roles: ['admin'], icon: WalletIcon, color: 'text-emerald-500' },

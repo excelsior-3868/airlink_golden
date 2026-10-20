@@ -17,7 +17,7 @@ use Laravel\Sanctum\HasApiTokens;
     'wallet_balance', 'wallet_due', 'gb_balance', 'gb_rate', 'commission_percent', 'status', 'created_by',
     'must_reset_password', 'legacy_id', 'legacy_username',
 ])]
-#[Hidden(['password', 'remember_token'])]
+#[Hidden(['password', 'remember_token', 'totp_secret', 'totp_recovery_codes', 'totp_last_step'])]
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
@@ -35,6 +35,8 @@ class User extends Authenticatable
             'commission_percent' => 'decimal:2',
             'commission_due' => 'decimal:2',
             'must_reset_password' => 'boolean',
+            'totp_secret' => 'encrypted',
+            'totp_confirmed_at' => 'datetime',
         ];
     }
 

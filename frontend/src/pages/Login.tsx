@@ -1,15 +1,16 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Lock, User as UserIcon, Wifi, Eye, EyeOff, Loader2, ArrowRight } from 'lucide-react'
-import { useAuth } from '../lib/auth'
+import { Lock, User as UserIcon, Wifi, Eye, EyeOff, Loader2, ArrowRight, ShieldCheck } from 'lucide-react'
+import QRCode from 'qrcode'
+import { useAuth, type AuthUser } from '../lib/auth'
 import { useBranding } from '../lib/branding'
-import { apiError } from '../lib/api'
+import { api, apiError } from '../lib/api'
 import { ThemeToggle } from '../lib/theme'
 import { useRecaptcha } from '../lib/recaptcha'
 
 export default function Login() {
-  const { login, user } = useAuth()
+  const { login, verifyTwoFactor, completeLogin, user } = useAuth()
   const { branding } = useBranding()
   const nav = useNavigate()
   const getRecaptchaToken = useRecaptcha('login')
@@ -18,21 +19,70 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false)
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
+  // Two-factor step (shown after the password is accepted for roles that require it).
+  const [challenge, setChallenge] = useState<string | null>(null)
+  const [enrolling, setEnrolling] = useState(false)
+  const [qr, setQr] = useState('')
+  const [secret, setSecret] = useState('')
+  const [code, setCode] = useState('')
+  // After enrolling: sign-in is held back until the user has saved their recovery codes.
+  const [pending, setPending] = useState<{ token: string; user: AuthUser; codes: string[] } | null>(null)
 
-  if (user) nav('/', { replace: true })
+  if (user && !pending) nav('/', { replace: true })
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     setErr('')
     setBusy(true)
     try {
-      await login(username, password, await getRecaptchaToken())
+      const res = await login(username, password, await getRecaptchaToken())
+      if (res.status === '2fa') {
+        setChallenge(res.challenge)
+        setEnrolling(res.enrollRequired)
+        if (res.enrollRequired) {
+          const { data } = await api.post('/login/2fa/setup', { challenge: res.challenge })
+          setSecret(data.data.secret)
+          setQr(await QRCode.toDataURL(data.data.otpauth_uri, { margin: 1, width: 192 }))
+        }
+        return
+      }
       nav('/', { replace: true })
     } catch (e) {
       setErr(apiError(e))
     } finally {
       setBusy(false)
     }
+  }
+
+  const submitCode = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!challenge) return
+    setErr('')
+    setBusy(true)
+    try {
+      const res = await verifyTwoFactor(challenge, code)
+      if (res.recoveryCodes) {
+        setPending({ token: res.token, user: res.user, codes: res.recoveryCodes })
+      } else {
+        completeLogin(res.token, res.user)
+        nav('/', { replace: true })
+      }
+    } catch (e) {
+      setErr(apiError(e))
+      // Challenge expired or too many tries: start over from the password step.
+      if ((e as any)?.response?.status === 401 || (e as any)?.response?.status === 429) {
+        setChallenge(null)
+        setCode('')
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const finishEnrolment = () => {
+    if (!pending) return
+    completeLogin(pending.token, pending.user)
+    nav('/', { replace: true })
   }
 
   const name = branding.property_name || 'Airlink'
@@ -73,6 +123,76 @@ export default function Login() {
 
         {/* Card */}
         <div className="w-full rounded-2xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-white/60 dark:border-slate-800 shadow-xl shadow-slate-900/10 p-6 sm:p-7">
+          {pending ? (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
+                <ShieldCheck size={18} className="text-emerald-500" /> Two-factor enabled
+              </div>
+              <p className="text-xs text-slate-600 dark:text-slate-300">
+                Save these recovery codes somewhere safe. Each works once if you lose your authenticator. They will not be shown again.
+              </p>
+              <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-100 dark:bg-slate-800 p-3 font-mono text-sm text-slate-900 dark:text-slate-100 select-all">
+                {pending.codes.map((c) => <span key={c}>{c}</span>)}
+              </div>
+              <button
+                type="button"
+                onClick={() => navigator.clipboard?.writeText(pending.codes.join('\n')).catch(() => {})}
+                className="w-full rounded-xl border border-slate-200 dark:border-slate-700 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-200 cursor-pointer bg-transparent"
+              >
+                Copy codes
+              </button>
+              <button
+                type="button"
+                onClick={finishEnrolment}
+                style={{ backgroundColor: branding.primary_color }}
+                className="w-full hover:brightness-90 text-white rounded-xl py-3 px-4 font-semibold shadow-md border-none cursor-pointer"
+              >
+                I have saved them — continue
+              </button>
+            </div>
+          ) : challenge ? (
+            <form onSubmit={submitCode} className="space-y-4">
+              <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
+                <ShieldCheck size={18} className="text-[#1d63bf]" /> {enrolling ? 'Set up two-factor authentication' : 'Two-factor verification'}
+              </div>
+              {enrolling ? (
+                <div className="space-y-3 text-xs text-slate-600 dark:text-slate-300">
+                  <p>1. Scan this QR code with Google Authenticator (or any authenticator app).</p>
+                  {qr && <img src={qr} alt="Authenticator QR code" className="mx-auto rounded-lg bg-white p-2" width={192} height={192} />}
+                  <p>Can't scan? Enter this key manually: <span className="font-mono select-all break-all text-slate-900 dark:text-white">{secret}</span></p>
+                  <p>2. Enter the 6-digit code it shows to finish.</p>
+                </div>
+              ) : (
+                <p className="text-xs text-slate-600 dark:text-slate-300">Enter the 6-digit code from your authenticator app, or a recovery code.</p>
+              )}
+              <input
+                className={`${field} px-4 tracking-widest text-center`}
+                placeholder="123456"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                inputMode="text"
+                autoComplete="one-time-code"
+                autoFocus
+              />
+              {err && <div className="pill danger w-full justify-center py-2.5 text-xs font-semibold">{err}</div>}
+              <button
+                disabled={busy || !code.trim()}
+                type="submit"
+                style={{ backgroundColor: branding.primary_color }}
+                className="w-full hover:brightness-90 disabled:opacity-70 text-white rounded-xl py-3 px-4 font-semibold shadow-md border-none cursor-pointer"
+              >
+                {busy ? 'Verifying...' : enrolling ? 'Enable and sign in' : 'Verify'}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setChallenge(null); setCode(''); setErr('') }}
+                className="w-full text-xs text-[#1d63bf] dark:text-sky-400 hover:underline bg-transparent border-none cursor-pointer"
+              >
+                Back to sign in
+              </button>
+            </form>
+          ) : (
+          <>
           <div className="flex items-center gap-2 rounded-xl bg-slate-100 dark:bg-slate-800 p-1.5 mb-6">
             <div className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-white dark:bg-slate-700 shadow-sm py-2.5 text-sm font-medium text-slate-900 dark:text-white">
               <UserIcon size={16} /> Account login
@@ -144,6 +264,8 @@ export default function Login() {
               <ArrowRight size={18} className="absolute right-4" />
             </motion.button>
           </form>
+          </>
+          )}
         </div>
 
         {/* Footer */}
