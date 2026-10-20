@@ -70,10 +70,12 @@ func Load() (*Config, error) {
 		log.Println("WARNING: NMS_SECRET_KEY not set; OLT passwords are encrypted with JWT_SECRET")
 	}
 
+	// Static NMS accounts ("name:password:role,..."). There is no built-in default:
+	// the web console signs in through Airlink (Sanctum) tokens, so when NMS_USERS is
+	// unset the direct /auth/login endpoint simply has no accounts.
 	usersEnv := os.Getenv("NMS_USERS")
 	if usersEnv == "" {
-		log.Println("WARNING: NMS_USERS not set; using built-in default credentials — set NMS_USERS")
-		usersEnv = "admin:admin123:admin,operator:operator123:operator"
+		log.Println("NMS_USERS not set; direct NMS login disabled (Airlink tokens only)")
 	}
 	for _, part := range strings.Split(usersEnv, ",") {
 		part = strings.TrimSpace(part)
@@ -85,9 +87,6 @@ func Load() (*Config, error) {
 			continue
 		}
 		c.Users = append(c.Users, User{f[0], f[1], f[2]})
-	}
-	if len(c.Users) == 0 {
-		c.Users = []User{{"admin", "admin123", "admin"}}
 	}
 	return c, nil
 }
