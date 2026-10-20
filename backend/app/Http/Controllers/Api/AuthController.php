@@ -10,6 +10,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Validation\Rules\Password;
 
 class AuthController extends Controller
 {
@@ -80,7 +81,7 @@ class AuthController extends Controller
             'successful' => true, 'created_at' => now(),
         ]);
 
-        $token = $user->createToken('portal')->plainTextToken;
+        $token = $user->createToken('portal', ['*'], now()->addHours(12))->plainTextToken;
 
         return $this->ok([
             'token' => $token,
@@ -104,7 +105,7 @@ class AuthController extends Controller
     {
         $data = $request->validate([
             'current_password' => ['required', 'string'],
-            'new_password' => ['required', 'string', 'min:6', 'confirmed'],
+            'new_password' => ['required', 'string', Password::min(10)->letters()->numbers(), 'confirmed'],
         ]);
 
         $user = $request->user();
@@ -117,6 +118,9 @@ class AuthController extends Controller
             'password' => Hash::make($data['new_password']),
             'must_reset_password' => false,
         ]);
+
+        // A password change must end every other session, not just rotate the hash.
+        $user->tokens()->where('name', 'portal')->where('id', '!=', $user->currentAccessToken()->id)->delete();
 
         return $this->ok(null, 'Password changed successfully.');
     }

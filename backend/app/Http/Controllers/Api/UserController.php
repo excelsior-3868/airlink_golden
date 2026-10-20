@@ -131,7 +131,7 @@ class UserController extends Controller
             'username' => ['required', 'string', 'max:255', Rule::unique('users', 'username')->ignore($user->id)],
             'email' => ['nullable', 'email', Rule::unique('users', 'email')->ignore($user->id)],
             'phone' => ['nullable', 'string', 'max:30'],
-            'password' => ['nullable', 'string', 'min:6'],
+            'password' => ['nullable', 'string', \Illuminate\Validation\Rules\Password::min(10)->letters()->numbers()],
         ];
 
         if ($actor->isAdmin()) {
@@ -297,7 +297,7 @@ class UserController extends Controller
             'username' => ['required', 'string', 'max:255', 'unique:users,username'],
             'email' => ['nullable', 'email', 'unique:users,email'],
             'phone' => ['nullable', 'string', 'max:30'],
-            'password' => ['required', 'string', 'min:6'],
+            'password' => ['required', 'string', \Illuminate\Validation\Rules\Password::min(10)->letters()->numbers()],
             'gb_rate' => ['nullable', 'numeric', 'min:0.01'],
         ]);
         $data['password'] = Hash::make($data['password']);

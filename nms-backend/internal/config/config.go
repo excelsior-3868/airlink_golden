@@ -2,6 +2,8 @@
 package config
 
 import (
+	"errors"
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -56,16 +58,21 @@ func Load() (*Config, error) {
 	}
 	secret := os.Getenv("JWT_SECRET")
 	if len(secret) < 16 {
-		secret = "airlink-nms-secret-key-0123456789"
+		return nil, errors.New("JWT_SECRET must be set to a random value of at least 16 characters")
 	}
 	c.JWTSecret = []byte(secret)
 	c.SecretKey = c.JWTSecret
 	if k := os.Getenv("NMS_SECRET_KEY"); len(k) >= 16 {
 		c.SecretKey = []byte(k)
+	} else {
+		// Kept for compatibility: OLT passwords already stored were encrypted with
+		// the JWT secret. Set NMS_SECRET_KEY (and re-save OLT passwords) to decouple.
+		log.Println("WARNING: NMS_SECRET_KEY not set; OLT passwords are encrypted with JWT_SECRET")
 	}
 
 	usersEnv := os.Getenv("NMS_USERS")
 	if usersEnv == "" {
+		log.Println("WARNING: NMS_USERS not set; using built-in default credentials — set NMS_USERS")
 		usersEnv = "admin:admin123:admin,operator:operator123:operator"
 	}
 	for _, part := range strings.Split(usersEnv, ",") {

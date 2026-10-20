@@ -11,9 +11,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -139,6 +141,15 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &in) {
 		return
 	}
+	ip := r.RemoteAddr
+	if h, _, err := net.SplitHostPort(ip); err == nil {
+		ip = h
+	}
+	if !loginLimiter.allow("ip:"+ip, 20) || !loginLimiter.allow("user:"+strings.ToLower(in.Username), 10) {
+		w.Header().Set("Retry-After", "900")
+		fail(w, 429, "too many login attempts, try again later")
+		return
+	}
 	for _, u := range s.cfg.Users {
 		userOK := subtle.ConstantTimeCompare([]byte(u.Name), []byte(in.Username)) == 1
 		passOK := subtle.ConstantTimeCompare([]byte(u.Password), []byte(in.Password)) == 1
@@ -150,11 +161,60 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 				fail(w, 500, "could not issue token")
 				return
 			}
+			loginLimiter.reset("ip:" + ip)
+			loginLimiter.reset("user:" + strings.ToLower(in.Username))
 			writeJSON(w, 200, map[string]any{"token": tok, "user": principal{Name: u.Name, Role: u.Role, OriginalRole: u.Role}})
 			return
 		}
 	}
+	loginLimiter.fail("ip:" + ip)
+	loginLimiter.fail("user:" + strings.ToLower(in.Username))
 	fail(w, 401, "invalid credentials")
+}
+
+// attemptLimiter counts failed logins per key inside a sliding window.
+type attemptLimiter struct {
+	mu     sync.Mutex
+	window time.Duration
+	hits   map[string][]time.Time
+}
+
+var loginLimiter = &attemptLimiter{window: 15 * time.Minute, hits: map[string][]time.Time{}}
+
+func (l *attemptLimiter) prune(key string, now time.Time) []time.Time {
+	kept := l.hits[key][:0]
+	for _, t := range l.hits[key] {
+		if now.Sub(t) < l.window {
+			kept = append(kept, t)
+		}
+	}
+	if len(kept) == 0 {
+		delete(l.hits, key)
+		return nil
+	}
+	l.hits[key] = kept
+	return kept
+}
+
+// allow reports whether key has fewer than max recorded failures in the window.
+func (l *attemptLimiter) allow(key string, max int) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return len(l.prune(key, time.Now())) < max
+}
+
+func (l *attemptLimiter) fail(key string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := time.Now()
+	l.prune(key, now)
+	l.hits[key] = append(l.hits[key], now)
+}
+
+func (l *attemptLimiter) reset(key string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	delete(l.hits, key)
 }
 
 func (s *Server) auth(next http.Handler) http.Handler {

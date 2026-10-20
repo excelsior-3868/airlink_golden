@@ -30,7 +30,7 @@ use Illuminate\Support\Facades\Route;
 
 // --- Public ---
 Route::get('/auth/recaptcha-config', [AuthController::class, 'recaptchaConfig']);
-Route::post('/login', [AuthController::class, 'login']);
+Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:login');
 Route::get('/settings/branding', [BrandingSettingController::class, 'show']);
 
 // --- Authenticated ---

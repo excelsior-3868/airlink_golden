@@ -282,8 +282,8 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
       setErr('Please enter a valid phone number.')
       return
     }
-    if (editForm.password && editForm.password.length < 6) {
-      setErr('Password must be at least 6 characters.')
+    if (editForm.password && editForm.password.length < 10) {
+      setErr('Password must be at least 10 characters and include letters and numbers.')
       return
     }
     setBusy(true)
