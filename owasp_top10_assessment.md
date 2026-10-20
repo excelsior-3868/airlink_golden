@@ -1,17 +1,17 @@
 # OWASP Top 10 (2021) Assessment
 
 **Scope:** Laravel backend, React frontend, Go NMS backend, docker configs. Static review only. Dependency CVE scans could not run (`npm` and `composer` are not installed on this host).
-**Status key:** FIXED = fixed in this session. OPEN = not fixed. OK = no issue found.
+**Updated after remediation.** Status key: FIXED = fixed in this session. OPEN = not fixed. OK = no issue found.
 
 | # | Category | Rating | Summary |
 |---|---|---|---|
-| A01 | Broken Access Control | **High** | Custom pricing, free changes and cash settlement were open to non-admin roles (FIXED). Plan scoping per reseller and the OR-style permission gate are OPEN. |
-| A02 | Cryptographic Failures | **High** | The NMS signing key defaults to a public string. The NMS JWT secret doubles as the OLT-password encryption key. The prod dump and RADIUS secret were committed. |
+| A01 | Broken Access Control | Medium | Custom pricing, free changes and cash settlement were open to non-admin roles (FIXED). Plan scoping per reseller and the OR-style permission gate are OPEN. |
+| A02 | Cryptographic Failures | Medium | NMS default signing key removed (FIXED); OLT key now pinned in `NMS_SECRET_KEY` (still a copy of `APP_KEY`). Prod dump and RADIUS secret untracked but still in git history. |
 | A03 | Injection | Low | Raw SQL uses bindings. No command injection found. |
-| A04 | Insecure Design | **High** | Refund logic could mint money (FIXED). Race conditions (FIXED). Refund baseline (FIXED). No rate limits or business-logic limits elsewhere. |
+| A04 | Insecure Design | Medium | Refund logic could mint money (FIXED). Race conditions (FIXED). Refund baseline (FIXED). No rate limits or business-logic limits elsewhere. |
 | A05 | Security Misconfiguration | Medium | CORS `*`, `APP_DEBUG=true` in the example env, ports on all interfaces, no security headers, `chmod a+rX` on `.env`. |
 | A06 | Vulnerable and Outdated Components | Unknown | Not scanned. Versions look current (Laravel 13, React 18, Vite 5). |
-| A07 | Identification and Authentication Failures | **High** | No login throttling (Laravel and NMS), min password 6, non-expiring tokens, reCAPTCHA fails open. |
+| A07 | Identification and Authentication Failures | Medium | Login throttling, 10-character passwords and 12-hour portal tokens are FIXED. reCAPTCHA still fails open when unconfigured. |
 | A08 | Software and Data Integrity Failures | Low | No unsafe deserialization. Hot-patching with `docker cp` has no integrity check. |
 | A09 | Security Logging and Monitoring Failures | Medium | Login attempts are logged. Money movements keep wallet transactions. No alerting, and no audit entry for who used admin-only overrides. |
 | A10 | Server-Side Request Forgery | Low | Only outbound call is reCAPTCHA to a fixed URL. No user-supplied URLs fetched. |
@@ -20,16 +20,16 @@
 
 ## A01 Broken Access Control
 - **FIXED** `PppoeCustomerController::changePackage` and `previewChangePackage`: `custom` and `no_wallet` modes, `custom_price`, `custom_expires_at` and `cash` settlement are now admin-only; the target plan must be active PPPoE. Ownership is enforced through `canAccess`.
-- **OPEN** `routes/api.php:177-178`: `permission:create_pppoe_customer,recharge_pppoe_customer` is an OR gate, and the controller does not re-assert the specific permission. Resellers can pick any active plan, not just ones they may sell.
+- **OPEN** (partly addressed: the target plan must be an active PPPoE plan) `routes/api.php:177-178`: `permission:create_pppoe_customer,recharge_pppoe_customer` is an OR gate, and the controller does not re-assert the specific permission. Resellers can pick any active plan, not just ones they may sell.
 - **OPEN** `routes/api.php:202`: `POST /settings/branding` is open to every authenticated user. `logo_url` is not validated.
 - **Fix:** Re-assert the exact permission in the controller, scope plans per role/owner, restrict branding writes.
 
 ## A02 Cryptographic Failures
-- **OPEN (High)** `docker-compose.yml:74`: `JWT_SECRET: "${APP_KEY:-airlink-nms-secret-key-0123456789}"`. If `APP_KEY` is unset in the NMS environment, anyone can forge an NMS admin JWT. Because `nms-backend/internal/config/config.go:62` also uses this secret as the key that encrypts OLT passwords (`SecretKey = JWTSecret`), the same value decrypts every stored OLT credential. **Fix:** Remove the default so the service refuses to start without a secret. Use a separate `NMS_SECRET_KEY` from the JWT secret.
-- **OPEN** `nalrd_backup.sql` and `backend/clients.conf` were committed (now untracked, history not purged). Rotate the RADIUS secret.
+- **FIXED** (was High) `docker-compose.yml:74`: `JWT_SECRET: "${APP_KEY:-airlink-nms-secret-key-0123456789}"`. If `APP_KEY` is unset in the NMS environment, anyone can forge an NMS admin JWT. Because `nms-backend/internal/config/config.go:62` also uses this secret as the key that encrypts OLT passwords (`SecretKey = JWTSecret`), the same value decrypts every stored OLT credential. **Fix:** Remove the default so the service refuses to start without a secret. Use a separate `NMS_SECRET_KEY` from the JWT secret.
+- **PARTIAL** `nalrd_backup.sql` and `backend/clients.conf` were committed (now untracked, history not purged). Rotate the RADIUS secret.
 - **By design** PPPoE subscriber passwords are plaintext because RADIUS (PAP/CHAP) needs them. Restrict who can read them and never return them in list endpoints.
 - **OK** User passwords use `Hash::make` / `Hash::check`.
-- **OPEN** NMS user passwords come from config and are compared in plaintext (`api.go` login). Hash them.
+- **FIXED** The built-in NMS users (`admin/admin123`, `operator/operator123`) are removed; direct NMS login is disabled unless `NMS_USERS` is set. (If it is set, those passwords are still plaintext in the environment.) NMS user passwords come from config and were compared in plaintext (`api.go` login). Hash them.
 - **OPEN** Frontend token in `localStorage` (`frontend/src/lib/api.ts:30`, `auth.tsx:65`): any XSS steals a session that never expires. No XSS sink was found (no `dangerouslySetInnerHTML`), which limits current exposure.
 
 ## A03 Injection
@@ -48,15 +48,15 @@
 - **OPEN** `backend/.env.example:4`: `APP_DEBUG=true`, `APP_ENV=local`. Make sure production sets `APP_DEBUG=false` (stack traces leak paths and queries).
 - **OPEN** No security headers (CSP, `X-Frame-Options`, `X-Content-Type-Options`, HSTS) found anywhere in `docker/` or the app. Add them at the reverse proxy.
 - **OPEN** `docker-compose.yml`: backend 8000, frontend 5174, NMS 8085 and RADIUS ports are published on all interfaces; DB and phpMyAdmin are correctly bound to 127.0.0.1. Default DB passwords (`root_secret`, `airlink_pass`).
-- **OPEN** `docker/backend/prod-entrypoint.sh` (uncommitted): `chmod -R a+rX /var/www/html` makes `.env` world-readable.
+- **FIXED** `docker/backend/prod-entrypoint.sh` now sets `.env` to 640 root:www-data (untested in a container). Previously: `chmod -R a+rX /var/www/html` makes `.env` world-readable.
 
 ## A06 Vulnerable and Outdated Components
 - Not assessed. Run `npm audit --omit=dev` in `frontend/`, `composer audit` in `backend/`, and `govulncheck ./...` in `nms-backend/` (inside the build containers or CI). Add them to CI so this is checked on every change.
 
 ## A07 Identification and Authentication Failures
-- **OPEN** No `throttle` on `/login` (`routes/api.php:35`) or on NMS login. Password guessing is unlimited.
-- **OPEN** `AuthController.php:107`: minimum password length 6.
-- **OPEN** `config/sanctum.php:53`: `'expiration' => null`; `changePassword` does not revoke other tokens. Tokens issued by `createToken('portal')` carry all abilities.
+- **FIXED** No `throttle` on `/login` (`routes/api.php:35`) or on NMS login. Password guessing is unlimited.
+- **FIXED** `AuthController.php:107`: minimum password length 6.
+- **FIXED** `config/sanctum.php:53`: `'expiration' => null`; `changePassword` does not revoke other tokens. Tokens issued by `createToken('portal')` carry all abilities.
 - **OPEN** `AuthController::recaptchaPasses` returns true when the keys are unset, so the captcha is silently off by default.
 - **OK** Generic login error messages; disabled accounts blocked; NMS JWT enforces `HS256` and expiry (12 hours).
 
@@ -75,10 +75,13 @@
 
 ---
 
-## Priority fixes
-1. Remove the hardcoded NMS JWT default and separate the OLT encryption key (A02).
-2. Rate-limit both login endpoints and enforce a stronger password policy (A07).
-3. Set token expiry, revoke tokens on password change (A07).
-4. Rotate the RADIUS secret, purge history of the dump and `clients.conf` (A02).
-5. Restrict CORS, set `APP_DEBUG=false`, add security headers, bind ports (A05).
-6. Run dependency scans in CI (A06).
+## Priority fixes (remaining)
+1. Rotate the RADIUS secret and purge the dump and `clients.conf` from git history (A02).
+2. Restrict CORS, set `APP_DEBUG=false` in production, add security headers, bind ports (A05).
+3. Per-reseller plan scoping and re-checking the exact permission in the controller; restrict branding writes (A01).
+4. Revoke a user's sessions when an admin resets their password; fail closed if reCAPTCHA is unconfigured (A07).
+5. Give the NMS its own random `NMS_SECRET_KEY` and re-save OLT passwords (A02).
+6. Run `npm audit`, `composer audit` and `govulncheck` in CI (A06).
+7. Audit trail and alerting for admin overrides and large refunds (A09).
+
+Fixed so far: change-package access control, money race conditions and refund baseline (A01/A04); NMS secret and default users (A02); login throttling, password policy and token expiry (A07).
