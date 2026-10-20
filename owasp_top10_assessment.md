@@ -11,7 +11,7 @@
 | A04 | Insecure Design | Medium | Refund logic could mint money (FIXED). Race conditions (FIXED). Refund baseline (FIXED). No rate limits or business-logic limits elsewhere. |
 | A05 | Security Misconfiguration | Medium | CORS `*`, `APP_DEBUG=true` in the example env, ports on all interfaces. Security headers added (CSP still report-only); `.env` permission fixed. |
 | A06 | Vulnerable and Outdated Components | Unknown | Not scanned. Versions look current (Laravel 13, React 18, Vite 5). |
-| A07 | Identification and Authentication Failures | Medium | Login throttling, 10-character passwords and 12-hour portal tokens are FIXED. reCAPTCHA still fails open when unconfigured. |
+| A07 | Identification and Authentication Failures | Medium | Login throttling, 10-character passwords, 12-hour portal tokens and TOTP for admins (opt-in, golden only) are in place. reCAPTCHA still fails open when unconfigured. |
 | A08 | Software and Data Integrity Failures | Low | No unsafe deserialization. Hot-patching with `docker cp` has no integrity check. |
 | A09 | Security Logging and Monitoring Failures | Medium | Login attempts are logged. Money movements keep wallet transactions. No alerting, and no audit entry for who used admin-only overrides. |
 | A10 | Server-Side Request Forgery | Low | Only outbound call is reCAPTCHA to a fixed URL. No user-supplied URLs fetched. |
@@ -59,6 +59,7 @@
 - **FIXED** `config/sanctum.php:53`: `'expiration' => null`; `changePassword` does not revoke other tokens. Tokens issued by `createToken('portal')` carry all abilities.
 - **OPEN** `AuthController::recaptchaPasses` returns true when the keys are unset, so the captcha is silently off by default.
 - **OK** Generic login error messages; disabled accounts blocked; NMS JWT enforces `HS256` and expiry (12 hours).
+- **FIXED (admins, golden)** TOTP two-factor login: encrypted secret, hashed single-use recovery codes, replay protection, 5 tries per challenge, QR enrolment at first login. Off until an admin enables it under Settings → Security (2FA); only the `admin` role can be required for now. **Still open:** roll out to resellers, annapurna and mera; integration API tokens bypass 2FA by design; the 2FA code check is not yet covered by an automated test in the repo.
 
 ## A08 Software and Data Integrity Failures
 - No unsafe deserialization or unsigned update mechanism found in the backend.
@@ -79,9 +80,9 @@
 1. Rotate the RADIUS secret and purge the dump and `clients.conf` from git history (A02).
 2. Restrict CORS, set `APP_DEBUG=false` in production, bind ports, enforce the CSP (now report-only) and add HSTS behind HTTPS (A05).
 3. Per-reseller plan scoping and re-checking the exact permission in the controller; restrict branding writes (A01).
-4. Revoke a user's sessions when an admin resets their password; fail closed if reCAPTCHA is unconfigured (A07).
+4. Roll TOTP out to resellers, then to annapurna and mera; revoke a user's sessions when an admin resets their password; fail closed if reCAPTCHA is unconfigured (A07).
 5. Give the NMS its own random `NMS_SECRET_KEY` and re-save OLT passwords (A02).
 6. Run `npm audit`, `composer audit` and `govulncheck` in CI (A06).
 7. Audit trail and alerting for admin overrides and large refunds (A09).
 
-Fixed so far: change-package access control, money race conditions and refund baseline (A01/A04); NMS secret and default users (A02); login throttling, password policy and token expiry (A07).
+Fixed so far (TOTP for admins on golden included): change-package access control, money race conditions and refund baseline (A01/A04); NMS secret and default users (A02); login throttling, password policy and token expiry (A07).

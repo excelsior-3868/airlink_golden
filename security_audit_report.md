@@ -7,6 +7,7 @@
 - **Fixed (committed):** C1, H1, H2, H3, M1, M2, M3, L1, plus two findings from the follow-up OWASP review: the hardcoded NMS JWT secret and the built-in NMS `admin/admin123` and `operator/operator123` users. The OLT-password key is now pinned in `NMS_SECRET_KEY` (still a copy of `APP_KEY`).
 - **Partial:** H4 (files untracked, history not purged, RADIUS secret not rotated), M6.
 - **Added since:** security headers and a report-only CSP in `docker/web/nginx.conf` (golden web container). The CSP is not enforcing yet, and HSTS is not added.
+- **Added since:** TOTP two-factor login (Google Authenticator compatible) on golden, for admins only and off by default until an admin enables it on the Security (2FA) page. Secrets are encrypted, recovery codes are hashed, codes cannot be replayed, and 5 wrong codes lock the attempt. Resellers and other tenants (annapurna, mera) are not covered yet. Integration API tokens bypass it by design.
 - **Open:** M4, M5, M7, L2–L5, dependency scans.
 - Commits are local; nothing has been pushed.
 
