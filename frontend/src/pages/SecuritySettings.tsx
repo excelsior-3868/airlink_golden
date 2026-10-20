@@ -9,13 +9,14 @@ interface EnrolledUser {
   name: string
   username: string
   role: string
-  totp_confirmed_at: string
+  status: string
+  totp_confirmed_at: string | null
 }
 
 interface TotpState {
   required_roles: string[]
   eligible_roles: string[]
-  enrolled_users: EnrolledUser[]
+  users: EnrolledUser[]
 }
 
 export default function SecuritySettings() {
@@ -23,6 +24,7 @@ export default function SecuritySettings() {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [msg, setMsg] = useState('')
+  const [q, setQ] = useState('')
 
   useEffect(() => {
     api.get('/admin/security/totp').then((r) => setState(r.data.data)).catch((e) => setErr(apiError(e)))
@@ -92,32 +94,50 @@ export default function SecuritySettings() {
           </GlassCard>
 
           <GlassCard className="p-5 space-y-3">
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Users with two-factor set up</h3>
-            {state.enrolled_users.length === 0 ? (
-              <p className="text-xs text-slate-500 dark:text-slate-400">Nobody has set it up yet.</p>
-            ) : (
-              <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                {state.enrolled_users.map((u) => (
-                  <div key={u.id} className="flex items-center justify-between gap-3 py-2.5">
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium text-slate-900 dark:text-white truncate">{u.name} <span className="text-slate-400">@{u.username}</span></div>
-                      <div className="text-xs text-slate-500">Enabled {datet(u.totp_confirmed_at)}</div>
+            <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Reset an authenticator</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Use this when a user loses their phone or changes it. Resetting signs them out and clears their authenticator and recovery codes;
+              they scan a new QR code at their next login. Only administrators can do this.
+            </p>
+            <input
+              className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm py-2 px-3 text-slate-900 dark:text-slate-100"
+              placeholder="Search admins and resellers…"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
+            {(() => {
+              const needle = q.trim().toLowerCase()
+              const rows = state.users.filter(
+                (u) => !needle || u.username.toLowerCase().includes(needle) || u.name.toLowerCase().includes(needle),
+              )
+              if (rows.length === 0) return <p className="text-xs text-slate-500 dark:text-slate-400">No matching users.</p>
+              return (
+                <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {rows.map((u) => (
+                    <div key={u.id} className="flex items-center justify-between gap-3 py-2.5">
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium text-slate-900 dark:text-white truncate">{u.name} <span className="text-slate-400">@{u.username}</span></div>
+                        <div className="text-xs text-slate-500">
+                          {u.totp_confirmed_at ? `Authenticator set up ${datet(u.totp_confirmed_at)}` : 'No authenticator set up'}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <Pill tone="secondary">{u.role}</Pill>
+                        <button
+                          type="button"
+                          disabled={busy || !u.totp_confirmed_at}
+                          onClick={() => reset(u)}
+                          title={u.totp_confirmed_at ? 'Reset authenticator' : 'Nothing to reset'}
+                          className="px-3 py-1.5 rounded-xl text-xs font-bold border border-rose-200 text-rose-700 bg-rose-50 hover:bg-rose-100 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          Reset
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <Pill tone="secondary">{u.role}</Pill>
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => reset(u)}
-                        className="px-3 py-1.5 rounded-xl text-xs font-bold border border-rose-200 text-rose-700 bg-rose-50 hover:bg-rose-100 cursor-pointer disabled:opacity-60"
-                      >
-                        Reset
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              )
+            })()}
           </GlassCard>
         </>
       )}

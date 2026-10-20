@@ -48,9 +48,13 @@ class SecurityController extends Controller
         return [
             'required_roles' => SecuritySetting::requiredRoles(),
             'eligible_roles' => SecuritySetting::TOTP_ELIGIBLE_ROLES,
-            'enrolled_users' => User::whereNotNull('totp_confirmed_at')
+            // Admins and resellers (plus anyone else who has enrolled), so an admin can find
+            // and reset a reseller's authenticator even before 2FA is required for that role.
+            'users' => User::whereIn('role', ['admin', 'reseller'])
+                ->orWhereNotNull('totp_confirmed_at')
+                ->orderBy('role')
                 ->orderBy('username')
-                ->get(['id', 'name', 'username', 'role', 'totp_confirmed_at']),
+                ->get(['id', 'name', 'username', 'role', 'status', 'totp_confirmed_at']),
         ];
     }
 }

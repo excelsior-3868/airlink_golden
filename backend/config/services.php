@@ -42,6 +42,11 @@ return [
         'min_score' => (float) env('RECAPTCHA_MIN_SCORE', 0.5),
     ],
 
+    // Name shown in the authenticator app next to the account (otpauth issuer).
+    'totp' => [
+        'issuer' => env('TOTP_ISSUER', 'Airlink'),
+    ],
+
     'pppoe' => [
         'username_prefix' => env('PPPOE_USERNAME_PREFIX', 'KHPPOE'),
     ],

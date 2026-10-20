@@ -165,7 +165,7 @@ class AuthController extends Controller
 
         return $this->ok([
             'secret' => $user->totp_secret,
-            'otpauth_uri' => Totp::uri($user->totp_secret, $user->username, config('app.name', 'Airlink')),
+            'otpauth_uri' => Totp::uri($user->totp_secret, $user->username, config('services.totp.issuer', 'Airlink')),
         ]);
     }
 
