@@ -9,7 +9,7 @@
 | A02 | Cryptographic Failures | Medium | NMS default signing key removed (FIXED); OLT key now pinned in `NMS_SECRET_KEY` (still a copy of `APP_KEY`). Prod dump and RADIUS secret untracked but still in git history. |
 | A03 | Injection | Low | Raw SQL uses bindings. No command injection found. |
 | A04 | Insecure Design | Medium | Refund logic could mint money (FIXED). Race conditions (FIXED). Refund baseline (FIXED). No rate limits or business-logic limits elsewhere. |
-| A05 | Security Misconfiguration | Medium | CORS `*`, `APP_DEBUG=true` in the example env, ports on all interfaces, no security headers, `chmod a+rX` on `.env`. |
+| A05 | Security Misconfiguration | Medium | CORS `*`, `APP_DEBUG=true` in the example env, ports on all interfaces. Security headers added (CSP still report-only); `.env` permission fixed. |
 | A06 | Vulnerable and Outdated Components | Unknown | Not scanned. Versions look current (Laravel 13, React 18, Vite 5). |
 | A07 | Identification and Authentication Failures | Medium | Login throttling, 10-character passwords and 12-hour portal tokens are FIXED. reCAPTCHA still fails open when unconfigured. |
 | A08 | Software and Data Integrity Failures | Low | No unsafe deserialization. Hot-patching with `docker cp` has no integrity check. |
@@ -46,7 +46,7 @@
 ## A05 Security Misconfiguration
 - **OPEN** `backend/config/cors.php:7`: `allowed_origins ['*']`.
 - **OPEN** `backend/.env.example:4`: `APP_DEBUG=true`, `APP_ENV=local`. Make sure production sets `APP_DEBUG=false` (stack traces leak paths and queries).
-- **OPEN** No security headers (CSP, `X-Frame-Options`, `X-Content-Type-Options`, HSTS) found anywhere in `docker/` or the app. Add them at the reverse proxy.
+- **FIXED (CSP report-only)** Security headers added in `docker/web/nginx.conf`: `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy`, and `Content-Security-Policy-Report-Only`. Deployed to the golden web container only; annapurna and mera need a rebuild. **Still open:** switch the CSP to enforcing once the browser console shows no violations, and add HSTS once the site is served over HTTPS.
 - **OPEN** `docker-compose.yml`: backend 8000, frontend 5174, NMS 8085 and RADIUS ports are published on all interfaces; DB and phpMyAdmin are correctly bound to 127.0.0.1. Default DB passwords (`root_secret`, `airlink_pass`).
 - **FIXED** `docker/backend/prod-entrypoint.sh` now sets `.env` to 640 root:www-data (untested in a container). Previously: `chmod -R a+rX /var/www/html` makes `.env` world-readable.
 
@@ -77,7 +77,7 @@
 
 ## Priority fixes (remaining)
 1. Rotate the RADIUS secret and purge the dump and `clients.conf` from git history (A02).
-2. Restrict CORS, set `APP_DEBUG=false` in production, add security headers, bind ports (A05).
+2. Restrict CORS, set `APP_DEBUG=false` in production, bind ports, enforce the CSP (now report-only) and add HSTS behind HTTPS (A05).
 3. Per-reseller plan scoping and re-checking the exact permission in the controller; restrict branding writes (A01).
 4. Revoke a user's sessions when an admin resets their password; fail closed if reCAPTCHA is unconfigured (A07).
 5. Give the NMS its own random `NMS_SECRET_KEY` and re-save OLT passwords (A02).

@@ -6,6 +6,7 @@
 ## Remediation status
 - **Fixed (committed):** C1, H1, H2, H3, M1, M2, M3, L1, plus two findings from the follow-up OWASP review: the hardcoded NMS JWT secret and the built-in NMS `admin/admin123` and `operator/operator123` users. The OLT-password key is now pinned in `NMS_SECRET_KEY` (still a copy of `APP_KEY`).
 - **Partial:** H4 (files untracked, history not purged, RADIUS secret not rotated), M6.
+- **Added since:** security headers and a report-only CSP in `docker/web/nginx.conf` (golden web container). The CSP is not enforcing yet, and HSTS is not added.
 - **Open:** M4, M5, M7, L2–L5, dependency scans.
 - Commits are local; nothing has been pushed.
 
