@@ -32,6 +32,15 @@ const (
 	telSE   = 240
 )
 
+// errTelnetRejected is returned when the OLT sends the login prompt again after credentials were sent.
+// The OLT does this for a bad password but also for a session that is still closing, so DialTelnet retries it.
+var errTelnetRejected = errors.New("telnet login rejected: wrong username or password")
+
+const (
+	telnetLoginAttempts = 3
+	telnetLoginRetryGap = 3 * time.Second
+)
+
 var (
 	userPromptRe = regexp.MustCompile(`(?i)(user\s?name|login)\s*:\s*$`)
 	passPromptRe = regexp.MustCompile(`(?i)pass(word)?\s*:\s*$`)
@@ -115,7 +124,29 @@ func (t *telnetReader) Read(p []byte) (int, error) {
 }
 
 // DialTelnet logs in over Telnet and returns the same executor the SSH driver produces.
+// A rejected login is retried after a short pause, since the OLT may still be tearing down a previous session.
 func DialTelnet(ctx context.Context, c TelnetConfig) (*SSHExec, error) {
+	var err error
+	for attempt := 0; attempt < telnetLoginAttempts; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(telnetLoginRetryGap):
+			}
+		}
+		var e *SSHExec
+		if e, err = dialTelnetOnce(ctx, c); err == nil {
+			return e, nil
+		}
+		if !errors.Is(err, errTelnetRejected) {
+			return nil, err
+		}
+	}
+	return nil, err
+}
+
+func dialTelnetOnce(ctx context.Context, c TelnetConfig) (*SSHExec, error) {
 	if c.Timeout == 0 {
 		c.Timeout = 30 * time.Second
 	}
@@ -156,7 +187,7 @@ func (e *SSHExec) telnetLogin(ctx context.Context, c TelnetConfig) error {
 			}
 		case passPromptRe.MatchString(trimmed):
 			if sentPass {
-				return errors.New("telnet login rejected: wrong username or password")
+				return fmt.Errorf("%w (OLT said: %q)", errTelnetRejected, lastOLTText(cur))
 			}
 			sentPass = true
 			e.reset()
@@ -165,7 +196,7 @@ func (e *SSHExec) telnetLogin(ctx context.Context, c TelnetConfig) error {
 			}
 		case userPromptRe.MatchString(trimmed):
 			if sentUser > 0 && sentPass {
-				return errors.New("telnet login rejected: wrong username or password")
+				return fmt.Errorf("%w (OLT said: %q)", errTelnetRejected, lastOLTText(cur))
 			}
 			sentUser++
 			e.reset()
@@ -187,4 +218,13 @@ func (e *SSHExec) telnetLogin(ctx context.Context, c TelnetConfig) error {
 			return errors.New("timeout waiting for telnet login prompt")
 		}
 	}
+}
+
+// lastOLTText trims the OLT's login output to the last few hundred characters so a rejection says why.
+func lastOLTText(s string) string {
+	s = strings.TrimSpace(s)
+	if len(s) > 300 {
+		s = s[len(s)-300:]
+	}
+	return s
 }
