@@ -1,0 +1,9 @@
+# Never bake local env files into images. They hold secrets and dev settings
+# (e.g. APP_DEBUG=true); containers are configured through the compose
+# environment. Build context is the repo root, so this covers backend/.env too.
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
