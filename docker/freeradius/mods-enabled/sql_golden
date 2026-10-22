@@ -48,7 +48,10 @@ sql sql_golden {
 		# NAS actually sends a request; Mera is unaffected either way.
 		start = 0
 		min = 0
-		max = 5
+		# max = 5 was too small: interim-accounting updates from ~200
+		# Golden sessions arrive in a synchronized burst every 5 min and
+		# saturate the pool ("already at max"). MariaDB allows 151.
+		max = 20
 		spare = 1
 		uses = 0
 		retry_delay = 30
