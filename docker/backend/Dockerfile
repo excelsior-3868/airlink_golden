@@ -1,7 +1,7 @@
 # Airlink v3.0 backend — Laravel 13 (PHP 8.3) dev image.
 # Ships the PHP runtime + extensions + composer; app code is bind-mounted in
 # dev (see docker-compose.yml) and `composer install` runs from the entrypoint.
-FROM php:8.3-cli-bookworm
+FROM php:8.3.36-cli-bookworm
 
 # System libs needed to build the PHP extensions below.
 RUN apt-get update && apt-get install -y --no-install-recommends \

@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # Airlink v3.0 backend — production image (php-fpm, no dev deps, code baked in).
 # Build context is the repo root: docker build -f docker/backend/Dockerfile.prod .
-FROM php:8.3-fpm-bookworm
+FROM php:8.3.36-fpm-bookworm
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         git unzip libzip-dev libpng-dev libjpeg62-turbo-dev libfreetype6-dev libicu-dev \
