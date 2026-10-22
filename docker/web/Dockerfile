@@ -10,5 +10,8 @@ RUN npm run build
 
 FROM nginx:1.27-alpine
 COPY --from=build /app/dist /usr/share/nginx/html
+# Source files can be 0640 (restrictive umask on the checkout) and vite preserves
+# modes; the nginx worker runs as `nginx`, so make the web root world-readable.
+RUN chmod -R a+rX /usr/share/nginx/html
 COPY docker/web/nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80
