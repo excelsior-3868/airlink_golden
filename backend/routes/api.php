@@ -66,6 +66,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/batches', [BatchController::class, 'index']);
 
     // Users / hierarchy.
+    Route::get('/resellers/overview-stats', [UserController::class, 'resellerOverviewStats'])->middleware('role:admin');
+    Route::get('/resellers/{user}/snapshot', [UserController::class, 'resellerSnapshot'])->middleware('role:admin');
     Route::get('/users', [UserController::class, 'index']);
     Route::get('/users/{user}', [UserController::class, 'show']);
     Route::put('/users/{user}', [UserController::class, 'update']);

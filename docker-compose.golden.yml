@@ -135,6 +135,15 @@ services:
     depends_on:
       golden-mariadb:
         condition: service_healthy
+    # The entrypoint migrates, seeds and caches for ~60s before php-fpm starts
+    # listening. Without this, `web` came up first and served the login page
+    # while every /api call returned 502 ("temporarily unavailable").
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(@fsockopen('127.0.0.1', 9000) ? 0 : 1);"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 90s
 
   nms:
     build:
@@ -177,8 +186,10 @@ services:
     ports:
       - "${GOLDEN_WEB_PORT:-8092}:80"
     depends_on:
-      - app
-      - nms
+      app:
+        condition: service_healthy
+      nms:
+        condition: service_started
 
 
   queue:

@@ -23,6 +23,7 @@ import SeasonDuration from './pages/SeasonDuration' // force rebuild to resolve 
 import SalesLedger from './pages/SalesLedger'
 import ExpensesLedger from './pages/ExpensesLedger'
 import Ledger from './pages/Ledger'
+import ResellerSnapshot from './pages/ResellerSnapshot'
 import ApiTokens from './pages/ApiTokens'
 import FinancialDashboard from './pages/FinancialDashboard'
 import ChartOfAccounts from './pages/ChartOfAccounts'
@@ -119,6 +120,7 @@ export default function App() {
         <Route path="/plans/pppoe" element={<Guard perm="view_plans" roles={['admin', 'reseller']}><PppoePlans /></Guard>} />
         <Route path="/plans/bandwidth" element={<Guard perm="view_plans"><Bandwidths /></Guard>} />
         <Route path="/resellers" element={<Guard perm="view_resellers" roles={['admin']}><Users role="reseller" /></Guard>} />
+        <Route path="/resellers/:id/snapshot" element={<Guard perm="view_resellers" roles={['admin']}><ResellerSnapshot /></Guard>} />
         <Route path="/sellers" element={<Guard perm="view_sellers" roles={['admin', 'reseller']} hotspot><Users role="seller" /></Guard>} />
         <Route path="/wallet" element={<Guard roles={['admin', 'reseller', 'seller']}><FundAllocation defaultTab="wallet" /></Guard>} />
         <Route path="/gb" element={<Guard roles={['admin', 'reseller', 'seller']} hotspot><FundAllocation defaultTab="gb" /></Guard>} />

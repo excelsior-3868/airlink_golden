@@ -424,8 +424,9 @@ export default function AppShell() {
             <p className="font-medium text-base tracking-tight text-[#003164] dark:text-white leading-none">{branding.property_name || 'Airlink'}</p>
           </div>
 
-          {/* Header Controls: Balances */}
+          {/* Header Controls: Theme toggle & Balances */}
           <div className="flex items-center gap-1.5 select-none min-w-0">
+            <ThemeToggle variant="icon" className="w-8 h-8 rounded-xl border border-slate-200/80 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center shrink-0 active:scale-95 transition-transform" />
 
             {user.role !== 'seller' && (
               <div className="bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/40 dark:to-teal-950/30 border border-emerald-200/80 dark:border-emerald-800/60 rounded-xl px-2 h-8 flex items-center gap-1 text-[11px] shadow-2xs shrink-0">
@@ -511,6 +512,7 @@ export default function AppShell() {
                 </div>
 
                 <InstallAppButton variant="compact" onDone={() => setDrawerOpen(false)} />
+                <ThemeToggle variant="dropdown-item" className="border border-slate-200/80 dark:border-slate-700/80 bg-white dark:bg-slate-800" />
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     onClick={() => { setDrawerOpen(false); setPasswordOpen(true) }}

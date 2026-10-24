@@ -1,13 +1,14 @@
 import { useEffect, useState, useMemo, Fragment } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Plus, HandCoins, Wallet, Database, UserPlus, Save, Users2, Store, FileText, CreditCard, CheckCircle2, RefreshCw, ChevronDown, ChevronUp, Percent, Coins, PlusCircle, Power, Eye, EyeOff, Edit3, UserMinus, UserCheck, Search, RotateCcw, FilterX, User as UserIcon, Users as UsersIcon } from 'lucide-react'
+import { Plus, HandCoins, Wallet, Database, UserPlus, Save, Users2, Store, FileText, CreditCard, CheckCircle2, RefreshCw, ChevronDown, ChevronUp, Percent, Coins, PlusCircle, Power, Eye, EyeOff, Edit3, UserMinus, UserCheck, Search, RotateCcw, FilterX, User as UserIcon, Users as UsersIcon, Activity, Receipt, TrendingUp, AlertTriangle } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useQuery, invalidateCache } from '../lib/cache'
 import { useAuth } from '../lib/auth'
-import { rs, gb, date, datet } from '../lib/format'
+import { rs, gb, date, datet, num } from '../lib/format'
 import { useBranding } from '../lib/branding'
 import { GlassCard, PageTitle, Modal, Pill, Pagination, EmptyState, Spinner, CustomSelect, SelectOption, renderPaymentMethodIcon } from '../components/ui'
+import { ResellerSnapshotModal } from '../components/ResellerSnapshotModal'
 
 // Live-typing display formatter for a numeric amount input: inserts Indian-style
 // thousand separators on the integer part while preserving an in-progress decimal.
@@ -25,11 +26,13 @@ const formatAmountInput = (raw: string) => {
 export default function Users({ role }: { role: 'reseller' | 'seller' }) {
   const { user, refresh, can } = useAuth()
   const location = useLocation()
+  const navigate = useNavigate()
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [resellerFilter, setResellerFilter] = useState('all')
   const [sellerFilter, setSellerFilter] = useState('all')
+  const [snapshotResellerId, setSnapshotResellerId] = useState<number | null>(null)
 
   const [createOpen, setCreateOpen] = useState(false)
 
@@ -106,7 +109,7 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
         note: t.note,
         amountLabel: rs(t.amount),
         amountColor: t.type === 'refund' ? 'text-rose-600' : 'text-emerald-600',
-        statusBadge: t.type.toUpperCase(),
+        statusBadge: t.type === 'load' ? 'Load' : (t.type === 'refund' ? 'Refund' : 'Transaction'),
         statusTone: t.type === 'load' ? 'success' : 'secondary',
         created_at: t.created_at,
         dateObj: new Date(t.created_at),
@@ -124,7 +127,7 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
         amountLabel: rs(t.total_amount),
         amountColor: 'text-purple-600',
         dueLabel: t.status !== 'paid' && (t.total_amount - (t.paid_amount || 0)) > 0 ? rs(t.total_amount - (t.paid_amount || 0)) : null,
-        statusBadge: t.status.toUpperCase(),
+        statusBadge: t.status === 'paid' ? 'Paid' : 'Due',
         statusTone: t.status === 'paid' ? 'success' : 'danger',
         created_at: t.created_at,
         dateObj: new Date(t.created_at),
@@ -141,7 +144,7 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
         note: t.note,
         amountLabel: rs(t.amount),
         amountColor: 'text-emerald-600',
-        statusBadge: 'PAID',
+        statusBadge: 'Paid',
         statusTone: 'success',
         created_at: t.payment_date || t.created_at,
         dateObj: new Date(t.payment_date || t.created_at),
@@ -202,6 +205,12 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
     { enabled: user?.role === 'admin' || role === 'reseller' },
   )
 
+  const { data: overviewStats, refetch: refetchOverview } = useQuery<any>(
+    'resellers-overview-stats',
+    () => api.get('/resellers/overview-stats').then((r) => r.data.data),
+    { enabled: role === 'reseller' && user?.role === 'admin' }
+  )
+
   const filterResellerOptions = useMemo(() => {
     const opts: SelectOption[] = [
       {
@@ -252,7 +261,8 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
 
   const load = () => {
     refetch()
-    invalidateCache('users'); invalidateCache('dashboard'); invalidateCache('wallet'); invalidateCache('gb')
+    refetchOverview?.()
+    invalidateCache('users'); invalidateCache('dashboard'); invalidateCache('wallet'); invalidateCache('gb'); invalidateCache('resellers-overview-stats')
   }
 
   useEffect(() => { setPage(1) }, [role, statusFilter, resellerFilter, sellerFilter])
@@ -424,7 +434,7 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
 
       {/* Action Guide / Legend */}
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2 mb-3.5 px-4 py-2.5 bg-slate-50 border border-slate-200/50 rounded-2xl text-xs text-slate-500 shadow-sm">
-        <span className="font-bold text-slate-700 uppercase tracking-wider text-[10px]">Action Guide:</span>
+        <span className="font-bold text-slate-700 dark:text-slate-300 text-xs">Action Guide:</span>
         {role === 'seller' && user?.role === 'admin' ? (
           <span className="flex items-center gap-1.5">
             <span className="p-1 rounded-md bg-slate-100 text-slate-600 inline-flex"><ChevronDown size={12} /></span>
@@ -432,6 +442,12 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
           </span>
         ) : (
           <>
+            {role === 'reseller' && (
+              <span className="flex items-center gap-1.5">
+                <span className="p-1 rounded-md bg-purple-50 text-purple-600 inline-flex"><Activity size={12} /></span>
+                <span>One-Sight Snapshot</span>
+              </span>
+            )}
             <span className="flex items-center gap-1.5">
               <span className="p-1 rounded-md bg-sky-50 text-sky-600 inline-flex"><Edit3 size={12} /></span>
               <span>Edit {label}</span>
@@ -557,6 +573,7 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
                 <th>Name</th>
                 <th>Username</th>
                 {role === 'seller' && user?.role === 'admin' && <th>Parent Reseller</th>}
+                {role === 'reseller' && <th>Subscribers</th>}
                 {role === 'reseller' && <th>Wallet Balance</th>}
                 {pppoeOnly && role === 'reseller' && <th>Commission %</th>}
                 {!pppoeOnly && (
@@ -571,12 +588,13 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
                 )}
                 {role === 'reseller' && !pppoeOnly && <th>Sellers</th>}
                 <th>Status</th>
-                <th></th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {(data?.data || []).map((u: any, idx: number) => {
                 const isExpanded = expandedUserId === u.id;
+                const rStats = overviewStats?.resellers?.[u.id];
                 return (
                   <Fragment key={u.id}>
                     <motion.tr 
@@ -584,7 +602,13 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
                       animate={{ opacity: 1, x: 0 }} 
                       transition={{ delay: idx * 0.03 }} 
                       className="hover:bg-secondary/30 cursor-pointer select-none"
-                      onClick={() => toggleExpand(u)}
+                      onClick={() => {
+                        if (role === 'reseller') {
+                          navigate(`/resellers/${u.id}/snapshot`);
+                        } else {
+                          toggleExpand(u);
+                        }
+                      }}
                     >
                       <td className="font-semibold text-slate-800">{u.name}</td>
                       <td className="font-mono text-xs">{u.username}</td>
@@ -594,6 +618,38 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
                             <span className="text-[10px] bg-purple-50 text-purple-600 font-bold px-2 py-0.5 rounded-full border border-purple-100/50 whitespace-nowrap">
                               {u.parent.name}
                             </span>
+                          ) : (
+                            <span className="text-xs text-slate-400">—</span>
+                          )}
+                        </td>
+                      )}
+                      {role === 'reseller' && (
+                        <td>
+                          {rStats?.subscribers ? (
+                            <div className="flex flex-col gap-1">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="font-extrabold text-slate-800 dark:text-slate-100 text-xs">
+                                  {rStats.subscribers.total} Total
+                                </span>
+                                <span className="px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-100/80">
+                                  {rStats.subscribers.active} Act
+                                </span>
+                                {rStats.subscribers.expired > 0 && (
+                                  <span className="px-1.5 py-0.5 rounded-full bg-rose-50 text-rose-700 text-[10px] font-bold border border-rose-100/80">
+                                    {rStats.subscribers.expired} Exp
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1.5 text-[10px]">
+                                <span className="relative flex h-1.5 w-1.5">
+                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                                </span>
+                                <span className="font-bold text-cyan-700 dark:text-cyan-300">
+                                  {rStats.subscribers.online} Online
+                                </span>
+                              </div>
+                            </div>
                           ) : (
                             <span className="text-xs text-slate-400">—</span>
                           )}
@@ -614,6 +670,16 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
                       {role === 'reseller' && !pppoeOnly && <td>{u.children_count ?? 0}</td>}
                       <td><Pill tone={u.status === 'active' ? 'success' : 'danger'}>{u.status === 'active' ? 'Active' : 'Disabled'}</Pill></td>
                       <td className="text-right pr-6 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                        {role === 'reseller' && (
+                          <button
+                            type="button"
+                            className="text-purple-600 hover:text-purple-800 p-1.5 rounded-lg hover:bg-purple-50 transition-all inline-flex items-center justify-center mr-1"
+                            title="One-Sight Snapshot"
+                            onClick={() => navigate(`/resellers/${u.id}/snapshot`)}
+                          >
+                            <Activity size={14} />
+                          </button>
+                        )}
                         {!(role === 'seller' && user?.role === 'admin') && (
                           <>
                             <button className="text-sky-600 hover:text-sky-800 p-1.5 rounded-lg hover:bg-sky-50 transition-all inline-flex items-center justify-center mr-1" title={`Edit ${label}`} onClick={() => openEditUser(u)}>
@@ -636,14 +702,16 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
                             </button>
                           </>
                         )}
-                        <button className="text-slate-500 hover:text-primary p-1.5 rounded-lg hover:bg-slate-100/80 transition-all inline-flex items-center justify-center" title="View Details" onClick={() => toggleExpand(u)}>
-                          {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                        </button>
+                        {role === 'seller' && (
+                          <button className="text-slate-500 hover:text-primary p-1.5 rounded-lg hover:bg-slate-100/80 transition-all inline-flex items-center justify-center" title="View Details" onClick={() => toggleExpand(u)}>
+                            {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                          </button>
+                        )}
                       </td>
                     </motion.tr>
-                    {isExpanded && (
+                    {role !== 'reseller' && isExpanded && (
                       <tr className="bg-slate-50/40">
-                        <td colSpan={pppoeOnly ? 8 : role === 'reseller' ? 12 : (user?.role === 'admin' ? 10 : 9)} className="py-4 px-6 border-b border-slate-200/60">
+                        <td colSpan={pppoeOnly ? 8 : (user?.role === 'admin' ? 10 : 9)} className="py-4 px-6 border-b border-slate-200/60">
                           <div className="mb-3 flex items-center justify-between">
                             <div className="flex items-center gap-3">
                               <div className="w-10 h-10 rounded-full bg-purple-100 text-purple-700 flex items-center justify-center font-bold text-lg shadow-sm border border-purple-200/50 shrink-0">
@@ -668,7 +736,7 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
                             </div>
                           </div>
 
-                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2.5">Transaction History</p>
+                          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2.5">Transaction History</p>
 
                           {loadingHistory ? (
                             <div className="flex justify-center items-center py-8"><Spinner /></div>
@@ -698,7 +766,7 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
                                         <div className="flex items-center gap-1.5 flex-wrap">
                                           <span className="font-bold text-slate-800 text-xs">{t.title}</span>
                                           {i === 0 && (
-                                            <span className="px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[9px] font-bold border border-emerald-200 uppercase tracking-wide">
+                                            <span className="px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[9px] font-bold border border-emerald-200">
                                               Latest
                                             </span>
                                           )}
@@ -907,7 +975,7 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
       <Modal open={!!fundUser} onClose={() => setFundUser(null)} title={user?.role === 'admin' && role !== 'seller' ? `${pppoeOnly ? 'Load Wallet' : 'Load Wallet/GB'} — ${fundUser?.name || ''}` : `Allocate GB — ${fundUser?.name || ''}`}>
         <div className="space-y-3">
           <div className="flex items-center justify-between pb-1 flex-wrap gap-2">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Your Balance:</span>
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Your Balance:</span>
             <div className="flex gap-2">
               {user?.role === 'admin' && role !== 'seller' && (
                 <span className="px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100/80 text-xs font-bold shadow-sm flex items-center gap-1">
@@ -1254,6 +1322,13 @@ export default function Users({ role }: { role: 'reseller' | 'seller' }) {
           </div>
         </div>
       </Modal>
+
+      {/* Reseller One-Sight Snapshot Modal */}
+      <ResellerSnapshotModal
+        open={snapshotResellerId !== null}
+        onClose={() => setSnapshotResellerId(null)}
+        resellerId={snapshotResellerId}
+      />
     </div>
   )
 }

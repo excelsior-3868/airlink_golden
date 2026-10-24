@@ -346,7 +346,7 @@ export default function SubscriberDetailModal({
                   <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                     {[
                       { label: 'Total Usage', value: formatBytes(usage.totals.total), tone: 'text-purple-600' },
-                      { label: 'Download', value: formatBytes(usage.totals.download), tone: 'text-indigo-600' },
+                      { label: 'Download', value: formatBytes(usage.totals.download), tone: 'text-sky-600' },
                       { label: 'Upload', value: formatBytes(usage.totals.upload), tone: 'text-emerald-600' },
                       { label: 'Average / Day', value: formatBytes(usage.totals.average_per_day), tone: 'text-slate-700' },
                     ].map((k) => (
@@ -374,7 +374,7 @@ export default function SubscriberDetailModal({
                             <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => formatBytes(v)} width={64} />
                             <Tooltip formatter={(v: any) => formatBytes(Number(v))} />
                             <Legend />
-                            <Bar dataKey="download" name="Download" stackId="u" fill="#6366f1" />
+                            <Bar dataKey="download" name="Download" stackId="u" fill="#0284c7" />
                             <Bar dataKey="upload" name="Upload" stackId="u" fill="#10b981" radius={[4, 4, 0, 0]} />
                           </BarChart>
                         </ResponsiveContainer>
