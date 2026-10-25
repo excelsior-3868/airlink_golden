@@ -1,4 +1,5 @@
 import { ReactNode } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Activity, CalendarClock, Cable, Network, RefreshCw, Router, TrendingUp, Trophy, UserPlus, Users2, Wifi } from 'lucide-react'
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { num, date, parseDate } from '../lib/format'
@@ -77,11 +78,15 @@ export default function NetworkDashboard({ metrics: m, role }: { metrics: any; r
   const traffic: any[] = (net?.traffic || []).map((t: any) => ({ ...t, label: new Date(t.ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }))
   const scopeNote = role === 'admin' ? 'Whole network' : 'Your OLTs & subscribers'
 
+  const navigate = useNavigate()
+  const toCustomers = (view: string) => () => navigate(`/pppoe/customers?view=${view}`)
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <StatCard
           label="Online Now"
+          onClick={toCustomers('online')}
           value={<span className="text-emerald-600 dark:text-emerald-400">{num(m.online_now)}</span>}
           icon={<Wifi size={22} />}
           iconColorClass={iconBox('emerald')}
@@ -89,6 +94,7 @@ export default function NetworkDashboard({ metrics: m, role }: { metrics: any; r
         />
         <StatCard
           label="Subscribers"
+          onClick={toCustomers('all')}
           value={<span className="text-indigo-600 dark:text-indigo-400">{num(subs.total)}</span>}
           icon={<Router size={22} />}
           iconColorClass={iconBox('indigo')}
@@ -102,6 +108,7 @@ export default function NetworkDashboard({ metrics: m, role }: { metrics: any; r
         />
         <StatCard
           label="New Subscribers"
+          onClick={toCustomers('new_today')}
           value={<span className="text-purple-600 dark:text-purple-400">{num(m.new_subscribers.today)}</span>}
           icon={<UserPlus size={22} />}
           iconColorClass={iconBox('purple')}
@@ -109,6 +116,7 @@ export default function NetworkDashboard({ metrics: m, role }: { metrics: any; r
         />
         <StatCard
           label="Renewals Today"
+          onClick={toCustomers('renewed_today')}
           value={<span className="text-blue-600 dark:text-blue-400">{num(m.recharges.today)}</span>}
           icon={<RefreshCw size={22} />}
           iconColorClass={iconBox('blue')}
@@ -116,6 +124,7 @@ export default function NetworkDashboard({ metrics: m, role }: { metrics: any; r
         />
         <StatCard
           label="Expiring Soon"
+          onClick={toCustomers('expiring_7d')}
           value={<span className="text-amber-600 dark:text-amber-400">{num(expiring.count)}</span>}
           icon={<CalendarClock size={22} />}
           iconColorClass={iconBox('amber')}
@@ -127,6 +136,7 @@ export default function NetworkDashboard({ metrics: m, role }: { metrics: any; r
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <StatCard
             label="OLT's Online"
+            onClick={() => navigate('/nms/devices')}
             value={<span className={net.devices.down ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}>{num(net.devices.up)} / {num(net.devices.total)}</span>}
             icon={<Network size={22} />}
             iconColorClass={iconBox(net.devices.down ? 'rose' : 'emerald')}
@@ -134,6 +144,7 @@ export default function NetworkDashboard({ metrics: m, role }: { metrics: any; r
           />
           <StatCard
             label="ONTs Online"
+            onClick={() => navigate('/nms/registered-onts')}
             value={<span className="text-cyan-600 dark:text-cyan-400">{num(net.onts.online)} / {num(net.onts.total)}</span>}
             icon={<Cable size={22} />}
             iconColorClass={iconBox('cyan')}
@@ -141,6 +152,7 @@ export default function NetworkDashboard({ metrics: m, role }: { metrics: any; r
           />
           <StatCard
             label="Weak Optical Signal"
+            onClick={() => navigate('/nms/registered-onts')}
             value={<span className={net.onts.weak_signal ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}>{num(net.onts.weak_signal)}</span>}
             icon={<Activity size={22} />}
             iconColorClass={iconBox(net.onts.weak_signal ? 'amber' : 'emerald')}

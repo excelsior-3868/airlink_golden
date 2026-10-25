@@ -228,7 +228,11 @@ export default function OnlineUsers() {
       />
 
       {/* Top Stat Summary Cards */}
-      <div className={`grid grid-cols-1 sm:grid-cols-2 ${isSeller ? 'lg:grid-cols-4' : 'lg:grid-cols-3 xl:grid-cols-5'} gap-4`}>
+      <div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 ${
+        ({ 3: 'lg:grid-cols-3', 4: 'lg:grid-cols-4', 5: 'lg:grid-cols-5' } as Record<number, string>)[
+          3 + (pppoeOnly ? 0 : 1) + (isSeller ? 0 : 1)
+        ]
+      }`}>
         <StatCard
           label="Live Online Customers"
           value={

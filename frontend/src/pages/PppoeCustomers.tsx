@@ -4,7 +4,7 @@ import {
   Users2, Plus, Zap, Pencil, Trash2, PauseCircle, PlayCircle, Unplug,
   Eye, Search, RotateCcw, Download, Router, Shield, Clock,
   AlertTriangle, CheckCircle, Activity, CheckCircle2, XCircle, Loader2,
-  ArrowLeftRight
+  ArrowLeftRight, UserPlus, RefreshCw
 } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useQuery, invalidateCache } from '../lib/cache'
@@ -50,7 +50,11 @@ export default function PppoeCustomers() {
   const [planFilter, setPlanFilter] = useState('all')
   const [resellerFilter, setResellerFilter] = useState('all')
   // Which stat tile is selected. Mirrors the server's `view` param 1:1.
-  const [view, setView] = useState<'all' | 'active' | 'expiring_7d' | 'expired_suspended' | 'online'>('all')
+  // Dashboard tiles deep-link here with ?view=, so seed from the URL.
+  const [view, setView] = useState<'all' | 'active' | 'expiring_7d' | 'expired_suspended' | 'online' | 'new_today' | 'renewed_today'>(() => {
+    const v = new URLSearchParams(window.location.search).get('view')
+    return v && ['active', 'expiring_7d', 'expired_suspended', 'online', 'new_today', 'renewed_today'].includes(v) ? (v as any) : 'all'
+  })
   const [page, setPage] = useState(1)
 
   // Modals state
@@ -449,7 +453,7 @@ export default function PppoeCustomers() {
   return (
     <div className="space-y-6">
       <PageTitle
-        title="Add New Customer"
+        title="Customer List"
         subtitle="Manage broadband internet subscribers, subscriptions, live sessions, and recharge billing"
         icon={<Router size={22} className="text-indigo-500" />}
         action={
@@ -469,7 +473,7 @@ export default function PppoeCustomers() {
                 className="btn-primary flex items-center gap-2"
                 onClick={openCreate}
               >
-                <Plus size={16} /> New Subscriber
+                <Plus size={16} /> New Customer
               </motion.button>
             )}
           </div>
@@ -478,13 +482,15 @@ export default function PppoeCustomers() {
 
       <div className="space-y-6">
           {/* Stat Cards — each one is a filter for the list below. */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-7 gap-3.5">
             {([
               { key: 'all',               label: 'Total Subscribers',   value: summary?.total ?? customers.length, icon: <Users2 size={18} />,        tone: 'indigo',  valueClass: 'text-slate-900 dark:text-white' },
               { key: 'active',            label: 'Active',              value: summary?.active ?? 0,               icon: <CheckCircle size={18} />,   tone: 'emerald', valueClass: 'text-emerald-600 dark:text-emerald-400' },
               { key: 'expiring_7d',       label: 'Expiring Soon',       value: summary?.expiring_7d ?? 0,          icon: <Clock size={18} />,         tone: 'amber',   valueClass: 'text-amber-600 dark:text-amber-400' },
               { key: 'expired_suspended', label: 'Expired / Suspended', value: summary?.expired_suspended ?? 0,    icon: <AlertTriangle size={18} />, tone: 'rose',    valueClass: 'text-rose-600 dark:text-rose-400' },
               { key: 'online',            label: 'Online Live',         value: summary?.online ?? 0,               icon: <Activity size={18} />,      tone: 'sky',     valueClass: 'text-sky-600 dark:text-sky-400' },
+              { key: 'new_today',         label: 'New Today',           value: summary?.new_today ?? 0,            icon: <UserPlus size={18} />,      tone: 'purple',  valueClass: 'text-purple-600 dark:text-purple-400' },
+              { key: 'renewed_today',     label: 'Recharged Today',     value: summary?.renewed_today ?? 0,        icon: <RefreshCw size={18} />,     tone: 'blue',    valueClass: 'text-blue-600 dark:text-blue-400' },
             ] as const).map((c, i) => {
               const selected = view === c.key
               const iconTone: Record<string, string> = {
@@ -493,10 +499,17 @@ export default function PppoeCustomers() {
                 amber: 'bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400',
                 rose: 'bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400',
                 sky: 'bg-sky-50 dark:bg-sky-950/50 text-sky-600 dark:text-sky-400',
+                purple: 'bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400',
+                blue: 'bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400',
               }
-              const ring: Record<string, string> = {
-                indigo: 'ring-indigo-500/70', emerald: 'ring-emerald-500/70', amber: 'ring-amber-500/70',
-                rose: 'ring-rose-500/70', sky: 'ring-sky-500/70',
+              const activeBorder: Record<string, string> = {
+                indigo: '!border-indigo-500 !border-2 shadow-indigo-500/20 shadow-md',
+                emerald: '!border-emerald-500 !border-2 shadow-emerald-500/20 shadow-md',
+                amber: '!border-amber-500 !border-2 shadow-amber-500/20 shadow-md',
+                rose: '!border-rose-500 !border-2 shadow-rose-500/20 shadow-md',
+                sky: '!border-sky-500 !border-2 shadow-sky-500/20 shadow-md',
+                purple: '!border-purple-500 !border-2 shadow-purple-500/20 shadow-md',
+                blue: '!border-blue-500 !border-2 shadow-blue-500/20 shadow-md',
               }
               return (
                 <button
@@ -505,16 +518,18 @@ export default function PppoeCustomers() {
                   onClick={() => selectView(c.key)}
                   aria-pressed={selected}
                   title={selected ? 'Clear this filter' : `Show only ${c.label}`}
-                  className={`text-left rounded-2xl transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
-                    selected ? `ring-2 ${ring[c.tone]}` : 'hover:-translate-y-0.5'
-                  } ${i === 4 ? 'col-span-2 sm:col-span-1' : ''}`}
+                  className={`text-left rounded-[28px] transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 hover:-translate-y-0.5 ${
+                    i === 6 ? 'col-span-2 sm:col-span-1' : ''
+                  }`}
                 >
-                  <GlassCard className="p-3.5 flex items-center gap-3 h-full">
+                  <GlassCard className={`p-3.5 flex items-center gap-3 h-full transition-all ${
+                    selected ? activeBorder[c.tone] : ''
+                  }`}>
                     <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${iconTone[c.tone]}`}>
                       {c.icon}
                     </div>
                     <div className="min-w-0">
-                      <div className="text-[11px] text-slate-500 font-medium truncate">{c.label}</div>
+                      <div className="text-[11px] text-slate-500 font-medium leading-tight">{c.label}</div>
                       <div className={`text-lg font-bold mt-0.5 ${c.valueClass}`}>{c.value}</div>
                     </div>
                   </GlassCard>
@@ -598,15 +613,15 @@ export default function PppoeCustomers() {
               <Spinner />
             ) : paginatedCustomers.length === 0 ? (
               <EmptyState
-                title={isFiltered ? 'No Matching Subscribers' : 'No PPPoE Subscribers Yet'}
+                title={isFiltered ? 'No Matching Customers' : 'No Customers Yet'}
                 subtitle={isFiltered
-                  ? 'No subscribers match your search or filter criteria. Try clearing the filters.'
-                  : 'Click New Subscriber to onboard your first one.'}
+                  ? 'No customers match your search or filter criteria. Try clearing the filters.'
+                  : 'Click New Customer to onboard your first one.'}
               >
                 {!isFiltered && can('create_pppoe_customer') && (
                   <div className="pt-4">
                     <button onClick={openCreate} className="btn-primary inline-flex items-center gap-2">
-                      <Plus size={16} /> New Subscriber
+                      <Plus size={16} /> New Customer
                     </button>
                   </div>
                 )}

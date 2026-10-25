@@ -157,6 +157,8 @@ class PppoeCustomerController extends Controller
             'expiring_7d' => $this->applyView(clone $base, 'expiring_7d')->count(),
             'expired_suspended' => $this->applyView(clone $base, 'expired_suspended')->count(),
             'online' => $this->applyView(clone $base, 'online')->count(),
+            'new_today' => $this->applyView(clone $base, 'new_today')->count(),
+            'renewed_today' => $this->applyView(clone $base, 'renewed_today')->count(),
         ]);
     }
 
@@ -180,8 +182,22 @@ class PppoeCustomerController extends Controller
                 'username',
                 OnlineSession::scopeLive(DB::table('radacct'))->select('username')
             ),
+            // Same windows and renewal definition as NetworkDashboardMetrics, so the
+            // dashboard tiles land on a list of exactly the customers they counted.
+            'new_today' => $query->where('created_at', '>=', now('Asia/Kathmandu')->startOfDay()->utc()),
+            'new_month' => $query->where('created_at', '>=', now('Asia/Kathmandu')->startOfMonth()->utc()),
+            'renewed_today' => $this->renewedSince($query, now('Asia/Kathmandu')->startOfDay()->utc()),
+            'renewed_month' => $this->renewedSince($query, now('Asia/Kathmandu')->startOfMonth()->utc()),
             default => $query,
         };
+    }
+
+    private function renewedSince($query, $since)
+    {
+        return $query->whereIn('id', DB::table('pppoe_recharges')
+            ->whereRaw('pppoe_recharges.id > (SELECT MIN(f.id) FROM pppoe_recharges f WHERE f.customer_id = pppoe_recharges.customer_id)')
+            ->where('created_at', '>=', $since->toDateTimeString())
+            ->select('customer_id'));
     }
 
     /**

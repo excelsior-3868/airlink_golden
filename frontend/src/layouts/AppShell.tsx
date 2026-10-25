@@ -50,7 +50,7 @@ const NAV: NavItem[] = [
     color: 'text-indigo-500',
     perm: ['view_pppoe', 'view_plans'],
     children: [
-      { to: '/pppoe/customers', label: 'Add New Customer', roles: ['admin', 'reseller'], icon: Users2, color: 'text-indigo-500', perm: 'view_pppoe' },
+      { to: '/pppoe/customers', label: 'Customer List', roles: ['admin', 'reseller'], icon: Users2, color: 'text-indigo-500', perm: 'view_pppoe' },
       { to: '/pppoe/sales-summary', label: 'Sales Summary', roles: ['admin', 'reseller'], icon: TrendingUp, color: 'text-emerald-500', perm: 'view_pppoe' },
       { to: '/pppoe/commission-summary', label: 'Sales Commission', roles: ['admin', 'reseller'], icon: Percent, color: 'text-amber-500', perm: 'view_pppoe' },
       { to: '/plans/pppoe', label: 'Package Plan', roles: ['admin', 'reseller'], icon: Package, color: 'text-violet-500', perm: 'view_plans' },

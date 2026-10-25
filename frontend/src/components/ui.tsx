@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion'
-import { ReactNode, useState, useEffect, useLayoutEffect, useRef } from 'react'
+import { ReactNode, KeyboardEvent as ReactKeyboardEvent, useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useAuth } from '../lib/auth'
 import { useBranding } from '../lib/branding'
@@ -32,6 +32,7 @@ export function StatCard({
   iconColorClass = 'text-primary bg-primary/10',
   valueColorClass = '',
   className = '',
+  onClick,
 }: {
   label: string;
   value: ReactNode;
@@ -40,13 +41,15 @@ export function StatCard({
   iconColorClass?: string;
   valueColorClass?: string;
   className?: string;
+  onClick?: () => void;
 }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
-      className={`glass-card p-5 flex items-start justify-between ${className}`}
+      className={`glass-card p-5 flex items-start justify-between ${onClick ? 'cursor-pointer hover:shadow-lg transition-shadow' : ''} ${className}`}
+      {...(onClick ? { onClick, role: 'link', tabIndex: 0, onKeyDown: (e: ReactKeyboardEvent) => { if (e.key === 'Enter') onClick() } } : {})}
     >
       <div className="min-w-0">
         <p className="text-muted-foreground text-xs sm:text-sm font-medium">{label}</p>
