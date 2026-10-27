@@ -54,6 +54,9 @@ type SSHExec struct {
 	stdin   io.Writer
 	timeout time.Duration
 
+	// dropLogLines hides the device's unsolicited timestamped log lines from the reader (see asyncLogRe).
+	dropLogLines bool
+
 	mu   sync.Mutex
 	buf  bytes.Buffer
 	wake chan struct{}
@@ -168,9 +171,18 @@ func (e *SSHExec) enterMode(ctx context.Context, readOnly bool) error {
 	if readOnly {
 		steps = steps[:1]
 	}
+	return e.enterSteps(ctx, steps)
+}
+
+// enterSteps runs the mode-switching commands that follow login. Vendors whose CLI differs from the
+// Huawei enable/config pair (HSGQ needs enable, configure) pass their own list.
+func (e *SSHExec) enterSteps(ctx context.Context, steps []string) error {
 	for _, step := range steps {
 		if out, err := e.exec(ctx, step, false); err != nil {
 			e.Close()
+			if t := lastOLTText(out); t != "" {
+				return fmt.Errorf("%s: %w (OLT said: %q)", step, err, t)
+			}
 			return fmt.Errorf("%s: %w", step, err)
 		} else if msg := OutputError(out); msg != "" {
 			e.Close()
@@ -200,10 +212,22 @@ func (e *SSHExec) readLoop(r io.Reader) {
 	}
 }
 
+// asyncLogRe matches the log lines an HSGQ OLT pushes into an open session at any moment, e.g.
+// "[2020/09/27 03:16:44+05:45]  Warning: ONU 3/28 ... link down". The OLT does not reprint the prompt after one, so a
+// log line arriving right after the prompt would otherwise hide it until the command times out. A line that is still
+// arriving (no newline yet) is matched too.
+//
+// The second alternative drops a timestamp still being received ("[2020/09/27 03:16:4" at the very end of the buffer).
+var asyncLogRe = regexp.MustCompile(`\[\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}[^\n]*(?:\n|$)|\[[\d/: ]*$`)
+
 func (e *SSHExec) snapshot() string {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	return e.buf.String()
+	s := e.buf.String()
+	if e.dropLogLines {
+		s = asyncLogRe.ReplaceAllString(s, "")
+	}
+	return s
 }
 
 func (e *SSHExec) reset() {
@@ -297,6 +321,9 @@ func trimOutput(out, cmd string) string {
 	// drop echoed command (first line) and trailing prompt line
 	if len(lines) > 0 && cmd != "" && strings.Contains(lines[0], cmd) {
 		lines = lines[1:]
+	}
+	for n := len(lines); n > 0 && strings.TrimSpace(lines[n-1]) == ""; n = len(lines) {
+		lines = lines[:n-1] // blank lines after the prompt (left where a device log line was removed)
 	}
 	if n := len(lines); n > 0 && promptRe.MatchString("\n"+lines[n-1]) {
 		lines = lines[:n-1]

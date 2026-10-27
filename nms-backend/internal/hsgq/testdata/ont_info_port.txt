@@ -1,0 +1,20 @@
+show ont-info 1 all 
+----------------------------------------------------------------------------------------------------
+PON/ONU ONU    Serial            State     Run        Config    Match     Last Link         ONT             
+        Type   Number                      State      State     State     down reason       Name            
+1/0     GPON   MHAR06b409e3      Active    Online     normal    Initial   Laser out         ONT01/000       
+1/1     GPON   GPON00851c18      Inactive  Initial    initial   Initial                     ONT01/001       
+1/2     GPON   ECOMaa532f9b      Active    Online     normal    Initial   Laser out         ONT01/002       
+1/6     GPON   MHAR0616d2d2      Active    Online     normal    Initial   Power down        ONT01/006       
+1/32    GPON   HWTC252acf3d      Inactive  Initial    initial   Initial                     ONT01/032       
+1/34    GPON   ECOM104e1f9b      Inactive  Initial    initial   Initial                     ONT01/034       
+1/35    GPON   HWTCe4c5989d      Active    Online     normal    Initial                     ONT01/035       
+1/37    GPON   ECOM6e2fbf9b      Active    Offline    initial   Initial   Power down        ONT01/037       
+1/44    GPON   HWTCc11b499b      Active    Online     normal    Initial                     ONT01/044       
+2/9     GPON   ZTEGcf50c6fc      Active    Online     normal    Initial   Laser out         ONT02/009       
+4/0     GPON   HWTCeda5d39d      Inactive  Initial    initial   Initial                     ONT04/000       
+4/1     GPON   HWTC1a81a79d      Active    Offline    initial   Initial   Power down        ONT04/001       
+
+[2020/09/27 02:50:24+05:45]  Warning: ONU 3/28 ECOM6de10f9b ONU link down, Reason:Laser out
+
+Golden-Hub-Jalpa-HSGQ-Gpon-OLT(config)# 

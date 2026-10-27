@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Server, X, Loader2, Users, Check } from 'lucide-react'
 import { nmsApi, Device, errMsg } from '../../lib/nmsApi'
 import { CustomSelect } from '../ui'
-import { Field, ErrorBox, inputCls } from './NmsUi'
+import { Field, ErrorBox, inputCls, vendorOptions, canonicalVendor } from './NmsUi'
 
 interface EditDeviceModalProps {
   device: Device
@@ -23,7 +23,7 @@ export default function EditDeviceModal({ device, onClose, onSuccess }: EditDevi
   const qc = useQueryClient()
   const [name, setName] = useState(device.name || '')
   const [ip, setIp] = useState(device.ip || '')
-  const [vendor, setVendor] = useState(device.vendor || '')
+  const [vendor, setVendor] = useState(canonicalVendor(device.vendor || ''))
   const [vlan, setVlan] = useState(device.vlan !== null && device.vlan !== undefined ? String(device.vlan) : '100')
   const [gemPort, setGemPort] = useState(device.gem_port !== null && device.gem_port !== undefined ? String(device.gem_port) : '1')
   const [gemPortUntagged, setGemPortUntagged] = useState(device.gem_port_untagged !== null && device.gem_port_untagged !== undefined ? String(device.gem_port_untagged) : '2')
@@ -185,12 +185,7 @@ export default function EditDeviceModal({ device, onClose, onSuccess }: EditDevi
                     </Field>
 
                     <Field label="Hardware Vendor">
-                      <input
-                        value={vendor}
-                        onChange={(e) => setVendor(e.target.value)}
-                        className={inputCls}
-                        placeholder="MikroTik, Huawei, Cisco..."
-                      />
+                      <CustomSelect value={vendor} onChange={setVendor} options={vendorOptions(vendor)} placeholder="Select vendor..." />
                     </Field>
 
                     <Field label="Service VLAN ID">

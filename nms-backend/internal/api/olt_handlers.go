@@ -581,6 +581,10 @@ func (s *Server) planJob(w http.ResponseWriter, r *http.Request) {
 		fail(w, 403, "access denied to this OLT")
 		return
 	}
+	if s.isHSGQ(r.Context(), req.OLTID) {
+		fail(w, 422, "provisioning is not available for HSGQ OLTs yet: the Huawei command set does not apply to them")
+		return
+	}
 	u := userFrom(r)
 	if u.OriginalRole == "reseller" && u.ID > 0 {
 		req.ResellerID = &u.ID

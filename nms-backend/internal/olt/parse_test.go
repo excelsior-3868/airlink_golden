@@ -239,6 +239,15 @@ func TestOutputError(t *testing.T) {
 	if OutputError("  % Unknown command, the error locates at '^'\n") == "" {
 		t.Fatal("unknown command not detected")
 	}
+	for _, hsgq := range []string{
+		"vty% [VTY] vty[node:6],Unknown command: displayversion\n",
+		"vty% Command incomplete.\n",
+		"show board\n% There is no matched command.\n",
+	} {
+		if OutputError(hsgq) == "" {
+			t.Fatalf("HSGQ error format not detected: %q", hsgq)
+		}
+	}
 	if OutputError("  Run state : online\n") != "" {
 		t.Fatal("false positive")
 	}

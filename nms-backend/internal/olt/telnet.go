@@ -20,6 +20,10 @@ type TelnetConfig struct {
 	Pass     string
 	Timeout  time.Duration
 	ReadOnly bool
+	// EnterSteps replaces the Huawei enable/config sequence run after login (nil keeps it).
+	EnterSteps []string
+	// DropLogLines hides unsolicited timestamped log lines (HSGQ) so they cannot hide the prompt or pollute output.
+	DropLogLines bool
 }
 
 const (
@@ -156,12 +160,22 @@ func dialTelnetOnce(ctx context.Context, c TelnetConfig) (*SSHExec, error) {
 		return nil, err
 	}
 	w := &lockedWriter{w: conn}
-	e := &SSHExec{conn: conn, stdin: w, timeout: c.Timeout, wake: make(chan struct{}, 1), done: make(chan struct{})}
+	e := &SSHExec{conn: conn, stdin: w, timeout: c.Timeout, dropLogLines: c.DropLogLines, wake: make(chan struct{}, 1), done: make(chan struct{})}
 	go e.readLoop(&telnetReader{r: conn, w: w})
 
 	if err := e.telnetLogin(ctx, c); err != nil {
 		conn.Close()
 		return nil, err
+	}
+	if c.EnterSteps != nil {
+		if _, err := e.expectPrompt(ctx, ""); err != nil {
+			e.Close()
+			return nil, fmt.Errorf("waiting for login prompt: %w", err)
+		}
+		if err := e.enterSteps(ctx, c.EnterSteps); err != nil {
+			return nil, err
+		}
+		return e, nil
 	}
 	if err := e.enterMode(ctx, c.ReadOnly); err != nil {
 		return nil, err

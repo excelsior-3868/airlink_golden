@@ -44,6 +44,10 @@ func ValidSN(sn string) error {
 
 func read(s string) Cmd { return Cmd{text: s} }
 
+// VendorReadCmd wraps a read-only command built by another vendor's driver (internal/hsgq). The caller owns
+// the validation: it must only pass constant text or text assembled from range-checked values.
+func VendorReadCmd(text string) Cmd { return Cmd{text: text} }
+
 func DisplayVersion() Cmd             { return read("display version") }
 func DisplayBoard() Cmd               { return read("display board 0") }
 func DisplayAutofind() Cmd            { return read("display ont autofind all") }
@@ -241,7 +245,7 @@ func ServicePortUndo(id int) (Cmd, error) {
 
 func Save() Cmd { return Cmd{text: "save", write: true, confirm: true} }
 
-var errRe = regexp.MustCompile(`(?im)^\s*(%\s*(Unknown command|Parameter error|Incomplete command|Too many parameters|Ambiguous command)|Failure:|Error:|Command execution failed)`)
+var errRe = regexp.MustCompile(`(?im)^\s*((vty)?%\s*(Unknown command|Parameter error|Incomplete command|Command incomplete|There is no matched command|\[VTY\]|Too many parameters|Ambiguous command)|Failure:|Error:|Command execution failed)`)
 
 // OutputError reports a CLI failure message found in command output ("" if none).
 // A successful-looking exit is not trusted on its own: Huawei prints failures as normal output.

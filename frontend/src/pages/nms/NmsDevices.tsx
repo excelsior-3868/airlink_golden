@@ -8,7 +8,7 @@ import { api } from '../../lib/api'
 import { useAuth } from '../../lib/auth'
 import { ago } from '../../lib/nmsFormat'
 import { CustomSelect } from '../../components/ui'
-import { Card, ErrorBox, Field, Loading, StatusText, Table, Td, Tr, inputCls, PageTitle } from '../../components/nms/NmsUi'
+import { Card, ErrorBox, Field, Loading, StatusText, Table, Td, Tr, inputCls, PageTitle, vendorOptions } from '../../components/nms/NmsUi'
 import EditDeviceModal from '../../components/nms/EditDeviceModal'
 
 const roles = ['core', 'aggregation', 'access', 'olt', 'radio', 'server']
@@ -27,6 +27,7 @@ export default function NmsDevices() {
   const [role, setRole] = useState('access')
   const [popId, setPopId] = useState('')
   const [parentId, setParentId] = useState('')
+  const [vendor, setVendor] = useState('')
   const [pollMethod, setPollMethod] = useState('snmp')
   const [snmpVersion, setSnmpVersion] = useState('2c')
   const [protocol, setProtocol] = useState('telnet')
@@ -68,10 +69,14 @@ export default function NmsDevices() {
     const f = new FormData(e.currentTarget)
     const num = (v: string) => (v ? Number(v) : null)
     if (role === 'olt') {
+      if (!vendor) {
+        setErr('Select the Hardware Vendor (Huawei or HSGQ): it decides which driver manages this OLT.')
+        return
+      }
       create.mutate({
         name: f.get('name'),
         ip: f.get('ip'),
-        vendor: f.get('vendor'),
+        vendor,
         pop_id: num(popId),
         protocol,
         port: Number(f.get('olt_port')) || (protocol === 'telnet' ? 23 : 22),
@@ -87,7 +92,7 @@ export default function NmsDevices() {
       name: f.get('name'),
       ip: f.get('ip'),
       role,
-      vendor: f.get('vendor'),
+      vendor,
       pop_id: num(popId),
       parent_id: num(parentId),
       poll_method: pollMethod,
@@ -142,7 +147,7 @@ export default function NmsDevices() {
             </Field>
 
             <Field label="Hardware Vendor">
-              <input name="vendor" className={inputCls} placeholder="MikroTik, Huawei, Cisco..." />
+              <CustomSelect value={vendor} onChange={setVendor} options={vendorOptions(vendor)} placeholder="Select vendor..." />
             </Field>
 
             <Field label="Service VLAN ID">

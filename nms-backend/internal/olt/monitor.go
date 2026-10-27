@@ -40,7 +40,7 @@ func (m *Monitor) Run(ctx context.Context) {
 func (m *Monitor) Cycle(ctx context.Context) {
 	rows, err := m.db.QueryContext(ctx, `
 		SELECT o.device_id, o.pon_ports FROM olts o JOIN devices d ON d.id=o.device_id
-		WHERE d.enabled=1 AND d.status='up' AND o.ssh_host_key<>'' AND o.pon_ports<>''`)
+		WHERE d.enabled=1 AND d.status='up' AND o.ssh_host_key<>'' AND o.pon_ports<>'' AND LOWER(d.vendor) NOT LIKE '%hsgq%'`)
 	if err != nil {
 		slog.Error("olt monitor: list", "err", err)
 		return

@@ -15,6 +15,7 @@ import (
 	"github.com/nepalairlink/nms/internal/api"
 	"github.com/nepalairlink/nms/internal/config"
 	"github.com/nepalairlink/nms/internal/db"
+	"github.com/nepalairlink/nms/internal/hsgq"
 	"github.com/nepalairlink/nms/internal/olt"
 	"github.com/nepalairlink/nms/internal/poller"
 	"github.com/nepalairlink/nms/internal/secretbox"
@@ -86,6 +87,7 @@ func run() error {
 	}
 
 	apiServer := api.New(dbConn, cfg, engine, svc)
+	apiServer.SetHSGQ(hsgq.NewService(dbConn, hsgq.Dialer{DB: dbConn, Box: box}))
 	apiServer.SetSecretBox(box)
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,

@@ -25,6 +25,7 @@ import (
 
 	"github.com/nepalairlink/nms/internal/alerts"
 	"github.com/nepalairlink/nms/internal/config"
+	"github.com/nepalairlink/nms/internal/hsgq"
 	"github.com/nepalairlink/nms/internal/olt"
 	"github.com/nepalairlink/nms/internal/secretbox"
 )
@@ -34,8 +35,12 @@ type Server struct {
 	cfg    *config.Config
 	engine *alerts.Engine
 	olts   *olt.Service
+	hsgq   *hsgq.Service
 	box    *secretbox.Box
 }
+
+// SetHSGQ routes OLTs whose Hardware Vendor is HSGQ to their own driver instead of the Huawei one.
+func (s *Server) SetHSGQ(h *hsgq.Service) { s.hsgq = h }
 
 // SetSecretBox enables storing OLT passwords entered from the frontend.
 func (s *Server) SetSecretBox(b *secretbox.Box) { s.box = b }

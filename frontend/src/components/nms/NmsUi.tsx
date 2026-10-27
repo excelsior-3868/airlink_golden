@@ -158,3 +158,17 @@ export const Field = ({ label, children }: { label: string; children: ReactNode 
     {children}
   </label>
 )
+
+/** Hardware vendors an OLT can be configured as; the vendor decides which driver talks to the device. */
+export const VENDORS = ['Huawei', 'HSGQ']
+
+/** Maps a saved vendor to its list spelling ("hsgq" -> "HSGQ") so the dropdown shows it selected. */
+export const canonicalVendor = (v = ''): string => VENDORS.find((x) => x.toLowerCase() === v.trim().toLowerCase()) ?? v.trim()
+
+/** Dropdown options for the Hardware Vendor field. A saved vendor outside the list stays selectable so editing never wipes it. */
+export function vendorOptions(current = ''): { value: string; label: string }[] {
+  const opts = VENDORS.map((v) => ({ value: v, label: v }))
+  const cur = current.trim()
+  if (cur && !VENDORS.some((v) => v.toLowerCase() === cur.toLowerCase())) opts.push({ value: cur, label: cur })
+  return opts
+}

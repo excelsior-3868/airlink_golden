@@ -1,10 +1,23 @@
 package api
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/nepalairlink/nms/internal/hsgq"
+	"github.com/nepalairlink/nms/internal/olt"
 )
+
+// isHSGQ reports whether the OLT's Hardware Vendor field selects the HSGQ driver (anything else is Huawei).
+func (s *Server) isHSGQ(ctx context.Context, oltID int64) bool {
+	var vendor string
+	if err := s.db.QueryRowContext(ctx, `SELECT vendor FROM devices WHERE id=?`, oltID).Scan(&vendor); err != nil {
+		return false
+	}
+	return hsgq.IsVendor(vendor)
+}
 
 func (s *Server) startSync(w http.ResponseWriter, r *http.Request) {
 	id, ok := idParam(w, r, "id")
@@ -15,7 +28,13 @@ func (s *Server) startSync(w http.ResponseWriter, r *http.Request) {
 		fail(w, 403, "access denied to this OLT")
 		return
 	}
-	run, err := s.olts.StartSync(r.Context(), id, userFrom(r).Name)
+	var run *olt.SyncRun
+	var err error
+	if s.isHSGQ(r.Context(), id) && s.hsgq != nil {
+		run, err = s.hsgq.StartSync(r.Context(), id, userFrom(r).Name)
+	} else {
+		run, err = s.olts.StartSync(r.Context(), id, userFrom(r).Name)
+	}
 	if err != nil {
 		s.jobError(w, err)
 		return
