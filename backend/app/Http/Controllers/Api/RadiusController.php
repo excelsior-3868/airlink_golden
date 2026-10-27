@@ -37,6 +37,8 @@ class RadiusController extends Controller
             ->leftJoin('internet_plans as pp', 'pp.id', '=', 'pc.plan_id')
             ->leftJoin('users as pppoe_reseller', 'pppoe_reseller.id', '=', 'pc.reseller_id')
             ->leftJoin('ont_inventory as oi', 'oi.serial_number', '=', 'pc.onu_serial_number')
+            // The OLT the ONT is registered on (devices.id is unique, so this cannot fan a session out into several rows).
+            ->leftJoin('devices as olt_dev', 'olt_dev.id', '=', 'oi.olt_id')
             ->select(
                 'radacct.radacctid',
                 'vouchers.id as voucher_id',
@@ -48,6 +50,9 @@ class RadiusController extends Controller
                 'oi.run_state as ont_run_state',
                 'oi.last_seen_at as ont_optical_updated_at',
                 'oi.olt_id as ont_olt_id',
+                'olt_dev.name as ont_olt_name',
+                'olt_dev.vendor as ont_olt_vendor',
+                'oi.description as ont_name',
                 'oi.frame as ont_frame',
                 'oi.slot as ont_slot',
                 'oi.pon_port as ont_pon_port',

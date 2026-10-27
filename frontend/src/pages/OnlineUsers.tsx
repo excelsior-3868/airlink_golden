@@ -9,6 +9,13 @@ import { GlassCard, PageTitle, Spinner, EmptyState, StatCard, Pagination, Custom
 import { LiveUsageGraphModal } from '../components/LiveUsageGraphModal'
 import SubscriberDetailModal from '../components/SubscriberDetailModal'
 
+/** The PON port the CPE hangs off. HSGQ has no frame or slot (just the PON number); Huawei is frame/slot/port. */
+function ontLocation(s: OnlineSession): string {
+  if (s.ont_pon_port == null) return ''
+  if ((s.ont_olt_vendor || '').toLowerCase().includes('hsgq')) return `PON ${s.ont_pon_port}`
+  return `${s.ont_frame ?? 0}/${s.ont_slot ?? 0}/${s.ont_pon_port}`
+}
+
 interface OnlineSession {
   radacctid: number
   voucher_id?: number
@@ -18,6 +25,13 @@ interface OnlineSession {
   cpe_serial_number?: string | null
   onu_serial_number?: string | null
   ont_rx_power?: number | null
+  ont_olt_name?: string | null
+  ont_olt_vendor?: string | null
+  ont_name?: string | null
+  ont_frame?: number | null
+  ont_slot?: number | null
+  ont_pon_port?: number | null
+  ont_ont_id?: number | null
   ont_optical_updated_at?: string | null
   ip_address?: string
   mac_address?: string
@@ -400,7 +414,7 @@ export default function OnlineUsers() {
                   <th>Internet Plan</th>
                   <th>Connected Since</th>
                   <th>Data Volume</th>
-                  <th>Attribution</th>
+                  <th>Reseller/OLT</th>
                 </tr>
               </thead>
               <tbody>
@@ -445,6 +459,15 @@ export default function OnlineUsers() {
                           <span className="font-mono text-xs font-semibold text-slate-700 dark:text-slate-200">
                             {s.cpe_serial_number || s.onu_serial_number}
                           </span>
+                          {s.ont_olt_name && (
+                            <span
+                              className="text-[11px] leading-tight text-slate-500 dark:text-slate-400"
+                              title={`Connected through ${s.ont_olt_name} (${ontLocation(s)})`}
+                            >
+                              <span className="font-semibold text-slate-600 dark:text-slate-300">{s.ont_olt_name}</span>
+                              {ontLocation(s) && <span className="font-mono"> · {ontLocation(s)}</span>}
+                            </span>
+                          )}
                           {s.connection_type === 'pppoe' ? (
                             s.ont_rx_power != null ? (
                               <div
@@ -560,6 +583,9 @@ export default function OnlineUsers() {
                     <td className="text-xs text-slate-500">
                       <div>{s.reseller_name || s.reseller_username || 'Admin Direct'}</div>
                       {s.seller_name && <div className="text-[10px] text-slate-400">{s.seller_name}</div>}
+                      {s.ont_name && (
+                        <div className="text-[10px] font-mono text-slate-400" title="ONT name">{s.ont_name}</div>
+                      )}
                     </td>
                   </motion.tr>
                 ))}
