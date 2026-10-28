@@ -17,10 +17,26 @@ class RadiusController extends Controller
         private \App\Services\Radius\CoaService $coa,
     ) {}
 
-    /** Fetch list of active RADIUS sessions currently connected to Hotspot networks. */
-    public function onlineUsers(Request $request): JsonResponse
+    /**
+     * Role-scoped, searched live-session query shared by both onlineUsers() modes.
+     *
+     * $deferLifetime leaves the lifetime-usage subquery out of the SELECT. That
+     * subquery re-reads a username's whole radacct history for EVERY live row,
+     * which is invisible at a few hundred sessions and the dominant cost at
+     * ten thousand. The paginated mode computes it for the visible page only.
+     */
+    private function onlineSessionsQuery(Request $request, bool $deferLifetime): \Illuminate\Database\Query\Builder
     {
         $user = $request->user();
+
+        $totalBytesSql = $deferLifetime
+            ? 'COALESCE(radacct.acctinputoctets, 0) + COALESCE(radacct.acctoutputoctets, 0)'
+            : 'GREATEST(
+                    COALESCE((SELECT SUM(COALESCE(r.acctinputoctets, 0) + COALESCE(r.acctoutputoctets, 0)) FROM radacct r WHERE r.username = radacct.username), 0)
+                    + COALESCE((SELECT u.input_octets + u.output_octets FROM radacct_usage_rollup u WHERE u.username = radacct.username), 0),
+                    COALESCE(radacct.acctinputoctets, 0) + COALESCE(radacct.acctoutputoctets, 0),
+                    COALESCE(vouchers.daily_used_bytes, 0)
+                )';
 
         // Both products write to the same radacct table, so one live-session
         // feed covers them. A username belongs to exactly one of them (the
@@ -91,11 +107,7 @@ class RadiusController extends Controller
                 DB::raw('CAST(GREATEST(0, TIMESTAMPDIFF(SECOND, COALESCE(radacct.acctstarttime, CASE WHEN pc.id IS NOT NULL THEN pc.activated_at ELSE vouchers.activated_at END, NOW()), NOW())) AS UNSIGNED) as session_time'),
                 DB::raw('COALESCE(radacct.acctinputoctets, 0) as input_bytes'),
                 DB::raw('COALESCE(radacct.acctoutputoctets, 0) as output_bytes'),
-                DB::raw('GREATEST(
-                    COALESCE((SELECT SUM(COALESCE(r.acctinputoctets, 0) + COALESCE(r.acctoutputoctets, 0)) FROM radacct r WHERE r.username = radacct.username), 0),
-                    COALESCE(radacct.acctinputoctets, 0) + COALESCE(radacct.acctoutputoctets, 0),
-                    COALESCE(vouchers.daily_used_bytes, 0)
-                ) as total_bytes'),
+                DB::raw($totalBytesSql.' as total_bytes'),
                 DB::raw('CASE WHEN pc.id IS NOT NULL THEN pppoe_reseller.username ELSE reseller.username END as reseller_username'),
                 DB::raw('CASE WHEN pc.id IS NOT NULL THEN pppoe_reseller.name ELSE reseller.name END as reseller_name'),
                 'seller.username as seller_username',
@@ -126,28 +138,51 @@ class RadiusController extends Controller
             }
         }
 
-        if ($search = $request->query('search')) {
-            $query->where(function ($q) use ($search) {
-                $q->where('vouchers.code', 'like', "%{$search}%")
-                  ->orWhere('radacct.username', 'like', "%{$search}%")
-                  ->orWhere('vouchers.customer_username', 'like', "%{$search}%")
-                  ->orWhere('radacct.callingstationid', 'like', "%{$search}%")
-                  ->orWhere('radacct.framedipaddress', 'like', "%{$search}%")
-                  ->orWhere('radacct.nasipaddress', 'like', "%{$search}%")
-                  ->orWhere('p.name', 'like', "%{$search}%")
-                  ->orWhere('pc.full_name', 'like', "%{$search}%")
-                  ->orWhere('pc.phone', 'like', "%{$search}%")
-                  ->orWhere('pc.onu_serial_number', 'like', "%{$search}%")
-                  ->orWhere('pp.name', 'like', "%{$search}%")
+        if (($search = trim((string) $request->query('search', ''))) !== '') {
+            // Identifiers (username, voucher code, MAC, IP, serial, phone) are
+            // matched from the start so their indexes can be used. Names stay
+            // substring matches: "Sharma" has to find "Ram Sharma", and those
+            // columns are small tables joined from already-live rows.
+            $escaped = addcslashes($search, '\\%_');
+            $prefix = "{$escaped}%";
+            $contains = "%{$escaped}%";
+            $query->where(function ($q) use ($prefix, $contains) {
+                $q->where('vouchers.code', 'like', $prefix)
+                  ->orWhere('radacct.username', 'like', $prefix)
+                  ->orWhere('vouchers.customer_username', 'like', $contains)
+                  ->orWhere('radacct.callingstationid', 'like', $prefix)
+                  ->orWhere('radacct.framedipaddress', 'like', $prefix)
+                  ->orWhere('radacct.nasipaddress', 'like', $prefix)
+                  ->orWhere('p.name', 'like', $contains)
+                  ->orWhere('pc.full_name', 'like', $contains)
+                  ->orWhere('pc.phone', 'like', $prefix)
+                  ->orWhere('pc.onu_serial_number', 'like', $prefix)
+                  // The OLT the customer's ONT is registered on.
+                  ->orWhere('olt_dev.name', 'like', $contains)
+                  ->orWhere('pp.name', 'like', $contains)
                   // Let operators search by router name, not just its IP.
-                  ->orWhereIn('radacct.nasipaddress', function ($sub) use ($search) {
+                  ->orWhereIn('radacct.nasipaddress', function ($sub) use ($contains) {
                       $sub->select('nasname')->from('nas_devices')
-                          ->where('name', 'like', "%{$search}%")
-                          ->orWhere('shortname', 'like', "%{$search}%");
+                          ->where('name', 'like', $contains)
+                          ->orWhere('shortname', 'like', $contains);
                   });
             });
         }
 
+        return $query;
+    }
+
+    /** Fetch list of active RADIUS sessions currently connected to Hotspot networks. */
+    public function onlineUsers(Request $request): JsonResponse
+    {
+        // `per_page` opts into server-side pagination, filtering and summaries.
+        // Without it the whole live list comes back, as before, for the callers
+        // (header badge, usage modal) that just want everything.
+        if ($request->has('per_page')) {
+            return $this->onlineUsersPage($request);
+        }
+
+        $query = $this->onlineSessionsQuery($request, false);
         $resolveNasName = $this->nasNameResolver();
 
         $sessions = $query->orderBy('radacct.acctstarttime', 'desc')->get()->map(function ($s) use ($resolveNasName) {
@@ -166,6 +201,192 @@ class RadiusController extends Controller
             'count' => $sessions->count(),
             'sessions' => $sessions,
         ]);
+    }
+
+    /**
+     * Paginated, server-filtered live-session feed.
+     *
+     * Filters: type (hotspot|pppoe), nas (NAS IP), olt (OLT name, or "none").
+     * The summary cards and filter dropdowns describe everything the caller may
+     * see (role scope + search), not the filtered page, so they come from one
+     * light query that is cached briefly instead of being rebuilt on every
+     * 10-second poll from every open tab.
+     */
+    private function onlineUsersPage(Request $request): JsonResponse
+    {
+        $perPage = max(1, min(100, (int) $request->query('per_page', 25)));
+        $nasExpr = 'COALESCE(radacct.nasipaddress, CASE WHEN pc.id IS NOT NULL THEN pc.nas_ip ELSE vouchers.nas_ip END)';
+
+        $scoped = $this->onlineSessionsQuery($request, true);
+
+        $filtered = clone $scoped;
+        $type = $request->query('type');
+        if ($type === 'pppoe') {
+            $filtered->whereNotNull('pc.id');
+        } elseif ($type === 'hotspot') {
+            $filtered->whereNull('pc.id');
+        }
+        if (($nas = (string) $request->query('nas', '')) !== '' && $nas !== 'all') {
+            $filtered->whereRaw("{$nasExpr} = ?", [$nas]);
+        }
+        if (($olt = (string) $request->query('olt', '')) !== '' && $olt !== 'all') {
+            $olt === 'none'
+                ? $filtered->where(fn ($q) => $q->whereNull('olt_dev.name')->orWhere('olt_dev.name', ''))
+                : $filtered->where('olt_dev.name', $olt);
+        }
+
+        $page = $filtered
+            ->orderBy('radacct.acctstarttime', 'desc')
+            ->orderBy('radacct.radacctid', 'desc')
+            ->paginate($perPage);
+
+        $rows = collect($page->items());
+
+        // Lifetime usage for the visible rows only: one grouped read over the
+        // (username, start, in, out) covering index, instead of one per live row.
+        $lifetime = $rows->isEmpty() ? collect() : DB::table('radacct')
+            ->whereIn('username', $rows->pluck('username')->unique()->all())
+            ->groupBy('username')
+            ->selectRaw('username, SUM(COALESCE(acctinputoctets, 0) + COALESCE(acctoutputoctets, 0)) as bytes')
+            ->pluck('bytes', 'username');
+        foreach (DB::table('radacct_usage_rollup')->whereIn('username', $rows->pluck('username')->unique()->all())
+            ->selectRaw('username, input_octets + output_octets as bytes')->pluck('bytes', 'username') as $name => $bytes) {
+            $lifetime[$name] = (int) ($lifetime[$name] ?? 0) + (int) $bytes;
+        }
+
+        $resolveNasName = $this->nasNameResolver();
+        $sessions = $rows->map(function ($s) use ($lifetime, $resolveNasName) {
+            $s->session_time = (int) ($s->session_time ?? 0);
+            $s->input_bytes = (int) ($s->input_bytes ?? 0);
+            $s->output_bytes = (int) ($s->output_bytes ?? 0);
+            $s->total_bytes = max(
+                (int) ($lifetime[$s->username] ?? 0),
+                (int) ($s->total_bytes ?? 0),
+                (int) ($s->voucher_daily_used_bytes ?? 0),
+            );
+            unset($s->voucher_daily_used_bytes);
+            $s->is_stale_session = (bool) ($s->is_stale_session ?? false);
+            $s->nas_name = $s->nas_name ?: $resolveNasName($s->nas_ip ?? null);
+
+            return $s;
+        })->values();
+
+        $user = $request->user();
+        $cacheKey = 'online-users:summary:'.md5(json_encode([
+            $user?->id,
+            $user?->role,
+            trim((string) $request->query('search', '')),
+        ]));
+        $overview = \Illuminate\Support\Facades\Cache::remember(
+            $cacheKey,
+            now()->addSeconds(30),
+            fn () => $this->onlineOverview($scoped, $nasExpr, $resolveNasName)
+        );
+
+        return $this->ok([
+            'count' => $page->total(),
+            'sessions' => $sessions,
+            'pagination' => [
+                'current_page' => $page->currentPage(),
+                'last_page' => $page->lastPage(),
+                'per_page' => $page->perPage(),
+                'total' => $page->total(),
+                'from' => $page->firstItem() ?? 0,
+                'to' => $page->lastItem() ?? 0,
+            ],
+            'summary' => $overview['summary'],
+            'facets' => $overview['facets'],
+        ]);
+    }
+
+    /**
+     * Totals and filter-dropdown counts across every live session in scope.
+     * Selects a handful of narrow columns (no joins' worth of payload) so even
+     * ten thousand rows is a small read.
+     */
+    private function onlineOverview(\Illuminate\Database\Query\Builder $scoped, string $nasExpr, callable $resolveNasName): array
+    {
+        $rows = (clone $scoped)->cloneWithout(['columns'])->select(
+            'radacct.username',
+            DB::raw('CASE WHEN pc.id IS NOT NULL THEN 1 ELSE 0 END as is_pppoe'),
+            DB::raw("{$nasExpr} as nas_ip"),
+            DB::raw("CASE WHEN (CASE WHEN pc.id IS NOT NULL THEN pc.status ELSE vouchers.status END) IS NULL THEN 0
+                WHEN (CASE WHEN pc.id IS NOT NULL THEN pc.status ELSE vouchers.status END) = 'active' THEN 0
+                ELSE 1 END as is_stale"),
+            'olt_dev.name as olt_name',
+            DB::raw('COALESCE(radacct.acctinputoctets, 0) + COALESCE(radacct.acctoutputoctets, 0) as session_bytes'),
+            DB::raw('COALESCE(vouchers.daily_used_bytes, 0) as daily_bytes'),
+        )->get();
+
+        $lifetime = [];
+        foreach ($rows->pluck('username')->unique()->chunk(1000) as $chunk) {
+            foreach (DB::table('radacct')
+                ->whereIn('username', $chunk->all())
+                ->groupBy('username')
+                ->selectRaw('username, SUM(COALESCE(acctinputoctets, 0) + COALESCE(acctoutputoctets, 0)) as bytes')
+                ->pluck('bytes', 'username') as $name => $bytes) {
+                $lifetime[$name] = (int) $bytes;
+            }
+            // Sessions already archived by radius:prune-accounting still count.
+            foreach (DB::table('radacct_usage_rollup')->whereIn('username', $chunk->all())
+                ->selectRaw('username, input_octets + output_octets as bytes')->pluck('bytes', 'username') as $name => $bytes) {
+                $lifetime[$name] = ($lifetime[$name] ?? 0) + (int) $bytes;
+            }
+        }
+
+        $hotspotBytes = 0;
+        $pppoeBytes = 0;
+        $nas = [];
+        $olts = [];
+        $noOlt = 0;
+        foreach ($rows as $r) {
+            // Same GREATEST() the row-level total_bytes uses.
+            $bytes = max($lifetime[$r->username] ?? 0, (int) $r->session_bytes, (int) $r->daily_bytes);
+            $r->is_pppoe ? $pppoeBytes += $bytes : $hotspotBytes += $bytes;
+
+            if ($r->nas_ip) {
+                $nas[$r->nas_ip] = ($nas[$r->nas_ip] ?? 0) + 1;
+            }
+            if (is_string($r->olt_name) && trim($r->olt_name) !== '') {
+                $olts[trim($r->olt_name)] = ($olts[trim($r->olt_name)] ?? 0) + 1;
+            } else {
+                $noOlt++;
+            }
+        }
+
+        $nasNames = DB::table('nas_devices')
+            ->selectRaw('nasname, COALESCE(NULLIF(name, \'\'), shortname) as label')
+            ->orderBy('id')->pluck('label', 'nasname');
+
+        $nasFacet = [];
+        foreach ($nas as $ip => $count) {
+            $nasFacet[] = ['ip' => $ip, 'name' => $nasNames[$ip] ?? $resolveNasName($ip) ?? $ip, 'count' => $count];
+        }
+        usort($nasFacet, fn ($a, $b) => strcasecmp($a['name'], $b['name']));
+
+        $oltFacet = [];
+        foreach ($olts as $name => $count) {
+            $oltFacet[] = ['name' => $name, 'count' => $count];
+        }
+        usort($oltFacet, fn ($a, $b) => strcasecmp($a['name'], $b['name']));
+
+        return [
+            'summary' => [
+                'total' => $rows->count(),
+                'hotspot' => $rows->where('is_pppoe', 0)->count(),
+                'pppoe' => $rows->where('is_pppoe', 1)->count(),
+                'stale' => $rows->where('is_stale', 1)->count(),
+                'unique_nas' => count($nas),
+                'volume_bytes' => $hotspotBytes + $pppoeBytes,
+                'hotspot_volume_bytes' => $hotspotBytes,
+                'pppoe_volume_bytes' => $pppoeBytes,
+            ],
+            'facets' => [
+                'nas' => $nasFacet,
+                'olt' => $oltFacet,
+                'olt_unassigned' => $noOlt,
+            ],
+        ];
     }
 
     /**

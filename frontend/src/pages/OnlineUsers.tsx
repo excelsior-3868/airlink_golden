@@ -43,17 +43,43 @@ interface OnlineSession {
   seller_name?: string
 }
 
+interface OnlineSummary {
+  total: number
+  hotspot: number
+  pppoe: number
+  stale: number
+  unique_nas: number
+  volume_bytes: number
+  hotspot_volume_bytes: number
+  pppoe_volume_bytes: number
+}
+
+interface OnlineFacets {
+  nas: { ip: string; name: string; count: number }[]
+  olt: { name: string; count: number }[]
+  olt_unassigned: number
+}
+
+const emptySummary: OnlineSummary = {
+  total: 0, hotspot: 0, pppoe: 0, stale: 0, unique_nas: 0,
+  volume_bytes: 0, hotspot_volume_bytes: 0, pppoe_volume_bytes: 0,
+}
+
 export default function OnlineUsers() {
   const { user } = useAuth()
   const pppoeOnly = useBranding().branding.pppoe_only
   const isSeller = user?.role === 'seller'
 
   const [sessions, setSessions] = useState<OnlineSession[]>([])
+  const [pageInfo, setPageInfo] = useState<{ current_page: number; last_page: number; per_page: number; total: number; from: number; to: number } | null>(null)
+  const [summary, setSummary] = useState<OnlineSummary>(emptySummary)
+  const [facets, setFacets] = useState<OnlineFacets>({ nas: [], olt: [], olt_unassigned: 0 })
   const [loading, setLoading] = useState(true)
   const [detailCustomerId, setDetailCustomerId] = useState<number | null>(null)
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState<'all' | 'hotspot' | 'pppoe'>('all')
   const [nasFilter, setNasFilter] = useState('all')
+  const [oltFilter, setOltFilter] = useState('all')
   const [disconnecting, setDisconnecting] = useState<string | null>(null)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [confirmDisconnect, setConfirmDisconnect] = useState<{ open: boolean; username: string | null; label: string | null }>({ open: false, username: null, label: null })
@@ -68,40 +94,61 @@ export default function OnlineUsers() {
     { value: 100, label: '100 / Page' },
   ]
 
+  // Dropdown options come from the server: the page only holds one slice of
+  // the live sessions, so counting them here would show partial numbers.
   const nasOptions = useMemo(() => {
-    const map = new Map<string, { name: string; ip: string; count: number }>()
-    sessions.forEach((s) => {
-      if (s.nas_ip) {
-        const key = s.nas_ip
-        const name = s.nas_name || s.nas_ip
-        const existing = map.get(key)
-        if (existing) {
-          existing.count += 1
-        } else {
-          map.set(key, { name, ip: s.nas_ip, count: 1 })
-        }
-      }
-    })
-    const list = Array.from(map.entries()).map(([ip, item]) => ({
-      value: ip,
+    const list = facets.nas.map((item) => ({
+      value: item.ip,
       label: item.name,
       keywords: `${item.name} ${item.ip}`,
-      badge: (
-        <span className="text-[10px] text-slate-400 tabular-nums font-mono">
-          {item.count}
-        </span>
-      ),
+      badge: <span className="text-[10px] text-slate-400 tabular-nums font-mono">{item.count}</span>,
     }))
-    list.sort((a, b) => a.label.localeCompare(b.label))
     return [{ value: 'all', label: 'All Gateways' }, ...list]
-  }, [sessions])
+  }, [facets])
+
+  const oltOptions = useMemo(() => {
+    const list = facets.olt.map((item) => ({
+      value: item.name,
+      label: item.name,
+      keywords: item.name,
+      badge: <span className="text-[10px] text-slate-400 tabular-nums font-mono">{item.count}</span>,
+    }))
+    const opts = [{ value: 'all', label: 'All OLTs' }, ...list]
+    if (facets.olt_unassigned > 0 && facets.olt.length > 0) {
+      opts.push({
+        value: 'none',
+        label: 'No OLT Attached',
+        keywords: 'none unassigned without olt',
+        badge: <span className="text-[10px] text-slate-400 tabular-nums font-mono">{facets.olt_unassigned}</span>,
+      })
+    }
+    return opts
+  }, [facets])
 
   const fetchOnlineUsers = async () => {
     setLoading(true)
     try {
-      const res = await api.get('/radius/online-users', { params: { search: search || undefined } })
+      // Paging, type/NAS/OLT filtering and the summary all happen on the
+      // server; the browser only ever holds the visible page.
+      const serverType = pppoeOnly ? 'pppoe' : isSeller || typeFilter === 'all' ? undefined : typeFilter
+      const res = await api.get('/radius/online-users', {
+        params: {
+          search: search || undefined,
+          page,
+          per_page: perPage,
+          type: serverType,
+          nas: nasFilter === 'all' ? undefined : nasFilter,
+          olt: oltFilter === 'all' ? undefined : oltFilter,
+        },
+      })
       if (res.data?.success) {
-        setSessions(res.data.data?.sessions || [])
+        const d = res.data.data
+        setSessions(d?.sessions || [])
+        setPageInfo(d?.pagination || null)
+        // Sessions drop off between polls; step back if this page no longer exists.
+        if (d?.pagination && page > d.pagination.last_page) setPage(Math.max(1, d.pagination.last_page))
+        setSummary(d?.summary || emptySummary)
+        setFacets(d?.facets || { nas: [], olt: [], olt_unassigned: 0 })
       }
     } catch {
       // Handle error gracefully
@@ -114,11 +161,11 @@ export default function OnlineUsers() {
     fetchOnlineUsers()
     const interval = setInterval(fetchOnlineUsers, 10000)
     return () => clearInterval(interval)
-  }, [search])
+  }, [search, page, perPage, typeFilter, nasFilter, oltFilter, pppoeOnly, isSeller])
 
   useEffect(() => {
     setPage(1)
-  }, [search, typeFilter, nasFilter])
+  }, [search, typeFilter, nasFilter, oltFilter])
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -160,53 +207,30 @@ export default function OnlineUsers() {
     return `${s}s`
   }
 
-  // Hotspot and PPPoE share one radacct feed; connection_type separates them.
-  // Filtering is client-side because the whole live list is already in memory.
-  const hotspotCount = sessions.filter((s) => s.connection_type !== 'pppoe').length
-  const pppoeCount = sessions.filter((s) => s.connection_type === 'pppoe').length
-  const visibleSessions = sessions
-    .filter((s) => {
-      if (pppoeOnly) return s.connection_type === 'pppoe'
-      if (isSeller) return true
-      if (typeFilter !== 'all' && (s.connection_type ?? 'hotspot') !== typeFilter) return false
-      return true
-    })
-    .filter((s) => {
-      if (nasFilter === 'all') return true
-      return s.nas_ip === nasFilter || s.nas_name === nasFilter
-    })
-
-  const totalItems = visibleSessions.length
-  const lastPage = Math.max(1, Math.ceil(totalItems / perPage))
-  const currentPage = Math.min(page, lastPage)
-  const pagedSessions = visibleSessions.slice((currentPage - 1) * perPage, currentPage * perPage)
-  const pageMeta = {
-    current_page: currentPage,
-    last_page: lastPage,
-    per_page: perPage,
-    total: totalItems,
-    from: totalItems === 0 ? 0 : (currentPage - 1) * perPage + 1,
-    to: Math.min(currentPage * perPage, totalItems),
-  }
+  // Hotspot and PPPoE share one radacct feed; the server separates and pages it.
+  const hotspotCount = summary.hotspot
+  const pppoeCount = summary.pppoe
+  const pagedSessions = sessions
+  const totalItems = pageInfo?.total ?? 0
+  const pageMeta = pageInfo ?? { current_page: 1, last_page: 1, per_page: perPage, total: 0, from: 0, to: 0 }
 
   // Summary cards describe every live session, not the tab-filtered slice —
   // the Hotspot/PPPoE tabs scope the table below, not the totals above it.
-  const bytesOf = (rows: OnlineSession[]) => rows.reduce((acc, s) => acc + (s.total_bytes || 0), 0)
-  const totalVolumeBytes = bytesOf(sessions)
-  const hotspotVolumeBytes = bytesOf(sessions.filter((s) => s.connection_type !== 'pppoe'))
-  const pppoeVolumeBytes = bytesOf(sessions.filter((s) => s.connection_type === 'pppoe'))
-  const uniqueNasDevices = new Set(sessions.map((s) => s.nas_ip).filter(Boolean)).size
+  const totalVolumeBytes = summary.volume_bytes
+  const hotspotVolumeBytes = summary.hotspot_volume_bytes
+  const pppoeVolumeBytes = summary.pppoe_volume_bytes
+  const uniqueNasDevices = summary.unique_nas
 
   // Sessions whose owning account isn't 'active' shouldn't exist — either the
   // suspend/expire→disconnect pipeline hasn't caught up yet, or its CoA kick
   // failed/was skipped (unregistered NAS). Surface them so an operator can
   // manually disconnect rather than assuming "online" means "entitled".
-  const staleCount = sessions.filter((s) => s.is_stale_session).length
+  const staleCount = summary.stale
 
   const typeTabs: { key: 'all' | 'hotspot' | 'pppoe'; label: string; count: number }[] = pppoeOnly
     ? []
     : [
-        { key: 'all', label: 'All', count: sessions.length },
+        { key: 'all', label: 'All', count: summary.total },
         { key: 'hotspot', label: 'Hotspot', count: hotspotCount },
         { key: 'pppoe', label: 'PPPoE', count: pppoeCount },
       ]
@@ -243,7 +267,7 @@ export default function OnlineUsers() {
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
               </span>
-              {num(sessions.length)}
+              {num(summary.total)}
             </span>
           }
           icon={<Users size={22} />}
@@ -336,7 +360,7 @@ export default function OnlineUsers() {
             )}
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+          <div className="flex items-center gap-2 flex-wrap">
             <div className="relative w-44 sm:w-56 shrink-0">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
@@ -350,19 +374,36 @@ export default function OnlineUsers() {
                 className="w-full text-xs pl-8 pr-3 py-2 rounded-xl border border-slate-200 bg-white focus:outline-none focus:border-cyan-500 shadow-xs"
               />
             </div>
-            <div className="w-44 sm:w-52 shrink-0">
+            <div className="w-auto min-w-[12rem] shrink-0">
               <CustomSelect
-                className="w-full !min-w-0"
-                buttonClassName="!py-2 !px-3 !rounded-xl !text-xs !shadow-xs !border-slate-200"
+                className="w-auto !min-w-fit"
+                buttonClassName="!py-2 !px-3.5 !rounded-xl !text-xs !shadow-xs !border-slate-200 !whitespace-nowrap"
                 options={nasOptions}
                 value={nasFilter}
                 onChange={(val) => {
                   setNasFilter(String(val))
                   setPage(1)
                 }}
+                truncateLabel={false}
                 searchable={nasOptions.length > 5}
               />
             </div>
+            {oltOptions.length > 1 && (
+              <div className="w-auto min-w-[15rem] max-w-full shrink-0">
+                <CustomSelect
+                  className="w-auto !min-w-fit"
+                  buttonClassName="!py-2 !px-3.5 !rounded-xl !text-xs !shadow-xs !border-slate-200 !whitespace-nowrap font-medium"
+                  options={oltOptions}
+                  value={oltFilter}
+                  onChange={(val) => {
+                    setOltFilter(String(val))
+                    setPage(1)
+                  }}
+                  truncateLabel={false}
+                  searchable={oltOptions.length > 5}
+                />
+              </div>
+            )}
             <div className="w-28 shrink-0">
               <CustomSelect
                 className="w-full !min-w-0"
@@ -579,10 +620,12 @@ export default function OnlineUsers() {
               </tbody>
             </table>
           )}
-          {!loading && visibleSessions.length === 0 && (
+          {!loading && totalItems === 0 && (
             <EmptyState>
               {isSeller
                 ? 'No active online voucher sessions connected at the moment.'
+                : oltFilter !== 'all'
+                ? `No online sessions connected via ${oltOptions.find((o) => o.value === oltFilter)?.label || oltFilter} right now.`
                 : nasFilter !== 'all'
                 ? `No online sessions connected via ${nasOptions.find((o) => o.value === nasFilter)?.label || nasFilter} right now.`
                 : typeFilter === 'all'
@@ -592,7 +635,7 @@ export default function OnlineUsers() {
           )}
         </div>
 
-        {visibleSessions.length > 0 && (
+        {totalItems > 0 && (
           <div className="px-4 pb-4 border-t border-slate-100 dark:border-slate-800">
             <Pagination meta={pageMeta} onPage={setPage} />
           </div>

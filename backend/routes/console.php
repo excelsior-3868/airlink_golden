@@ -21,3 +21,9 @@ Schedule::command('vouchers:settle-gb')->everyFiveMinutes()->withoutOverlapping(
 // accumulate they inflate the online-user count and, because FreeRADIUS counts
 // them in simul_count_query, one stale row blocks that voucher's next login.
 Schedule::command('radius:close-stale-sessions')->everyFiveMinutes()->withoutOverlapping();
+
+// Move closed PPPoE accounting rows older than 90 days into radacct_archive
+// (lifetime totals are kept in radacct_usage_rollup) and trim the login log, so
+// the hot radacct table stays small. Off-peak, in bounded batches. Voucher
+// history is never touched: its quota is summed from radacct on every login.
+Schedule::command('radius:prune-accounting --apply')->dailyAt('03:30')->withoutOverlapping();

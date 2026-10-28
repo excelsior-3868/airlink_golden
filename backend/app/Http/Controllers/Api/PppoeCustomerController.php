@@ -117,6 +117,14 @@ class PppoeCustomerController extends Controller
                 ->get()
                 ->keyBy('username')
                 ->all();
+
+            // Sessions archived by radius:prune-accounting are summarised here.
+            foreach (DB::table('radacct_usage_rollup')->whereIn('username', $usernames)->get() as $roll) {
+                $usage = $usageStats[$roll->username] ?? (object) ['total_octets' => 0, 'last_stop' => null];
+                $usage->total_octets = (int) $usage->total_octets + (int) $roll->input_octets + (int) $roll->output_octets;
+                $usage->last_stop = max((string) $usage->last_stop, (string) $roll->last_stop) ?: null;
+                $usageStats[$roll->username] = $usage;
+            }
         }
 
         $customers->getCollection()->transform(function ($c) use ($liveSessions, $usageStats) {
@@ -227,13 +235,15 @@ class PppoeCustomerController extends Controller
             ->where('username', $customer->username)
             ->selectRaw('COUNT(*) as session_count, COALESCE(SUM(acctinputoctets),0) as input_bytes, COALESCE(SUM(acctoutputoctets),0) as output_bytes, COALESCE(SUM(acctsessiontime),0) as total_time, MIN(acctstarttime) as first_seen, MAX(acctstarttime) as last_seen')
             ->first();
+        // Plus whatever radius:prune-accounting has already archived for this user.
+        $rollup = DB::table('radacct_usage_rollup')->where('username', $customer->username)->first();
         $customer->usage_totals = [
-            'session_count' => (int) ($totals->session_count ?? 0),
-            'input_bytes' => (int) ($totals->input_bytes ?? 0),
-            'output_bytes' => (int) ($totals->output_bytes ?? 0),
-            'total_time' => (int) ($totals->total_time ?? 0),
-            'first_seen' => $totals->first_seen ?? null,
-            'last_seen' => $totals->last_seen ?? null,
+            'session_count' => (int) ($totals->session_count ?? 0) + (int) ($rollup->session_count ?? 0),
+            'input_bytes' => (int) ($totals->input_bytes ?? 0) + (int) ($rollup->input_octets ?? 0),
+            'output_bytes' => (int) ($totals->output_bytes ?? 0) + (int) ($rollup->output_octets ?? 0),
+            'total_time' => (int) ($totals->total_time ?? 0) + (int) ($rollup->session_time ?? 0),
+            'first_seen' => collect([$totals->first_seen ?? null, $rollup->first_start ?? null])->filter()->min(),
+            'last_seen' => collect([$totals->last_seen ?? null, $rollup->last_start ?? null])->filter()->max(),
         ];
 
         $live = OnlineSession::scopeLive(DB::table('radacct'))

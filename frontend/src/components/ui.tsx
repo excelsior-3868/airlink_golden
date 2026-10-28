@@ -439,7 +439,8 @@ export function CustomSelect({
   disabled = false,
   searchable = false,
   borderless = false,
-  buttonClassName = ''
+  buttonClassName = '',
+  truncateLabel = true,
 }: {
   value: any;
   onChange: (val: any) => void;
@@ -450,6 +451,7 @@ export function CustomSelect({
   searchable?: boolean;
   borderless?: boolean;
   buttonClassName?: string;
+  truncateLabel?: boolean;
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -581,7 +583,7 @@ export function CustomSelect({
       >
         <div className="flex flex-1 items-center gap-2 min-w-0">
           {selected?.icon && <div className="shrink-0 flex items-center justify-center">{selected.icon}</div>}
-          <span className="truncate">{selected ? selected.label : placeholder}</span>
+          <span className={truncateLabel ? 'truncate' : 'whitespace-nowrap'}>{selected ? selected.label : placeholder}</span>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
           {selected?.badge}

@@ -55,7 +55,8 @@ class CloseStaleRadiusSessions extends Command
     protected $signature = 'radius:close-stale-sessions
         {--minutes= : Idle minutes before a session counts as abandoned (default: OnlineSession::CLOSE_AFTER_MINUTES)}
         {--probe-minutes= : Idle minutes before a session is probed via CoA (default: OnlineSession::PROBE_AFTER_MINUTES)}
-        {--max-probes=25 : Most sessions to probe in one run, quietest first}
+        {--max-probes=200 : Most sessions to probe in one run, quietest first}
+        {--time-budget=240 : Seconds after which probing stops for this run (the 5-minute tick must not overlap itself)}
         {--no-probe : Skip the CoA probe and use only the blind idle backstop}
         {--dry-run : Report what would be closed without writing}';
 
@@ -65,6 +66,15 @@ class CloseStaleRadiusSessions extends Command
     {
         parent::__construct();
     }
+
+    /**
+     * A NAS that has not answered this many probes in a row during one run is
+     * skipped for the rest of it. Each silent probe costs a full timeout x retry
+     * cycle (~9s), so one unreachable router with hundreds of quiet sessions
+     * would otherwise eat the whole tick. Those sessions are left to the blind
+     * backstop, exactly as an unanswered probe already is.
+     */
+    private const SKIP_NAS_AFTER_UNANSWERED = 3;
 
     public function handle(): int
     {
@@ -76,7 +86,7 @@ class CloseStaleRadiusSessions extends Command
 
         $confirmedAlive = $this->option('no-probe')
             ? []
-            : $this->probePass($probeMinutes, (int) $this->option('max-probes'), $dry);
+            : $this->probePass($probeMinutes, (int) $this->option('max-probes'), $dry, (int) $this->option('time-budget'));
 
         return $this->backstopPass($minutes, $confirmedAlive, $dry);
     }
@@ -91,7 +101,7 @@ class CloseStaleRadiusSessions extends Command
      *
      * @return array<int, int> radacctids the NAS confirmed are still live
      */
-    private function probePass(int $probeMinutes, int $maxProbes, bool $dry): array
+    private function probePass(int $probeMinutes, int $maxProbes, bool $dry, int $timeBudget = 240): array
     {
         $candidates = DB::table('radacct')
             ->whereNull('acctstoptime')
@@ -116,13 +126,33 @@ class CloseStaleRadiusSessions extends Command
         $ambiguous = [];
         $unknown = 0;
 
+        $deadline = microtime(true) + max(1, $timeBudget);
+        $unanswered = []; // nasipaddress => consecutive silent probes this run
+        $skipped = 0;
+
         foreach ($candidates as $session) {
+            if (microtime(true) >= $deadline) {
+                $this->warn("  Time budget of {$timeBudget}s reached — remaining sessions are picked up next tick.");
+                break;
+            }
+
+            $nasKey = $session->nasipaddress ?: 'unknown';
+            if (($unanswered[$nasKey] ?? 0) >= self::SKIP_NAS_AFTER_UNANSWERED) {
+                $skipped++;
+
+                continue;
+            }
+
             $result = $this->coa->probeSession(
                 $session->username,
                 $session->acctsessionid,
                 $session->framedipaddress,
                 $session->nasipaddress,
             );
+
+            $unanswered[$nasKey] = $result['status'] === CoaClient::PROBE_UNKNOWN
+                ? ($unanswered[$nasKey] ?? 0) + 1
+                : 0;
 
             switch ($result['status']) {
                 case CoaClient::PROBE_ALIVE:
@@ -162,6 +192,10 @@ class CloseStaleRadiusSessions extends Command
             $unknown += count($ids);
             $this->warn("  NAS {$nasIp} rejected ".count($ids).' probe(s) but has never confirmed a live'
                 .' session, so its answers are not yet trustworthy — leaving them to the backstop.');
+        }
+
+        if ($skipped > 0) {
+            $this->warn("  Skipped {$skipped} session(s) on NAS that stopped answering — left to the backstop.");
         }
 
         $this->line(sprintf(
