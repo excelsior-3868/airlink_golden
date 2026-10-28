@@ -18,25 +18,25 @@ func TestOntReset(t *testing.T) {
 	}
 }
 
-type fakeExec struct {
+type rebootExec struct {
 	ran    []string
 	closed bool
 	out    map[string]string
 }
 
-func (f *fakeExec) Run(_ context.Context, c Cmd) (string, error) {
+func (f *rebootExec) Run(_ context.Context, c Cmd) (string, error) {
 	f.ran = append(f.ran, c.String())
 	return f.out[c.String()], nil
 }
-func (f *fakeExec) Close() error { f.closed = true; return nil }
+func (f *rebootExec) Close() error { f.closed = true; return nil }
 
-type fakeDialer struct{ ex *fakeExec }
+type rebootDialer struct{ ex *rebootExec }
 
-func (d fakeDialer) Dial(context.Context, int64) (Executor, error) { return d.ex, nil }
+func (d rebootDialer) Dial(context.Context, int64) (Executor, error) { return d.ex, nil }
 
 func TestRebootONTCommandSequence(t *testing.T) {
-	ex := &fakeExec{}
-	s := &Service{dialer: fakeDialer{ex}}
+	ex := &rebootExec{}
+	s := &Service{dialer: rebootDialer{ex}}
 	if err := s.RebootONT(context.Background(), 1, 0, 0, 3, 17); err != nil {
 		t.Fatal(err)
 	}
@@ -47,8 +47,8 @@ func TestRebootONTCommandSequence(t *testing.T) {
 }
 
 func TestRebootONTReportsOLTError(t *testing.T) {
-	ex := &fakeExec{out: map[string]string{"ont reset 3 17": "  Failure: The ONT does not exist\r\n"}}
-	s := &Service{dialer: fakeDialer{ex}}
+	ex := &rebootExec{out: map[string]string{"ont reset 3 17": "  Failure: The ONT does not exist\r\n"}}
+	s := &Service{dialer: rebootDialer{ex}}
 	err := s.RebootONT(context.Background(), 1, 0, 0, 3, 17)
 	if err == nil || !strings.Contains(err.Error(), "Failure") {
 		t.Fatalf("err = %v, want OLT failure", err)
@@ -56,8 +56,8 @@ func TestRebootONTReportsOLTError(t *testing.T) {
 }
 
 func TestRebootONTRejectsBadPosition(t *testing.T) {
-	ex := &fakeExec{}
-	s := &Service{dialer: fakeDialer{ex}}
+	ex := &rebootExec{}
+	s := &Service{dialer: rebootDialer{ex}}
 	if err := s.RebootONT(context.Background(), 1, 0, 0, 99, 1); err == nil || len(ex.ran) != 0 {
 		t.Fatalf("bad port ran %v err=%v", ex.ran, err)
 	}
