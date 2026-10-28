@@ -243,6 +243,13 @@ class PppoeCustomerController extends Controller
         $customer->is_online = $live !== null;
         $customer->current_session = $live;
 
+        // The ONT this customer's serial maps to, so the details view can offer "Restart CPE".
+        $customer->ont = $customer->onu_serial_number
+            ? DB::table('ont_inventory')
+                ->where('serial_number', $customer->onu_serial_number)
+                ->first(['id', 'olt_id', 'run_state'])
+            : null;
+
         return $this->ok($customer);
     }
 

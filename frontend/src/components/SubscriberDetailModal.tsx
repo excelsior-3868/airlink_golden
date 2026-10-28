@@ -1,7 +1,8 @@
 import { useEffect, useState, ReactNode } from 'react'
-import { Users2, Activity, Power, RefreshCw, ArrowLeftRight } from 'lucide-react'
+import { Users2, Activity, Power, RefreshCw, ArrowLeftRight, RotateCcw } from 'lucide-react'
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from 'recharts'
 import { api } from '../lib/api'
+import { nmsApi, errMsg } from '../lib/nmsApi'
 import { rs, num, date, datet, bsDate, formatBytes, statusPill } from '../lib/format'
 import { Modal, Pill, Spinner, ConfirmModal } from './ui'
 import { LiveUsageGraphModal } from './LiveUsageGraphModal'
@@ -107,6 +108,8 @@ export default function SubscriberDetailModal({
 
   const [disconnecting, setDisconnecting] = useState(false)
   const [confirmDisconnect, setConfirmDisconnect] = useState(false)
+  const [restarting, setRestarting] = useState(false)
+  const [confirmRestart, setConfirmRestart] = useState(false)
   const [showUsageGraph, setShowUsageGraph] = useState(false)
   const [changePackageOpen, setChangePackageOpen] = useState(false)
   const [actionMsg, setActionMsg] = useState<{ ok: boolean; text: string } | null>(null)
@@ -140,6 +143,22 @@ export default function SubscriberDetailModal({
     } finally {
       setDisconnecting(false)
       setConfirmDisconnect(false)
+    }
+  }
+
+  const handleRestartCpe = async () => {
+    const ont = c?.ont
+    if (!ont) return
+    setRestarting(true)
+    setActionMsg(null)
+    try {
+      const res = await nmsApi.post(`/olts/${ont.olt_id}/onts/${ont.id}/reboot`)
+      setActionMsg({ ok: true, text: res.data?.message || 'Restart command sent.' })
+    } catch (e) {
+      setActionMsg({ ok: false, text: errMsg(e) })
+    } finally {
+      setRestarting(false)
+      setConfirmRestart(false)
     }
   }
 
@@ -229,6 +248,19 @@ export default function SubscriberDetailModal({
                     <span>{disconnecting ? 'Disconnecting...' : 'Disconnect Session'}</span>
                   </button>
                 </>
+              )}
+
+              {c.ont && (
+                <button
+                  type="button"
+                  onClick={() => setConfirmRestart(true)}
+                  disabled={restarting}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 disabled:opacity-60 transition shadow-2xs cursor-pointer"
+                  title="Restart the customer's ONT/CPE through the OLT"
+                >
+                  <RotateCcw size={14} className={restarting ? 'animate-spin text-indigo-500' : 'text-indigo-600'} />
+                  <span>{restarting ? 'Restarting...' : 'Restart CPE'}</span>
+                </button>
               )}
 
               <button
@@ -518,6 +550,16 @@ export default function SubscriberDetailModal({
         title="Disconnect Session"
         message={`Are you sure you want to disconnect live session for '${c?.username}'?`}
         confirmText="Disconnect"
+        tone="danger"
+      />
+
+      <ConfirmModal
+        open={confirmRestart}
+        onClose={() => setConfirmRestart(false)}
+        onConfirm={handleRestartCpe}
+        title="Restart CPE"
+        message={`Restart the ONT for '${c?.username}'? The customer loses service for about 2 minutes.`}
+        confirmText="Restart"
         tone="danger"
       />
 
