@@ -6,8 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/nepalairlink/nms/internal/hsgq"
 )
 
 const rebootCooldown = 60 * time.Second
@@ -49,6 +52,21 @@ func ontOwnedBy(u principal, ontReseller, customerReseller sql.NullInt64) bool {
 	return customerReseller.Valid && customerReseller.Int64 == u.ID
 }
 
+// rebootDriver picks the OLT driver from the device vendor, refusing anything ambiguous.
+func rebootDriver(vendor string, frame, slot int) (string, error) {
+	if hsgq.IsVendor(vendor) {
+		if frame != 0 || slot != 0 {
+			return "", fmt.Errorf("ONT record has Huawei frame/slot %d/%d but the OLT is HSGQ; re-sync the OLT", frame, slot)
+		}
+		return "hsgq", nil
+	}
+	v := strings.TrimSpace(strings.ToLower(vendor))
+	if v == "" || strings.Contains(v, "huawei") {
+		return "huawei", nil
+	}
+	return "", fmt.Errorf("restart is not supported for vendor %q", vendor)
+}
+
 func (s *Server) rebootONT(w http.ResponseWriter, r *http.Request) {
 	oltID, ok := idParam(w, r, "id")
 	if !ok {
@@ -64,13 +82,14 @@ func (s *Server) rebootONT(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var serial string
+	var vendorNS sql.NullString
 	var frame, slot, pon, ontID int
 	var ontReseller, customerReseller sql.NullInt64
 	err := s.db.QueryRowContext(r.Context(), `
-		SELECT oi.serial_number, oi.frame, oi.slot, oi.pon_port, oi.ont_id, oi.reseller_id,
+		SELECT oi.serial_number, oi.frame, oi.slot, oi.pon_port, oi.ont_id, oi.reseller_id, dv.vendor,
 		       (SELECT pc.reseller_id FROM pppoe_customers pc WHERE pc.onu_serial_number=oi.serial_number LIMIT 1)
-		FROM ont_inventory oi WHERE oi.olt_id=? AND oi.id=?`, oltID, ontRowID).
-		Scan(&serial, &frame, &slot, &pon, &ontID, &ontReseller, &customerReseller)
+		FROM ont_inventory oi JOIN devices dv ON dv.id=oi.olt_id WHERE oi.olt_id=? AND oi.id=?`, oltID, ontRowID).
+		Scan(&serial, &frame, &slot, &pon, &ontID, &ontReseller, &vendorNS, &customerReseller)
 	if errors.Is(err, sql.ErrNoRows) {
 		fail(w, 404, "ONT not found on this OLT")
 		return
@@ -83,14 +102,19 @@ func (s *Server) rebootONT(w http.ResponseWriter, r *http.Request) {
 		fail(w, 403, "you do not have access to this ONT")
 		return
 	}
+	driver, derr := rebootDriver(vendorNS.String, frame, slot)
+	if derr != nil {
+		fail(w, 400, derr.Error())
+		return
+	}
 	if ok, wait := s.rebootCD.Allow(ontRowID, time.Now()); !ok {
 		fail(w, 429, fmt.Sprintf("this ONT was restarted moments ago; try again in %d seconds", int(wait.Seconds())+1))
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 45*time.Second)
 	defer cancel()
-	if s.isHSGQ(ctx, oltID) {
+	if driver == "hsgq" {
 		if s.hsgq == nil {
 			fail(w, 502, "HSGQ driver is not enabled")
 			return

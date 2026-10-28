@@ -53,3 +53,25 @@ func TestCooldown(t *testing.T) {
 		t.Fatal("call after cooldown blocked")
 	}
 }
+
+func TestRebootDriver(t *testing.T) {
+	cases := []struct {
+		vendor      string
+		frame, slot int
+		want        string
+		wantErr     bool
+	}{
+		{"huawei", 0, 1, "huawei", false},
+		{"Huawei", 0, 1, "huawei", false},
+		{"", 0, 1, "huawei", false},
+		{"HSGQ", 0, 0, "hsgq", false},
+		{"HSGQ", 0, 1, "", true},
+		{"ZTE", 0, 0, "", true},
+	}
+	for _, c := range cases {
+		got, err := rebootDriver(c.vendor, c.frame, c.slot)
+		if (err != nil) != c.wantErr || got != c.want {
+			t.Errorf("%q %d/%d: got %q err=%v", c.vendor, c.frame, c.slot, got, err)
+		}
+	}
+}
