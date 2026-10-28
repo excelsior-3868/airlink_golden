@@ -31,12 +31,13 @@ import (
 )
 
 type Server struct {
-	db     *sql.DB
-	cfg    *config.Config
-	engine *alerts.Engine
-	olts   *olt.Service
-	hsgq   *hsgq.Service
-	box    *secretbox.Box
+	db       *sql.DB
+	cfg      *config.Config
+	engine   *alerts.Engine
+	olts     *olt.Service
+	hsgq     *hsgq.Service
+	box      *secretbox.Box
+	rebootCD *cooldown
 }
 
 // SetHSGQ routes OLTs whose Hardware Vendor is HSGQ to their own driver instead of the Huawei one.
@@ -46,7 +47,7 @@ func (s *Server) SetHSGQ(h *hsgq.Service) { s.hsgq = h }
 func (s *Server) SetSecretBox(b *secretbox.Box) { s.box = b }
 
 func New(db *sql.DB, cfg *config.Config, e *alerts.Engine, o *olt.Service) *Server {
-	return &Server{db: db, cfg: cfg, engine: e, olts: o}
+	return &Server{db: db, cfg: cfg, engine: e, olts: o, rebootCD: newCooldown(rebootCooldown)}
 }
 
 type ctxKey int
@@ -111,6 +112,7 @@ func (s *Server) Handler() http.Handler {
 			r.With(need("admin")).Post("/olts/{id}/host-key/trust", s.trustHostKey)
 			r.Get("/olts/{id}/onts", s.listONTs)
 			r.With(need("admin")).Patch("/olts/{id}/onts/{ontId}/reseller", s.updateONTReseller)
+			r.With(need("operator")).Post("/olts/{id}/onts/{ontId}/reboot", s.rebootONT)
 			r.With(need("operator")).Get("/olts/{id}/autofind", s.autofind)
 			r.With(need("operator")).Post("/olts/{id}/sync", s.startSync)
 			r.Get("/olts/{id}/sync-runs", s.syncRuns)
