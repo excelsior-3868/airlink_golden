@@ -195,6 +195,22 @@ func OntDelete(port, ontID int) (Cmd, error) {
 	return Cmd{text: fmt.Sprintf("ont delete %d %d", port, ontID), write: true, confirm: true}, nil
 }
 
+// OntReset restarts one ONT. It must be run inside `interface gpon <f>/<s>`. `ont reset <port> all` also exists on the
+// OLT; it is deliberately not representable here. confirm only pre-approves a (y/n) prompt if this release shows one.
+func OntReset(port, ontID int) (Cmd, error) {
+	if err := rng("port", port, 0, 15); err != nil {
+		return Cmd{}, err
+	}
+	if err := rng("ont id", ontID, 0, 127); err != nil {
+		return Cmd{}, err
+	}
+	return Cmd{text: fmt.Sprintf("ont reset %d %d", port, ontID), write: true, confirm: true}, nil
+}
+
+// VendorWriteCmd wraps a state-changing command built by another vendor's driver (internal/hsgq). Like VendorReadCmd,
+// the caller owns validation: pass only constant text or text assembled from range-checked integers.
+func VendorWriteCmd(text string) Cmd { return Cmd{text: text, write: true} }
+
 type ServicePort struct {
 	ID        int
 	VLAN      int
