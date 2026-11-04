@@ -227,7 +227,7 @@ class PppoeCustomerController extends Controller
             'owner:id,name,username,role',
             'reseller:id,name,username',
             'nasDevice:id,name,nasname',
-            'recharges' => fn ($q) => $q->with(['plan:id,name', 'collectedBy:id,name,username'])->orderBy('created_at', 'desc')->limit(200),
+            'recharges' => fn ($q) => $q->with(['plan:id,name,selling_price', 'collectedBy:id,name,username'])->orderBy('created_at', 'desc')->limit(200),
         ]);
 
         // Lifetime accounting totals for the details view (all sessions, not just the live one).

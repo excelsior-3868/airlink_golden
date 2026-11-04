@@ -513,21 +513,32 @@ export default function SubscriberDetailModal({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {recharges.map((r) => (
+                    {recharges.map((r) => {
+                      // Package-change rows store the refund delta as negatives. Show the
+                      // adjusted package's actual price and the shares computed from it.
+                      const adj = String(r.reference || '').startsWith('PKG')
+                      const planPrice = Number(r.plan?.selling_price)
+                      const useAdj = adj && planPrice > 0
+                      const pct = Number(r.commission_percent || 0)
+                      const dispPrice = useAdj ? planPrice : adj ? Math.abs(Number(r.price)) : Number(r.price)
+                      const dispReseller = useAdj ? Math.round(planPrice * pct) / 100 : adj && r.reseller_share != null ? Math.abs(Number(r.reseller_share)) : r.reseller_share
+                      const dispAdmin = useAdj ? Math.round((planPrice - (dispReseller as number)) * 100) / 100 : adj && r.admin_share != null ? Math.abs(Number(r.admin_share)) : r.admin_share
+                      return (
                       <tr key={r.id} className="hover:bg-slate-50/50">
                         <td className="py-2 px-3 font-mono font-medium">{r.reference}</td>
                         <td className="py-2 px-3">{datet(r.created_at)}</td>
                         <td className="py-2 px-3">{r.plan?.name || '—'}</td>
-                        <td className="py-2 px-3 text-right font-bold">{rs(r.price)}</td>
+                        <td className="py-2 px-3 text-right font-bold">{rs(dispPrice)}</td>
                         <td className="py-2 px-3">{r.validity_days} Days</td>
                         <td className="py-2 px-3 text-[11px] text-slate-500">{date(r.period_start)} → {date(r.period_end)}</td>
                         <td className="py-2 px-3 capitalize">{r.payment_method || '—'}</td>
                         <td className="py-2 px-3">{r.collected_by?.name || r.collectedBy?.name || '—'}</td>
-                        <td className="py-2 px-3 text-right">{r.admin_share != null ? rs(r.admin_share) : '—'}</td>
-                        <td className="py-2 px-3 text-right">{r.reseller_share != null ? rs(r.reseller_share) : '—'}</td>
+                        <td className="py-2 px-3 text-right">{dispAdmin != null ? rs(dispAdmin) : '—'}</td>
+                        <td className="py-2 px-3 text-right">{dispReseller != null ? rs(dispReseller) : '—'}</td>
                         <td className="py-2 px-3">{r.note || '—'}</td>
                       </tr>
-                    ))}
+                      )
+                    })}
                   </tbody>
                   <tfoot>
                     <tr className="bg-slate-50 dark:bg-slate-800/50 font-bold">
