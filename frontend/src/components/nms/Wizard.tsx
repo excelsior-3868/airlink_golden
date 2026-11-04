@@ -7,7 +7,7 @@ import { dateTime } from '../../lib/nmsFormat'
 import { ApplyCard, ChangeCard, ChecksList, SaveCard, StepList, Troubleshooting, spState, useJob } from './JobPanel'
 import { Card, ErrorBox, Loading, StatusText, Table, Td, Tr } from './NmsUi'
 
-export const SN_RE = /^[0-9A-Fa-f]{16}$/
+export const SN_RE = /^[0-9A-Za-z]{1,32}$/
 
 export function toOltSerial(raw?: string | null): string {
   if (!raw) return ''

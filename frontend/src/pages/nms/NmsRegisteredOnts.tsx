@@ -152,7 +152,7 @@ function ReassignResellerModal({
   )
 }
 
-function OntList({ olt }: { olt: Olt }) {
+export function OntList({ olt }: { olt: Olt }) {
   const qc = useQueryClient()
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'

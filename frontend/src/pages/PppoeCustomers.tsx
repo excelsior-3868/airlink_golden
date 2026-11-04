@@ -1,10 +1,11 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
 import {
   Users2, Plus, Zap, Pencil, Trash2, PauseCircle, PlayCircle, Unplug,
   Eye, Search, RotateCcw, Download, Router, Shield, Clock,
   AlertTriangle, CheckCircle, Activity, CheckCircle2, XCircle, Loader2,
-  ArrowLeftRight, UserPlus, RefreshCw
+  ArrowLeftRight, UserPlus, RefreshCw, ChevronDown
 } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useQuery, invalidateCache } from '../lib/cache'
@@ -39,6 +40,212 @@ const blankCustomer = {
   owner_id: '',
 }
 
+function CustomerActionsDropdown({
+  customer,
+  isOpen,
+  onToggle,
+  onClose,
+  can,
+  onEdit,
+  onChangePackage,
+  onRecharge,
+  onSuspendResume,
+  onDelete,
+}: {
+  customer: any
+  isOpen: boolean
+  onToggle: () => void
+  onClose: () => void
+  can: (perm: string) => boolean
+  onEdit: () => void
+  onChangePackage: () => void
+  onRecharge: () => void
+  onSuspendResume: () => void
+  onDelete: () => void
+}) {
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const [coords, setCoords] = useState<{ top: number; left: number }>({ top: 0, left: 0 })
+
+  const updatePosition = () => {
+    if (!btnRef.current) return
+    const rect = btnRef.current.getBoundingClientRect()
+    const menuHeight = 210
+    const spaceBelow = window.innerHeight - rect.bottom - 8
+    const up = spaceBelow < menuHeight && rect.top > menuHeight
+    const menuWidth = 195
+    const left = Math.max(8, rect.right + window.scrollX - menuWidth)
+    const top = up
+      ? rect.top + window.scrollY - menuHeight - 4
+      : rect.bottom + window.scrollY + 4
+
+    setCoords({ top, left })
+  }
+
+  useEffect(() => {
+    if (isOpen) {
+      updatePosition()
+      const handleScrollOrResize = () => updatePosition()
+      window.addEventListener('resize', handleScrollOrResize)
+      window.addEventListener('scroll', handleScrollOrResize, true)
+      return () => {
+        window.removeEventListener('resize', handleScrollOrResize)
+        window.removeEventListener('scroll', handleScrollOrResize, true)
+      }
+    }
+  }, [isOpen])
+
+  useEffect(() => {
+    if (!isOpen) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        btnRef.current &&
+        !btnRef.current.contains(e.target as Node) &&
+        menuRef.current &&
+        !menuRef.current.contains(e.target as Node)
+      ) {
+        onClose()
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside, true)
+    return () => document.removeEventListener('mousedown', handleClickOutside, true)
+  }, [isOpen, onClose])
+
+  const isExpired = customer.status === 'expired' || (customer.expires_at && new Date(customer.expires_at) < new Date())
+
+  return (
+    <div className="relative inline-block text-left" onClick={(e) => e.stopPropagation()}>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          onToggle()
+        }}
+        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all shadow-2xs cursor-pointer ${
+          isOpen
+            ? 'bg-indigo-50 border-indigo-300 text-indigo-700 dark:bg-indigo-950/60 dark:border-indigo-700 dark:text-indigo-300'
+            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60'
+        }`}
+        title="Actions Menu"
+      >
+        <span>Actions</span>
+        <ChevronDown size={14} className={`text-slate-400 transition-transform ${isOpen ? 'rotate-180 text-indigo-600' : ''}`} />
+      </button>
+
+      {isOpen &&
+        createPortal(
+          <div
+            ref={menuRef}
+            style={{
+              position: 'absolute',
+              top: coords.top,
+              left: coords.left,
+              width: 195,
+              zIndex: 9999,
+            }}
+            onClick={(e) => e.stopPropagation()}
+            className="rounded-2xl border border-slate-200/80 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xl p-1.5 text-xs text-slate-700 dark:text-slate-200 flex flex-col gap-0.5"
+          >
+            {/* Edit */}
+            {can('create_pppoe_customer') && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose()
+                  onEdit()
+                }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <Pencil size={15} className="text-slate-400 shrink-0" />
+                <span>Edit Profile</span>
+              </button>
+            )}
+
+            {/* Change Package */}
+            {can('create_pppoe_customer') && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose()
+                  onChangePackage()
+                }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left font-semibold hover:bg-amber-50 dark:hover:bg-amber-950/40 text-amber-700 dark:text-amber-400 transition-colors cursor-pointer"
+              >
+                <ArrowLeftRight size={15} className="text-amber-500 shrink-0" />
+                <span>Change Package</span>
+              </button>
+            )}
+
+            {/* Recharge (if expired) */}
+            {can('recharge_pppoe_customer') && isExpired && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose()
+                  onRecharge()
+                }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left font-semibold hover:bg-indigo-50 dark:hover:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 transition-colors cursor-pointer"
+              >
+                <Zap size={15} className="text-indigo-500 shrink-0" />
+                <span>Recharge Subscription</span>
+              </button>
+            )}
+
+            <div className="h-px bg-slate-100 dark:bg-slate-800 my-1" />
+
+            {/* Suspend / Resume */}
+            {can('suspend_pppoe_customer') &&
+              (customer.status === 'suspended' ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose()
+                    onSuspendResume()
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left font-semibold hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 transition-colors cursor-pointer"
+                >
+                  <PlayCircle size={15} className="text-emerald-500 shrink-0" />
+                  <span>Resume Subscription</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose()
+                    onSuspendResume()
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left font-semibold hover:bg-amber-50 dark:hover:bg-amber-950/40 text-amber-600 dark:text-amber-400 transition-colors cursor-pointer"
+                >
+                  <PauseCircle size={15} className="text-amber-500 shrink-0" />
+                  <span>Suspend Subscription</span>
+                </button>
+              ))}
+
+            {/* Delete */}
+            {can('delete_pppoe_customer') && (
+              <>
+                <div className="h-px bg-slate-100 dark:bg-slate-800 my-1" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose()
+                    onDelete()
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left font-semibold hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 transition-colors cursor-pointer"
+                >
+                  <Trash2 size={15} className="text-rose-500 shrink-0" />
+                  <span>Delete Subscriber</span>
+                </button>
+              </>
+            )}
+          </div>,
+          document.body
+        )}
+    </div>
+  )
+}
+
 export default function PppoeCustomers() {
   const { user, can } = useAuth()
   const isAdmin = user?.role === 'admin'
@@ -58,6 +265,7 @@ export default function PppoeCustomers() {
   const [page, setPage] = useState(1)
 
   // Modals state
+  const [openActionId, setOpenActionId] = useState<number | null>(null)
   const [createModalOpen, setCreateModalOpen] = useState(false)
   const [editModalOpen, setEditModalOpen] = useState(false)
   const [modalTab, setModalTab] = useState<'identity' | 'subscription' | 'network'>('identity')
@@ -93,7 +301,7 @@ export default function PppoeCustomers() {
 
   // Real-time username duplication check with debounce
   useEffect(() => {
-    if (!createModalOpen) {
+    if (!createModalOpen && !editModalOpen) {
       setUsernameStatus(null)
       setUsernameChecking(false)
       return
@@ -106,10 +314,21 @@ export default function PppoeCustomers() {
       return
     }
 
+    // If editing and username matches current subscriber's username, it's valid
+    if (editModalOpen && editCustomer && uname === editCustomer.username) {
+      setUsernameStatus({ available: true, message: 'Current subscriber username.' })
+      setUsernameChecking(false)
+      return
+    }
+
     const timer = setTimeout(async () => {
       setUsernameChecking(true)
       try {
-        const res = await api.get('/pppoe/customers/check-username', { params: { username: uname } })
+        const params: any = { username: uname }
+        if (editModalOpen && editCustomer) {
+          params.ignore_id = editCustomer.id
+        }
+        const res = await api.get('/pppoe/customers/check-username', { params })
         if (res.data?.data) {
           setUsernameStatus(res.data.data)
         }
@@ -121,7 +340,7 @@ export default function PppoeCustomers() {
     }, 350)
 
     return () => clearTimeout(timer)
-  }, [form.username, createModalOpen])
+  }, [form.username, createModalOpen, editModalOpen, editCustomer])
 
   // Data fetching. /pppoe/customers is server-paginated AND server-filtered, so
   // the filters travel with the request rather than being applied to one page's
@@ -252,7 +471,7 @@ export default function PppoeCustomers() {
   const openEdit = (c: any) => {
     setEditCustomer(c)
     setForm({
-      username: c.username,
+      username: c.username || '',
       password: c.password || '',
       full_name: c.full_name || '',
       phone: c.phone || '',
@@ -267,6 +486,8 @@ export default function PppoeCustomers() {
       simultaneous_use: c.simultaneous_use || 1,
       owner_id: c.owner_id ? String(c.owner_id) : '',
     })
+    setUsernameStatus({ available: true, message: 'Current subscriber username.' })
+    setUsernameChecking(false)
     setModalTab('identity')
     setErr('')
     setEditModalOpen(true)
@@ -360,8 +581,30 @@ export default function PppoeCustomers() {
   const handleSaveEdit = async () => {
     if (!editCustomer) return
     setErr('')
+
+    const currentUsername = form.username.trim()
+    if (!currentUsername) {
+      setErr('Username / Login ID is required.')
+      return
+    }
+
+    if (currentUsername.length < 3) {
+      setErr('Username must be at least 3 characters.')
+      return
+    }
+
+    if (!/^[A-Za-z0-9._@-]{3,64}$/.test(currentUsername)) {
+      setErr('Username can only contain letters, numbers, and . _ @ -')
+      return
+    }
+
+    if (usernameStatus && !usernameStatus.available) {
+      setErr(usernameStatus.message || 'This username is already taken.')
+      return
+    }
+
     if (!form.password.trim()) {
-      setErr('Password cannot be empty.')
+      setErr('PPPoE Password cannot be empty.')
       return
     }
 
@@ -380,6 +623,7 @@ export default function PppoeCustomers() {
     setBusy(true)
     try {
       const payload: any = {
+        username: currentUsername,
         password: form.password.trim(),
         full_name: form.full_name.trim() || null,
         phone: form.phone.trim() || null,
@@ -631,11 +875,12 @@ export default function PppoeCustomers() {
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
                     <tr className="border-b border-slate-200/80 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 font-semibold">
-                      <th className="py-3 px-4">Subscriber</th>
+                      <th className="py-3 px-4">Username</th>
+                      <th className="py-3 px-4">Subscriber Name</th>
+                      <th className="py-3 px-4">Reseller</th>
                       <th className="py-3 px-4">Internet Plan</th>
                       <th className="py-3 px-4">Subscription Expiry</th>
                       <th className="py-3 px-4">Online Status</th>
-                      <th className="py-3 px-4">IP & MAC Lock</th>
                       <th className="py-3 px-4">Status</th>
                       <th className="py-3 px-4 text-right">Actions</th>
                     </tr>
@@ -645,26 +890,41 @@ export default function PppoeCustomers() {
                       const isExpired = c.expires_at && new Date(c.expires_at) < new Date()
                       return (
                         <tr key={c.id} onClick={() => openDetail(c)} title="Click to view subscriber details" className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition cursor-pointer">
+                          {/* Username & Phone */}
                           <td className="py-3 px-4">
-                            <div className="font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
-                              <span>{c.username}</span>
-                            </div>
-                            <div className="text-[11px] text-slate-500 flex items-center gap-1.5 mt-0.5">
-                              <span>{c.full_name || 'No Name Provided'}</span>
-                              {c.reseller && (
-                                <span className="text-[9px] bg-purple-50 text-purple-600 font-bold px-1.5 py-0.2 rounded-full border border-purple-100">
-                                  {c.reseller.name}
-                                </span>
-                              )}
+                            <div className="font-semibold text-slate-900 dark:text-slate-100 font-mono">
+                              {c.username}
                             </div>
                             {c.phone && (
                               <div className="text-[10px] text-slate-400 font-mono mt-0.5">{c.phone}</div>
                             )}
                           </td>
+
+                          {/* Subscriber Name */}
+                          <td className="py-3 px-4">
+                            <div className="font-medium text-slate-800 dark:text-slate-200">
+                              {c.full_name || <span className="text-slate-400 italic font-normal">No Name Provided</span>}
+                            </div>
+                          </td>
+
+                          {/* Reseller */}
+                          <td className="py-3 px-4">
+                            {c.reseller ? (
+                              <span className="inline-flex items-center text-xs font-bold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/60 border border-purple-200/80 dark:border-purple-800/80 px-2.5 py-0.5 rounded-full">
+                                {c.reseller.name}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 text-xs">—</span>
+                            )}
+                          </td>
+
+                          {/* Internet Plan */}
                           <td className="py-3 px-4">
                             <div className="font-medium text-slate-800 dark:text-slate-200">{c.plan?.name || '—'}</div>
                             <div className="text-[11px] text-slate-400">{c.plan?.bandwidth || 'Unlimited Speed'}</div>
                           </td>
+
+                          {/* Subscription Expiry */}
                           <td className="py-3 px-4">
                             {c.expires_at ? (
                               <div>
@@ -677,6 +937,8 @@ export default function PppoeCustomers() {
                               <span className="text-slate-400 italic">Not Activated</span>
                             )}
                           </td>
+
+                          {/* Online Status */}
                           <td className="py-3 px-4">
                             <div className="flex flex-col items-start gap-1">
                               {c.is_online ? (
@@ -721,133 +983,26 @@ export default function PppoeCustomers() {
                               )}
                             </div>
                           </td>
-                          <td className="py-3 px-4">
-                            <div className="space-y-0.5">
-                              {c.current_ip && (
-                                /^\d{1,3}(\.\d{1,3}){3}$/.test(c.current_ip) ? (
-                                  <a
-                                    href={`http://${c.current_ip}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    onClick={(e) => e.stopPropagation()}
-                                    title={`Open http://${c.current_ip} in a new tab`}
-                                    className="font-mono text-indigo-600 dark:text-indigo-400 hover:underline underline-offset-2"
-                                  >
-                                    {c.current_ip}
-                                  </a>
-                                ) : (
-                                  <div className="font-mono text-slate-700 dark:text-slate-300">{c.current_ip}</div>
-                                )
-                              )}
-                              {c.mac_bind ? (
-                                <div className="text-[10px] bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 px-1.5 py-0.5 rounded font-medium border border-amber-200/50 truncate max-w-[130px]">
-                                  {c.mac_address || 'Lock on First Login'}
-                                </div>
-                              ) : (
-                                <div className="text-[10px] text-slate-400">No MAC Lock</div>
-                              )}
-                            </div>
-                          </td>
+
+                          {/* Status */}
                           <td className="py-3 px-4">
                             <Pill tone={(statusPill[c.status] as any) || 'info'} className="capitalize">
                               {c.status}
                             </Pill>
                           </td>
                           <td className="py-3 px-4 text-right" onClick={(e) => e.stopPropagation()}>
-                            <div className="flex items-center justify-end gap-1.5">
-                              {/* Change Package Button */}
-                              {can('create_pppoe_customer') && (
-                                <button
-                                  type="button"
-                                  onClick={() => { setSelectedForPackageChange(c); setChangePackageModalOpen(true) }}
-                                  className="p-1.5 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/50 rounded-lg transition"
-                                  title="Change Package / Plan Migration"
-                                >
-                                  <ArrowLeftRight size={15} />
-                                </button>
-                              )}
-
-                              {/* Recharge Button — only rendered when subscriber is expired */}
-                              {can('recharge_pppoe_customer') && (c.status === 'expired' || (c.expires_at && new Date(c.expires_at) < new Date())) && (
-                                <button
-                                  type="button"
-                                  onClick={() => { setSelectedForRecharge(c); setRechargeModalOpen(true) }}
-                                  className="p-1.5 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 rounded-lg transition"
-                                  title="Recharge Subscription"
-                                >
-                                  <Zap size={15} />
-                                </button>
-                              )}
-
-                              {/* Detail Drawer */}
-                              <button
-                                type="button"
-                                onClick={() => openDetail(c)}
-                                className="p-1.5 text-slate-600 dark:text-slate-300 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
-                                title="View Subscriber Details"
-                              >
-                                <Eye size={15} />
-                              </button>
-
-                              {/* Edit */}
-                              {can('create_pppoe_customer') && (
-                                <button
-                                  type="button"
-                                  onClick={() => openEdit(c)}
-                                  className="p-1.5 text-slate-600 dark:text-slate-300 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
-                                  title="Edit Subscriber Profile"
-                                >
-                                  <Pencil size={15} />
-                                </button>
-                              )}
-
-                              {/* Suspend / Resume */}
-                              {can('suspend_pppoe_customer') && (
-                                c.status === 'suspended' ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => setConfirmModal({ open: true, type: 'resume', customer: c })}
-                                    className="p-1.5 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 rounded-lg transition"
-                                    title="Resume Subscription"
-                                  >
-                                    <PlayCircle size={15} />
-                                  </button>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    onClick={() => setConfirmModal({ open: true, type: 'suspend', customer: c })}
-                                    className="p-1.5 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/50 rounded-lg transition"
-                                    title="Suspend Subscription"
-                                  >
-                                    <PauseCircle size={15} />
-                                  </button>
-                                )
-                              )}
-
-                              {/* Disconnect Live Session */}
-                              {can('suspend_pppoe_customer') && (
-                                <button
-                                  type="button"
-                                  onClick={() => setConfirmModal({ open: true, type: 'disconnect', customer: c })}
-                                  className="p-1.5 text-slate-600 dark:text-slate-300 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition"
-                                  title="Disconnect Active PPP Session"
-                                >
-                                  <Unplug size={15} />
-                                </button>
-                              )}
-
-                              {/* Delete */}
-                              {can('delete_pppoe_customer') && (
-                                <button
-                                  type="button"
-                                  onClick={() => setConfirmModal({ open: true, type: 'delete', customer: c })}
-                                  className="p-1.5 text-slate-600 dark:text-slate-300 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition"
-                                  title="Delete Subscriber"
-                                >
-                                  <Trash2 size={15} />
-                                </button>
-                              )}
-                            </div>
+                            <CustomerActionsDropdown
+                              customer={c}
+                              isOpen={openActionId === c.id}
+                              onToggle={() => setOpenActionId((prev) => (prev === c.id ? null : c.id))}
+                              onClose={() => setOpenActionId(null)}
+                              can={can}
+                              onEdit={() => openEdit(c)}
+                              onChangePackage={() => { setSelectedForPackageChange(c); setChangePackageModalOpen(true) }}
+                              onRecharge={() => { setSelectedForRecharge(c); setRechargeModalOpen(true) }}
+                              onSuspendResume={() => setConfirmModal({ open: true, type: c.status === 'suspended' ? 'resume' : 'suspend', customer: c })}
+                              onDelete={() => setConfirmModal({ open: true, type: 'delete', customer: c })}
+                            />
                           </td>
                         </tr>
                       )
@@ -1236,7 +1391,7 @@ export default function PppoeCustomers() {
       <Modal
         open={editModalOpen}
         onClose={() => setEditModalOpen(false)}
-        title={`Edit Subscriber: ${editCustomer?.username}`}
+        title={`Edit Subscriber: ${form.username.trim() || editCustomer?.username}`}
         widthClassName="max-w-xl"
       >
         <div className="space-y-4">
@@ -1266,17 +1421,79 @@ export default function PppoeCustomers() {
 
           {modalTab === 'identity' && (
             <div className="space-y-3.5 pt-1">
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
-                  PPPoE Password <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={form.password}
-                  onChange={(e) => setForm({ ...form, password: e.target.value })}
-                  className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none font-mono"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
+                    Username / Login ID <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="e.g. user_pokhara_01"
+                      value={form.username}
+                      onChange={(e) => setForm({ ...form, username: e.target.value })}
+                      className={`w-full pl-3 pr-9 py-2 text-sm bg-white dark:bg-slate-800 border rounded-xl outline-none font-mono transition ${
+                        usernameStatus
+                          ? usernameStatus.available
+                            ? 'border-emerald-500/80 focus:ring-2 focus:ring-emerald-500/20'
+                            : 'border-rose-500/80 focus:ring-2 focus:ring-rose-500/20'
+                          : 'border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500'
+                      }`}
+                    />
+                    <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center pointer-events-none">
+                      {usernameChecking && <Loader2 className="w-4 h-4 text-indigo-500 animate-spin" />}
+                      {!usernameChecking && usernameStatus && usernameStatus.available && (
+                        <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                      )}
+                      {!usernameChecking && usernameStatus && !usernameStatus.available && (
+                        <XCircle className="w-4 h-4 text-rose-500" />
+                      )}
+                    </div>
+                  </div>
+                  {usernameChecking && (
+                    <p className="text-[11px] text-indigo-500 mt-1 flex items-center gap-1">
+                      Checking availability...
+                    </p>
+                  )}
+                  {!usernameChecking && usernameStatus && (
+                    <p
+                      className={`text-[11px] mt-1 flex items-center gap-1 font-medium ${
+                        usernameStatus.available ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500'
+                      }`}
+                    >
+                      {usernameStatus.message}
+                    </p>
+                  )}
+                  {!usernameChecking && !usernameStatus && (
+                    <p className="text-[11px] text-slate-400 mt-1">
+                      Letters, numbers, and . _ @ - (at least 3 characters)
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
+                    PPPoE Password <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={form.password}
+                    onChange={(e) => setForm({ ...form, password: e.target.value })}
+                    className="w-full px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none font-mono"
+                  />
+                </div>
               </div>
+
+              {editCustomer && form.username.trim() && form.username.trim() !== editCustomer.username && (
+                <div className="p-2.5 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 rounded-xl">
+                  <p className="text-[11px] text-amber-700 dark:text-amber-300 flex items-center gap-1.5">
+                    <AlertTriangle size={13} className="shrink-0 text-amber-500" />
+                    <span>
+                      Changing the username will update FreeRADIUS credentials and disconnect any active session. The subscriber must reconnect using the new username.
+                    </span>
+                  </p>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>

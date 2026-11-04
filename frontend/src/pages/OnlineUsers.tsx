@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react'
 import { motion } from 'framer-motion'
-import { Wifi, RefreshCw, Power, Search, Database, Clock, Laptop, ShieldAlert, CheckCircle2, AlertTriangle, Activity, Router, Users } from 'lucide-react'
+import { Wifi, RefreshCw, Power, Search, Database, Clock, Laptop, ShieldAlert, CheckCircle2, AlertTriangle, Activity, Router, Users, Server } from 'lucide-react'
 import { api } from '../lib/api'
+import { nmsApi, Olt } from '../lib/nmsApi'
 import { useAuth } from '../lib/auth'
 import { useBranding } from '../lib/branding'
 import { formatBytes, gb, num, date, datet } from '../lib/format'
@@ -49,6 +50,7 @@ interface OnlineSummary {
   pppoe: number
   stale: number
   unique_nas: number
+  unique_olt?: number
   volume_bytes: number
   hotspot_volume_bytes: number
   pppoe_volume_bytes: number
@@ -61,7 +63,7 @@ interface OnlineFacets {
 }
 
 const emptySummary: OnlineSummary = {
-  total: 0, hotspot: 0, pppoe: 0, stale: 0, unique_nas: 0,
+  total: 0, hotspot: 0, pppoe: 0, stale: 0, unique_nas: 0, unique_olt: 0,
   volume_bytes: 0, hotspot_volume_bytes: 0, pppoe_volume_bytes: 0,
 }
 
@@ -74,6 +76,7 @@ export default function OnlineUsers() {
   const [pageInfo, setPageInfo] = useState<{ current_page: number; last_page: number; per_page: number; total: number; from: number; to: number } | null>(null)
   const [summary, setSummary] = useState<OnlineSummary>(emptySummary)
   const [facets, setFacets] = useState<OnlineFacets>({ nas: [], olt: [], olt_unassigned: 0 })
+  const [oltList, setOltList] = useState<Olt[]>([])
   const [loading, setLoading] = useState(true)
   const [detailCustomerId, setDetailCustomerId] = useState<number | null>(null)
   const [search, setSearch] = useState('')
@@ -164,6 +167,21 @@ export default function OnlineUsers() {
   }, [search, page, perPage, typeFilter, nasFilter, oltFilter, pppoeOnly, isSeller])
 
   useEffect(() => {
+    if (!isSeller) {
+      nmsApi
+        .get<Olt[]>('/olts')
+        .then((res) => {
+          if (Array.isArray(res.data)) {
+            setOltList(res.data)
+          }
+        })
+        .catch(() => {
+          // Gracefully fallback to facet OLT count if NMS is unavailable
+        })
+    }
+  }, [isSeller])
+
+  useEffect(() => {
     setPage(1)
   }, [search, typeFilter, nasFilter, oltFilter])
 
@@ -220,6 +238,8 @@ export default function OnlineUsers() {
   const hotspotVolumeBytes = summary.hotspot_volume_bytes
   const pppoeVolumeBytes = summary.pppoe_volume_bytes
   const uniqueNasDevices = summary.unique_nas
+  const uniqueOlts = summary.unique_olt ?? facets.olt.length
+  const totalOlts = oltList.length > 0 ? oltList.length : uniqueOlts
 
   // Sessions whose owning account isn't 'active' shouldn't exist — either the
   // suspend/expire→disconnect pipeline hasn't caught up yet, or its CoA kick
@@ -284,10 +304,16 @@ export default function OnlineUsers() {
         )}
         {!isSeller && (
           <StatCard
-            label="PPPoE Subscribers Online"
-            value={<span className="text-indigo-600">{num(pppoeCount)}</span>}
-            sub={`${formatBytes(pppoeVolumeBytes)} consumed`}
-            icon={<Activity size={22} />}
+            label="Active OLTs"
+            value={<span className="text-indigo-600">{num(uniqueOlts || totalOlts)}</span>}
+            sub={
+              totalOlts > 0 && uniqueOlts > 0 && totalOlts !== uniqueOlts
+                ? `${num(uniqueOlts)} Active · ${num(totalOlts)} Total`
+                : totalOlts > 0
+                ? `${num(totalOlts)} Configured OLT${totalOlts === 1 ? '' : 's'}`
+                : undefined
+            }
+            icon={<Server size={22} />}
             iconColorClass="text-indigo-600 bg-indigo-50 border border-indigo-100/50"
           />
         )}

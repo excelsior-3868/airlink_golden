@@ -385,13 +385,15 @@ func (s *Service) SyncRunByID(ctx context.Context, id int64) (*SyncRun, error) {
 func (s *Service) RunSyncLoop(ctx context.Context, interval time.Duration) {
 	t := time.NewTicker(interval)
 	defer t.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-t.C:
+	for first := true; ; first = false {
+		if !first { // sync once at startup so a restart never leaves inventory stale for a full interval
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+			}
 		}
-		rows, err := s.db.QueryContext(ctx, `SELECT o.device_id FROM olts o JOIN devices d ON d.id=o.device_id WHERE d.enabled=1 AND o.ssh_host_key<>'' AND LOWER(d.vendor) NOT LIKE '%hsgq%'`)
+		rows, err := s.db.QueryContext(ctx, `SELECT o.device_id FROM olts o JOIN devices d ON d.id=o.device_id WHERE d.enabled=1 AND (o.ssh_host_key<>'' OR o.protocol='telnet') AND LOWER(d.vendor) NOT LIKE '%hsgq%'`)
 		if err != nil {
 			slog.Error("sync loop", "err", err)
 			continue

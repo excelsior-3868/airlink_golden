@@ -4,6 +4,7 @@ package hsgq
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
 	"strings"
@@ -24,6 +25,16 @@ func (f fakeOLT) Run(_ context.Context, c olt.Cmd) (string, error) {
 		return " System Version : HSGQ-G08R_IGD_V2.0.1_Rel\n Product : HSGQ-G08R\n", nil
 	}
 	var n int
+	if _, err := fmt.Sscanf(cmd, "show ont-optical gpon %d", &n); err == nil {
+		// Every online ONT of the port reads -21.5 dBm, like the real listing (online ONTs only).
+		out := "PON/ONU    ONT-SN    Temp Voltage    Bias   Tx power     Rx power     ONT-Name\n"
+		for _, r := range ParseONTTable(f.table).Rows {
+			if r.PON == n && r.RunState == "online" {
+				out += fmt.Sprintf("    %d/%d %s 40 C 3.30 V   10.00 mA 2.0000 dBm   -21.5000 dBm %s\n", r.PON, r.ONU, r.RawSN, r.Name)
+			}
+		}
+		return out, nil
+	}
 	if _, err := fmt.Sscanf(cmd, "show ont-info %d all", &n); err != nil {
 		return "", fmt.Errorf("unexpected command %q", cmd)
 	}
@@ -42,6 +53,45 @@ func (f fakeOLT) Run(_ context.Context, c olt.Cmd) (string, error) {
 		return fmt.Sprintf("In port %d , the total of ONTs are: 0, online: 0", n), nil
 	}
 	return strings.Join(out, "\n"), nil
+}
+
+func TestScheduledOLTsAreTheEnabledHSGQOnes(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	add := func(name, ip, vendor string, enabled int) int64 {
+		t.Helper()
+		r, err := pool.ExecContext(ctx, `INSERT INTO devices(name,ip,role,vendor,enabled,poll_method,sys_descr) VALUES(?,?,'olt',?,?,'tcp','')`, name, ip, vendor, enabled)
+		if err != nil {
+			t.Fatal(err)
+		}
+		id, _ := r.LastInsertId()
+		if _, err := pool.ExecContext(ctx, `INSERT INTO olts(device_id,ssh_host_key,pon_ports) VALUES(?,'','')`, id); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	tag := fmt.Sprintf("%d", os.Getpid())
+	on := add("sched-hsgq-on-"+tag, "10.9.8.1", "HSGQ", 1)
+	off := add("sched-hsgq-off-"+tag, "10.9.8.2", "HSGQ", 0)
+	huawei := add("sched-hw-"+tag, "10.9.8.3", "Huawei", 1)
+
+	ids, err := NewService(pool, nil).scheduledOLTs(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[int64]bool{}
+	for _, id := range ids {
+		got[id] = true
+	}
+	if !got[on] {
+		t.Error("enabled HSGQ OLT is not scheduled")
+	}
+	if got[off] {
+		t.Error("disabled HSGQ OLT is scheduled")
+	}
+	if got[huawei] {
+		t.Error("Huawei OLT is scheduled by the HSGQ loop (the Huawei loop owns it)")
+	}
 }
 
 type fakeDialer struct{ o fakeOLT }
@@ -97,6 +147,15 @@ func TestSyncDoesNotStealInactiveONTFromAnotherOLT(t *testing.T) {
 	}
 	if id, pon, ont := owner(inactive); id != huawei || pon != 1 || ont != 6 {
 		t.Errorf("inactive ONT was taken from the Huawei OLT: olt=%d pon=%d ont=%d", id, pon, ont)
+	}
+	var rx sql.NullFloat64
+	pool.QueryRowContext(ctx, `SELECT rx_power_dbm FROM ont_inventory WHERE serial_number=?`, online).Scan(&rx)
+	if !rx.Valid || rx.Float64 != -21.5 {
+		t.Errorf("online ONT rx_power_dbm = %v, want -21.5 from the optical listing", rx)
+	}
+	pool.QueryRowContext(ctx, `SELECT rx_power_dbm FROM ont_inventory WHERE serial_number=?`, inactive).Scan(&rx)
+	if rx.Valid {
+		t.Errorf("ONT left to the Huawei OLT got rx_power_dbm = %v from the HSGQ sync", rx)
 	}
 	var n int
 	pool.QueryRowContext(ctx, `SELECT COUNT(*) FROM ont_inventory WHERE serial_number=?`, stale).Scan(&n)

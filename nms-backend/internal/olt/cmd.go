@@ -24,7 +24,7 @@ func (c Cmd) String() string { return c.text }
 func (c Cmd) IsWrite() bool  { return c.write }
 
 var (
-	snRe   = regexp.MustCompile(`^[0-9A-Fa-f]{16}$`)
+	snRe   = regexp.MustCompile(`^[0-9A-Za-z]{1,32}$`)
 	descRe = regexp.MustCompile(`^[A-Za-z0-9 _.\-]{0,64}$`)
 )
 
@@ -37,7 +37,7 @@ func rng(name string, v, lo, hi int) error {
 
 func ValidSN(sn string) error {
 	if !snRe.MatchString(sn) {
-		return fmt.Errorf("invalid ONT serial %q (want 16 hex characters)", sn)
+		return fmt.Errorf("invalid ONT serial %q (want 1-32 alphanumeric characters)", sn)
 	}
 	return nil
 }

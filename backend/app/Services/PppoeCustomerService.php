@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Models\Voucher;
 use App\Services\Radius\CoaService;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 
 class PppoeCustomerService
@@ -152,6 +153,10 @@ class PppoeCustomerService
      */
     public function update(User $actor, PppoeCustomer $customer, array $data): PppoeCustomer
     {
+        $oldUsername = $customer->username;
+        $newUsername = !empty($data['username']) ? trim($data['username']) : null;
+        $usernameChanged = $newUsername !== null && $newUsername !== $oldUsername;
+
         $oldPassword = $customer->password;
         $oldBandwidth = $customer->bandwidth;
         $oldPlanId = $customer->plan_id;
@@ -185,8 +190,28 @@ class PppoeCustomerService
         if (!empty($data['password'])) {
             $fillable[] = 'password';
         }
+        if ($usernameChanged) {
+            $fillable[] = 'username';
+        }
 
-        $customer = DB::transaction(function () use ($customer, $data, $fillable) {
+        $customer = DB::transaction(function () use ($customer, $data, $fillable, $usernameChanged, $oldUsername, $newUsername) {
+            if ($usernameChanged) {
+                // Delete old RADIUS authorization rows so they don't remain orphaned
+                $this->deleteRadiusRows($oldUsername);
+
+                // Update radacct accounting records and rollup so subscriber keeps their session and traffic history
+                DB::table('radacct')->where('username', $oldUsername)->update(['username' => $newUsername]);
+                if (Schema::hasTable('radacct_archive')) {
+                    DB::table('radacct_archive')->where('username', $oldUsername)->update(['username' => $newUsername]);
+                }
+                if (Schema::hasTable('radacct_usage_rollup')) {
+                    DB::table('radacct_usage_rollup')->where('username', $oldUsername)->update(['username' => $newUsername]);
+                }
+                if (Schema::hasTable('radpostauth')) {
+                    DB::table('radpostauth')->where('username', $oldUsername)->update(['username' => $newUsername]);
+                }
+            }
+
             $customer->update(array_intersect_key($data, array_flip($fillable)));
 
             // Rebuild radius rows if customer is active/suspended/expired (not pending or terminated)
@@ -197,13 +222,22 @@ class PppoeCustomerService
             return $customer;
         });
 
+        // If username changed, disconnect any active session that was running under the old username
+        if ($usernameChanged) {
+            try {
+                $this->coaService->disconnectUsername($oldUsername);
+            } catch (\Throwable $e) {
+                // Log and ignore CoA failure on update
+            }
+        }
+
         // If credentials/plan changed, disconnect any live session so new attributes apply
         $credentialsOrPlanChanged = (!empty($data['password']) && $data['password'] !== $oldPassword)
             || (isset($data['plan_id']) && $data['plan_id'] !== $oldPlanId)
             || (isset($data['bandwidth']) && $data['bandwidth'] !== $oldBandwidth)
             || (isset($data['nas_device_id']) && $data['nas_device_id'] !== $oldNasDeviceId);
 
-        if ($credentialsOrPlanChanged) {
+        if ($credentialsOrPlanChanged && !$usernameChanged) {
             try {
                 $this->coaService->disconnectUsername($customer->username);
             } catch (\Throwable $e) {

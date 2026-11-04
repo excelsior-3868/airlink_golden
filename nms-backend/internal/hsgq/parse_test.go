@@ -152,6 +152,84 @@ func TestOntInfoPortCmd(t *testing.T) {
 	}
 }
 
+func opticalFixture(t *testing.T) string {
+	t.Helper()
+	b, err := os.ReadFile("testdata/optical_port.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+func TestParseOpticalTable(t *testing.T) {
+	tab := ParseOpticalTable(opticalFixture(t))
+	if !tab.Recognised {
+		t.Fatal("table not recognised")
+	}
+	if len(tab.Rows) != 5 {
+		t.Fatalf("rows = %d, want 5 (log line and prompt must be ignored)", len(tab.Rows))
+	}
+	r := tab.Rows[0]
+	if r.PON != 3 || r.ONU != 1 || r.SN != "48575443BA9B1A9D" || r.TempC != 40 || r.VoltageV != 3.32 ||
+		r.BiasMA != 14 || r.TxDBM != 2.168 || r.RxDBM != -22.148 || r.Name != "ONT03/001" {
+		t.Fatalf("row0 = %+v", r)
+	}
+}
+
+func TestParseOpticalTableByONU(t *testing.T) {
+	rx := map[int]float64{}
+	sn := map[int]string{}
+	for _, r := range ParseOpticalTable(opticalFixture(t)).Rows {
+		rx[r.ONU], sn[r.ONU] = r.RxDBM, r.SN
+	}
+	if rx[33] != -20.97 || sn[33] != "48575443CBE458E1" {
+		t.Errorf("3/33 = %v %s", rx[33], sn[33])
+	}
+	if rx[22] != -27.448 || sn[22] != "45434F4D6E1EDF9B" { // ECOM serial; two-digit ONU id
+		t.Errorf("3/22 = %v %s", rx[22], sn[22])
+	}
+}
+
+func TestParseOpticalTableNoOnlineOnts(t *testing.T) {
+	out := "show ont-optical gpon 9 \n---\nPON/ONU    ONT-SN    Temp Voltage    Bias   Tx power     Rx power     ONT-Name\n---\n---\nOLT(config)#\n"
+	tab := ParseOpticalTable(out)
+	if !tab.Recognised || len(tab.Rows) != 0 {
+		t.Fatalf("empty table = %+v, want recognised with no rows", tab)
+	}
+}
+
+func TestParseOpticalTableNotATable(t *testing.T) {
+	for _, out := range []string{"", "vty% Command incomplete.\n", "% There is no matched command.\n"} {
+		if tab := ParseOpticalTable(out); tab.Recognised || len(tab.Rows) != 0 {
+			t.Errorf("%q parsed as %+v", out, tab)
+		}
+	}
+}
+
+func TestParseOpticalTableSkipsUnreadablePower(t *testing.T) {
+	out := "PON/ONU    ONT-SN    Temp Voltage    Bias   Tx power     Rx power     ONT-Name\n" +
+		"    3/5 HWTCaaaaaaaa 40 C 3.30 V   10.00 mA 2.0000 dBm   N/A dBm ONT03/005\n" +
+		"    3/6 HWTCbbbbbbbb 40 C 3.30 V   10.00 mA 2.0000 dBm   -21.5000 dBm ONT03/006\n"
+	tab := ParseOpticalTable(out)
+	if len(tab.Rows) != 1 || tab.Rows[0].ONU != 6 {
+		t.Fatalf("rows = %+v, want only 3/6 (a non-numeric power must not become 0 dBm)", tab.Rows)
+	}
+}
+
+func TestOntOpticalPort(t *testing.T) {
+	if got, err := OntOpticalPort(3); err != nil || got != "show ont-optical gpon 3" {
+		t.Fatalf("got %q, %v", got, err)
+	}
+	for _, p := range []int{0, 17, -1} {
+		if _, err := OntOpticalPort(p); err == nil {
+			t.Errorf("port %d accepted", p)
+		}
+	}
+	if got, _ := OntOpticalPort(16); checkReadOnly(got) != nil {
+		t.Errorf("%q refused by the read-only guard", got)
+	}
+}
+
 func TestMayClaim(t *testing.T) {
 	const self, other = 4, 1
 	owners := map[string]int64{"MINE": self, "THEIRS": other}

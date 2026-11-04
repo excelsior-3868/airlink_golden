@@ -377,6 +377,7 @@ class RadiusController extends Controller
                 'pppoe' => $rows->where('is_pppoe', 1)->count(),
                 'stale' => $rows->where('is_stale', 1)->count(),
                 'unique_nas' => count($nas),
+                'unique_olt' => count($olts),
                 'volume_bytes' => $hotspotBytes + $pppoeBytes,
                 'hotspot_volume_bytes' => $hotspotBytes,
                 'pppoe_volume_bytes' => $pppoeBytes,

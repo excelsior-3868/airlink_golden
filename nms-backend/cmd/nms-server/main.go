@@ -87,7 +87,11 @@ func run() error {
 	}
 
 	apiServer := api.New(dbConn, cfg, engine, svc)
-	apiServer.SetHSGQ(hsgq.NewService(dbConn, hsgq.Dialer{DB: dbConn, Box: box}))
+	hsgqSvc := hsgq.NewService(dbConn, hsgq.Dialer{DB: dbConn, Box: box})
+	apiServer.SetHSGQ(hsgqSvc)
+	if cfg.OLTSyncInterval > 0 {
+		go hsgqSvc.RunSyncLoop(ctx, cfg.OLTSyncInterval)
+	}
 	apiServer.SetSecretBox(box)
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,

@@ -89,7 +89,7 @@ def normalize_mac(raw):
 def get_olts(conn):
     with conn.cursor() as cur:
         cur.execute("""
-            SELECT o.device_id, d.name, d.ip, o.login_user, o.login_pass_enc, o.protocol
+            SELECT o.device_id, d.name, d.ip, d.vendor, o.login_user, o.login_pass_enc, o.protocol
             FROM olts o
             JOIN devices d ON d.id = o.device_id
             WHERE d.enabled = 1
@@ -167,19 +167,101 @@ def parse_mac_table(raw):
             })
     return results
 
-def run_correlation():
+def is_hsgq(olt):
+    return "hsgq" in (olt.get("vendor") or "").lower()
+
+# HSGQ: `show mac-address gpon <pon>` lists PORT / ONT / MAC / VLAN per PON, in config mode. Only plain `show`
+# commands are ever sent. (`show mac-address all` has no ONT column and the pager truncates it.)
+HSGQ_PON_PORTS = range(1, 17)
+HSGQ_LOG_RE = re.compile(r"^\s*\d{4}[-/]\d{2}[-/]\d{2}[ T]\d{2}:\d{2}:\d{2}")
+HSGQ_MORE_RE = re.compile(rb"(?i)--+\s*more\s*--+.*$")
+HSGQ_PROMPT_RE = re.compile(rb"[\w\-().]+(?:\(config[^)]*\))?[>#]\s*$")
+
+def hsgq_read(tn, timeout=60):
+    out = b""
+    end = time.time() + timeout
+    while time.time() < end:
+        idx, _, chunk = tn.expect([HSGQ_MORE_RE, HSGQ_PROMPT_RE], timeout=3)
+        out += chunk
+        if idx == 0:
+            tn.write(b" ")
+        elif idx == 1:
+            break
+    text = re.sub(r"(?i)--+\s*more\s*--+[^\n]*", "", out.decode("ascii", errors="replace")).replace("\r", "")
+    return "\n".join(l for l in text.split("\n") if not HSGQ_LOG_RE.match(l))
+
+def fetch_hsgq_mac_table(host, user, password):
+    print(f"[*] Connecting to HSGQ OLT {host} as {user}...")
+    raw = []
+    try:
+        tn = telnetlib.Telnet(host, 23, timeout=12)
+        tn.expect([re.compile(b"(?i)(user\\s?name|login)\\s*:\\s*$")], timeout=10)
+        tn.write(user.encode("ascii") + b"\r\n")
+        tn.expect([re.compile(b"(?i)pass(word)?\\s*:\\s*$")], timeout=10)
+        tn.write(password.encode("ascii") + b"\r\n")
+        hsgq_read(tn, 10)
+        for step in ("enable", "configure"):
+            tn.write(step.encode("ascii") + b"\r\n")
+            hsgq_read(tn, 10)
+        for pon in HSGQ_PON_PORTS:
+            tn.write(f"show mac-address gpon {pon}".encode("ascii") + b"\r\n")
+            raw.append(hsgq_read(tn))
+        try:
+            tn.write(b"exit\r\nquit\r\n")
+            tn.close()
+        except Exception:
+            pass
+    except Exception as e:
+        print(f"[!] Error fetching from {host}: {e}")
+    return "\n".join(raw)
+
+def parse_hsgq_mac_table(raw):
+    """Rows look like `PON03   22   e4:2d:7b:6e:1e:e0   100   dynamic   255`. HSGQ has no frame/slot: ont_inventory stores 0/0."""
+    results = []
+    line_re = re.compile(
+        r"^\s*PON(\d+)\s+(\d+)\s+([0-9a-fA-F]{2}(?::[0-9a-fA-F]{2}){5})\s+(\d+)",
+        re.IGNORECASE
+    )
+    for line in raw.splitlines():
+        m = line_re.match(line)
+        if m:
+            results.append({
+                "mac": normalize_mac(m.group(3)),
+                "frame": 0,
+                "slot": 0,
+                "port": int(m.group(1)),
+                "ont_id": int(m.group(2)),
+                "vlan": int(m.group(4)),
+            })
+    # A MAC can be learned in several VLANs; keep one row per MAC and prefer the PPPoE VLAN (100).
+    best = {}
+    for r in results:
+        cur = best.get(r["mac"])
+        if cur is None or (r["vlan"] == 100 and cur["vlan"] != 100):
+            best[r["mac"]] = r
+    return list(best.values())
+
+def run_correlation(dry_run=False, only_olt=None):
     check_and_nsenter()
     conn = get_db()
     olts = get_olts(conn)
+    if only_olt is not None:
+        olts = [o for o in olts if o["device_id"] == only_olt]
     print(f"[*] Found {len(olts)} enabled OLTs.")
+    if dry_run:
+        print("[*] DRY RUN: customers will not be modified.")
 
     total_matched = 0
     total_updated = 0
 
     for olt in olts:
         print(f"\n[*] Processing OLT: {olt['name']} ({olt['ip']})...")
-        raw_output = fetch_olt_mac_table(olt["ip"], olt["login_user"], olt["password"])
-        entries = parse_mac_table(raw_output)
+        if is_hsgq(olt):
+            raw_output = fetch_hsgq_mac_table(olt["ip"], olt["login_user"], olt["password"])
+            entries = parse_hsgq_mac_table(raw_output)
+        else:
+            raw_output = fetch_olt_mac_table(olt["ip"], olt["login_user"], olt["password"])
+            entries = parse_mac_table(raw_output)
         print(f"[+] Found {len(entries)} learned GPON MAC entries on {olt['name']}.")
 
         for entry in entries:
@@ -222,14 +304,16 @@ def run_correlation():
                     cust_username = cust["username"]
 
                     if current_sn != sn or cust.get("onu_id") != ont_id_str:
-                        cur.execute("""
-                            UPDATE pppoe_customers
-                            SET onu_serial_number = %s,
-                                onu_id = %s,
-                                mac_address = COALESCE(mac_address, %s)
-                            WHERE id = %s
-                        """, (sn, ont_id_str, mac, cust_id))
-                        print(f"  [UPDATED] User: {cust_username:22} | MAC: {mac} -> OLT: {olt['name']} Port: {entry['frame']}/{entry['slot']}/{entry['port']} ONT #{ont_id_str} | SN: {sn}")
+                        if not dry_run:
+                            cur.execute("""
+                                UPDATE pppoe_customers
+                                SET onu_serial_number = %s,
+                                    onu_id = %s,
+                                    mac_address = COALESCE(mac_address, %s)
+                                WHERE id = %s
+                            """, (sn, ont_id_str, mac, cust_id))
+                        print(f"  [{'WOULD UPDATE' if dry_run else 'UPDATED'}] User: {cust_username:22} | MAC: {mac} -> OLT: {olt['name']} Port: {entry['frame']}/{entry['slot']}/{entry['port']} ONT #{ont_id_str} | SN: {sn}"
+                              + (f" | REPLACED old SN: {current_sn} (ONT #{cust.get('onu_id')})" if current_sn and current_sn != sn else ""))
                         total_updated += 1
                     else:
                         print(f"  [OK] User: {cust_username:22} already has SN: {sn}")
@@ -242,4 +326,7 @@ def run_correlation():
     print(f"==========================================")
 
 if __name__ == "__main__":
-    run_correlation()
+    only = None
+    if "--olt-id" in sys.argv:
+        only = int(sys.argv[sys.argv.index("--olt-id") + 1])
+    run_correlation(dry_run="--dry-run" in sys.argv, only_olt=only)

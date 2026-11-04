@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Database as IcoDatabase, RefreshCw, Search } from 'lucide-react'
+import { Database as IcoDatabase, RefreshCw, Search, Radio, Info } from 'lucide-react'
 import { nmsApi, errMsg, Olt } from '../../lib/nmsApi'
 import { ago, dateTime } from '../../lib/nmsFormat'
 import SyncButton from './SyncButton'
 import { Card, ErrorBox, Loading, StatusText, Table, Td, Tr, inputCls } from './NmsUi'
+import { OntList } from '../../pages/nms/NmsRegisteredOnts'
 
 interface SyncRun {
   id: number
@@ -25,10 +26,11 @@ interface Snapshot {
 
 type Row = Record<string, string | number | null>
 
-const tabs = ['service-ports', 'vlans', 'profiles', 'boards', 'raw', 'history'] as const
+const tabs = ['onus', 'service-ports', 'vlans', 'profiles', 'boards', 'raw', 'history'] as const
 type Tab = (typeof tabs)[number]
 
 const label: Record<Tab, string> = {
+  onus: 'ONUs',
   'service-ports': 'Service-Ports',
   vlans: 'VLANs',
   profiles: 'Profiles',
@@ -37,10 +39,15 @@ const label: Record<Tab, string> = {
   history: 'Sync History',
 }
 
-function Rows({ olt, kind, filter }: { olt: number; kind: string; filter: string }) {
+function Rows({ olt, kind, filter, onSelectTab }: { olt: Olt; kind: string; filter: string; onSelectTab?: (t: Tab) => void }) {
+  const isHsgq =
+    (olt.name ?? '').toLowerCase().includes('hsgq') ||
+    (olt.detected_version ?? '').toLowerCase().includes('hsgq') ||
+    (olt.software_version ?? '').toLowerCase().includes('hsgq')
+
   const q = useQuery({
-    queryKey: ['inv', olt, kind],
-    queryFn: async () => (await nmsApi.get<Row[]>(`/olts/${olt}/inventory/${kind}`)).data,
+    queryKey: ['inv', olt.id, kind],
+    queryFn: async () => (await nmsApi.get<Row[]>(`/olts/${olt.id}/inventory/${kind}`)).data,
   })
   if (q.isLoading) return <Loading />
   if (q.error) return <ErrorBox msg={errMsg(q.error)} />
@@ -49,6 +56,28 @@ function Rows({ olt, kind, filter }: { olt: number; kind: string; filter: string
   const rows = f ? all.filter((r) => Object.values(r).some((v) => String(v ?? '').toLowerCase().includes(f))) : all
 
   if (all.length === 0) {
+    if (isHsgq) {
+      return (
+        <div className="rounded-xl border border-sky-200 dark:border-sky-900/60 bg-sky-50/70 dark:bg-sky-950/30 p-5 text-xs sm:text-sm space-y-3">
+          <div className="flex items-center gap-2 text-sky-900 dark:text-sky-300 font-bold text-sm">
+            <Info size={18} />
+            <span>Hardware Architecture: {label[kind as Tab] ?? kind} Are Specific To Modular Chassis OLTs</span>
+          </div>
+          <p className="text-slate-600 dark:text-slate-300 leading-relaxed">
+            <strong>{olt.name}</strong> is a compact fixed-port HSGQ box OLT. Features like Huawei service-port indexes, profile bindings, and modular carrier slots do not apply to this architecture. All subscriber telemetry and provisioning on this OLT are mapped directly by PON port under the <strong>ONUs</strong> tab.
+          </p>
+          <button
+            type="button"
+            onClick={() => onSelectTab?.('onus')}
+            className="btn-primary py-2 px-4 rounded-xl text-xs font-bold inline-flex items-center gap-2 shadow-xs cursor-pointer"
+          >
+            <Radio size={14} />
+            View Synced ONUs ({olt.onts ?? 0})
+          </button>
+        </div>
+      )
+    }
+
     return (
       <p className="text-xs sm:text-sm text-slate-500 p-4">
         Nothing synced yet. Run a sync, and check the Raw Output tab if the OLT answered but nothing was parsed.
@@ -143,7 +172,12 @@ function History({ olt }: { olt: number }) {
 }
 
 export default function OltInventory({ olt }: { olt: Olt }) {
-  const [tab, setTab] = useState<Tab>('service-ports')
+  const isHsgq =
+    (olt.name ?? '').toLowerCase().includes('hsgq') ||
+    (olt.detected_version ?? '').toLowerCase().includes('hsgq') ||
+    (olt.software_version ?? '').toLowerCase().includes('hsgq')
+
+  const [tab, setTab] = useState<Tab>(isHsgq ? 'onus' : 'service-ports')
   const [filter, setFilter] = useState('')
 
   return (
@@ -186,10 +220,11 @@ export default function OltInventory({ olt }: { olt: Olt }) {
         )}
       </div>
 
+      {tab === 'onus' && <OntList olt={olt} />}
       {tab === 'raw' && <Raw olt={olt.id} />}
       {tab === 'history' && <History olt={olt.id} />}
       {['service-ports', 'vlans', 'profiles', 'boards'].includes(tab) && (
-        <Rows olt={olt.id} kind={tab} filter={filter} />
+        <Rows olt={olt} kind={tab} filter={filter} onSelectTab={setTab} />
       )}
     </Card>
   )

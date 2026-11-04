@@ -8,6 +8,7 @@ import {
 import { nmsApi, errMsg, Olt } from '../../lib/nmsApi'
 import { useAuth } from '../../lib/auth'
 import OltInventory from './OltInventory'
+import { OntList } from '../../pages/nms/NmsRegisteredOnts'
 import { Card, ErrorBox, Field, Table, Td, Tr, inputCls } from './NmsUi'
 import { CustomSelect } from '../ui'
 
@@ -210,15 +211,11 @@ export function OltDetail({ olt, section }: { olt: Olt; section: OltSection }) {
 
       {section === 'inventory' && <OltInventory olt={olt} />}
 
-      {section === 'onts' && <Card icon={IcoListChecks} title="Registered ONTs" subtitle="View complete subscriber list">
-        <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300">
-          <span className="font-bold">{olt.onts.toLocaleString()}</span> registered (<span className="text-emerald-600 dark:text-emerald-400 font-bold">{olt.onts_online.toLocaleString()} online</span>).{' '}
-          <Link className="text-primary font-bold hover:underline" to="/nms/registered-onts">
-            Open The Registered ONTs Page
-          </Link>{' '}
-          to search and filter by serial or PON port.
-        </p>
-      </Card>}
+      {section === 'onts' && (
+        <div className="space-y-4">
+          <OntList olt={olt} />
+        </div>
+      )}
     </div>
   )
 }

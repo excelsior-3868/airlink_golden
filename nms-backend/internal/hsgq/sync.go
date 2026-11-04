@@ -155,7 +155,7 @@ func (s *Service) exec(ctx context.Context, oltID, runID int64) (*olt.SyncRun, e
 	if err != nil {
 		return finish("failed", "resolve PON ports: "+err.Error())
 	}
-	onts, withONTs, scanned, heldElsewhere := 0, 0, 0, 0
+	onts, withONTs, scanned, heldElsewhere, optical := 0, 0, 0, 0, 0
 	for _, pon := range ports {
 		text, err := OntInfoPort(pon)
 		if err != nil {
@@ -190,11 +190,38 @@ func (s *Service) exec(ctx context.Context, oltID, runID int64) (*olt.SyncRun, e
 			return finish("failed", fmt.Sprintf("record ONTs of PON %d: %v", pon, err))
 		}
 		heldElsewhere += n
+
+		// Optical power exists only for ONTs that are online, so a port with none is not asked.
+		if !anyOnline(tab.Rows) {
+			continue
+		}
+		otext, err := OntOpticalPort(pon)
+		if err != nil {
+			continue
+		}
+		oout, ocli, ofatal := collect(otext)
+		if ofatal != nil {
+			return finish("failed", ofatal.Error())
+		}
+		if ocli != nil {
+			warns = append(warns, fmt.Sprintf("%s: %v - signal power not updated", otext, ocli))
+			continue
+		}
+		ot := ParseOpticalTable(oout)
+		if !ot.Recognised {
+			warns = append(warns, fmt.Sprintf("%s: output received but no optical table recognised (layout differs?) - signal power not updated; see raw output", otext))
+			continue
+		}
+		if err := s.recordOptical(ctx, oltID, ot.Rows); err != nil {
+			return finish("failed", fmt.Sprintf("record signal power of PON %d: %v", pon, err))
+		}
+		optical += len(ot.Rows)
 	}
 	counts["pon_ports_scanned"] = scanned
 	counts["pon_ports_with_onts"] = withONTs
 	counts["onts"] = onts
 	counts["left_to_other_olt"] = heldElsewhere
+	counts["optical_rows"] = optical
 
 	if len(warns) > 0 {
 		return finish("partial", "")
@@ -311,6 +338,79 @@ func (s *Service) replacePort(ctx context.Context, oltID int64, pon int, rows []
 		}
 	}
 	return skipped, tx.Commit()
+}
+
+// scheduledOLTs lists the OLTs the periodic sync visits: enabled devices whose Hardware Vendor selects this driver. The
+// Huawei loop (olt.RunSyncLoop) skips exactly these, so every OLT is synced by one loop or the other. There is no
+// ssh_host_key condition: HSGQ OLTs are reached over telnet and have no host key to pin.
+func (s *Service) scheduledOLTs(ctx context.Context) ([]int64, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT o.device_id FROM olts o JOIN devices d ON d.id=o.device_id WHERE d.enabled=1 AND LOWER(d.vendor) LIKE '%hsgq%' ORDER BY o.device_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// RunSyncLoop syncs every HSGQ OLT each interval, one after another (the OLT allows few concurrent telnet sessions),
+// so inventory and signal power stay current without anyone pressing Sync. A sync that is already running, for
+// instance one started from the UI, is skipped for this round.
+func (s *Service) RunSyncLoop(ctx context.Context, interval time.Duration) {
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		ids, err := s.scheduledOLTs(ctx)
+		if err != nil {
+			slog.Error("hsgq sync loop", "err", err)
+			continue
+		}
+		for _, id := range ids {
+			if _, err := s.Sync(ctx, id, "scheduler"); err != nil {
+				if errors.Is(err, olt.ErrBusy) {
+					slog.Info("hsgq scheduled sync skipped: already running", "olt", id)
+					continue
+				}
+				slog.Warn("hsgq scheduled sync", "olt", id, "err", err)
+			}
+		}
+	}
+}
+
+func anyOnline(rows []ONTRow) bool {
+	for _, r := range rows {
+		if r.RunState == "online" {
+			return true
+		}
+	}
+	return false
+}
+
+// recordOptical stores each listed ONT's received power as rx_power_dbm, the column the Huawei monitor fills and the
+// customer pages read. Rows are matched on position and serial together, so a power reading is never put on a
+// different ONT. An ONT that is not listed keeps its last value, as the Huawei monitor does.
+func (s *Service) recordOptical(ctx context.Context, oltID int64, rows []OpticalRow) error {
+	for _, r := range rows {
+		if _, err := s.db.ExecContext(ctx, `
+			UPDATE ont_inventory SET rx_power_dbm=?
+			WHERE olt_id=? AND frame=0 AND slot=0 AND pon_port=? AND ont_id=? AND serial_number=?`,
+			r.RxDBM, oltID, r.PON, r.ONU, r.SN); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Service) runByID(ctx context.Context, id int64) (*olt.SyncRun, error) {

@@ -145,6 +145,55 @@ func NormalizeSN(sn string) string {
 	return strings.ToUpper(sn)
 }
 
+// OpticalRow is one line of `show ont-optical gpon <pon>`: the ONT's own transceiver readings. Only ONTs that are
+// online appear. RxDBM is the power the OLT receives from the ONT, the figure the Huawei monitor stores as rx_power_dbm.
+type OpticalRow struct {
+	PON, ONU int
+	SN       string // canonical 16 hex characters, see NormalizeSN
+	TempC    float64
+	VoltageV float64
+	BiasMA   float64
+	TxDBM    float64
+	RxDBM    float64
+	Name     string
+}
+
+// OpticalTable is a parsed ont-optical listing. Recognised tells a table with no rows (no ONT online on the port) from
+// output that is not a table at all, so a sync never records anything from output it did not understand.
+type OpticalTable struct {
+	Recognised bool
+	Rows       []OpticalRow
+}
+
+var opticalRowRe = regexp.MustCompile(`(?i)^\s*(\d+)/(\d+)\s+(\S{4,})\s+(-?\d+(?:\.\d+)?)\s*C\s+(-?\d+(?:\.\d+)?)\s*V\s+(-?\d+(?:\.\d+)?)\s*mA\s+(-?\d+(?:\.\d+)?)\s*dBm\s+(-?\d+(?:\.\d+)?)\s*dBm\b\s*(\S*)`)
+
+// ParseOpticalTable parses `show ont-optical gpon <pon>`. A row whose power is not a number (the OLT prints a
+// placeholder for an ONT it cannot read) does not match and is skipped, and unsolicited log lines and the trailing
+// prompt are ignored the same way.
+func ParseOpticalTable(out string) OpticalTable {
+	var tab OpticalTable
+	for _, line := range strings.Split(strings.ReplaceAll(out, "\r", ""), "\n") {
+		if strings.Contains(line, "PON/ONU") && strings.Contains(line, "Rx power") {
+			tab.Recognised = true
+			continue
+		}
+		m := opticalRowRe.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		r := OpticalRow{SN: NormalizeSN(m[3]), Name: m[9]}
+		r.PON, _ = strconv.Atoi(m[1])
+		r.ONU, _ = strconv.Atoi(m[2])
+		r.TempC, _ = strconv.ParseFloat(m[4], 64)
+		r.VoltageV, _ = strconv.ParseFloat(m[5], 64)
+		r.BiasMA, _ = strconv.ParseFloat(m[6], 64)
+		r.TxDBM, _ = strconv.ParseFloat(m[7], 64)
+		r.RxDBM, _ = strconv.ParseFloat(m[8], 64)
+		tab.Rows = append(tab.Rows, r)
+	}
+	return tab
+}
+
 // ParseVersion reads `show version`: the system version and the product model.
 func ParseVersion(out string) (version, product string) {
 	for _, line := range strings.Split(out, "\n") {
@@ -173,6 +222,13 @@ func OntInfoPort(pon int) (string, error) {
 		return "", fmt.Errorf("pon port %d out of range 1..%d", pon, MaxPON)
 	}
 	return fmt.Sprintf("show ont-info %d all", pon), nil
+}
+
+func OntOpticalPort(pon int) (string, error) {
+	if pon < 1 || pon > MaxPON {
+		return "", fmt.Errorf("pon port %d out of range 1..%d", pon, MaxPON)
+	}
+	return fmt.Sprintf("show ont-optical gpon %d", pon), nil
 }
 
 var readOnlyRe = regexp.MustCompile(`^show [A-Za-z0-9 _./-]+$`)

@@ -159,7 +159,7 @@ services:
       POLL_INTERVAL: "60s"
       POLL_WORKERS: 32
       OLT_POLL_INTERVAL: "5m"
-      OLT_SYNC_INTERVAL: "6h"
+      OLT_SYNC_INTERVAL: "1h"
       OPENVPN_CONFIG: /vpn/olt.ovpn
       OPENVPN_ROUTES: "172.16.16.0/24"
       OPENVPN_USER: "${OPENVPN_USER:-}"

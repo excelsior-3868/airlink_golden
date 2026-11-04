@@ -246,7 +246,7 @@ function NewOntStep({
         nextDisabled={!validSerial || !portOk || !!known || !DESC_RE.test(f.desc)}
         hint={
           !validSerial
-            ? 'Complete 16-character hex serial required.'
+            ? 'Enter the ONT serial number.'
             : !portOk
             ? 'Specify frame, slot, and port.'
             : known
@@ -732,7 +732,7 @@ function ExistingOntStep({
         </aside>
       </div>
 
-      <Nav onNext={onNext} nextDisabled={!valid} hint={!valid ? 'Enter a valid 16-character serial.' : undefined} />
+      <Nav onNext={onNext} nextDisabled={!valid} hint={!valid ? 'Enter a valid serial number.' : undefined} />
     </>
   )
 }

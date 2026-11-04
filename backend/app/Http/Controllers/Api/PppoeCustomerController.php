@@ -7,12 +7,15 @@ use App\Http\Controllers\Controller;
 use App\Models\InternetPlan;
 use App\Models\PppoeCustomer;
 use App\Models\User;
+use App\Models\Voucher;
 use App\Services\PppoeCustomerService;
 use App\Services\PppoeRechargeService;
 use App\Services\Radius\OnlineSession;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class PppoeCustomerController extends Controller
@@ -281,8 +284,13 @@ class PppoeCustomerController extends Controller
             return $this->ok(['available' => false, 'message' => 'Username contains invalid characters (letters, numbers, . _ @ - allowed).']);
         }
 
-        $existsInCustomer = PppoeCustomer::where('username', $username)->exists();
-        $existsInVoucher = \App\Models\Voucher::where('code', $username)->whereNull('void_reason')->exists();
+        $ignoreId = $request->input('ignore_id');
+        $customerQuery = PppoeCustomer::where('username', $username);
+        if (!empty($ignoreId)) {
+            $customerQuery->where('id', '!=', $ignoreId);
+        }
+        $existsInCustomer = $customerQuery->exists();
+        $existsInVoucher = Voucher::where('code', $username)->whereNull('void_reason')->exists();
 
         $available = !$existsInCustomer && !$existsInVoucher;
         return $this->ok([
@@ -399,6 +407,14 @@ class PppoeCustomerController extends Controller
         }
 
         $data = $request->validate([
+            'username' => [
+                'sometimes',
+                'string',
+                'min:3',
+                'max:64',
+                'regex:/^[A-Za-z0-9._@-]{3,64}$/',
+                Rule::unique('pppoe_customers', 'username')->ignore($customer->id),
+            ],
             'password' => ['nullable', 'string', 'min:1', 'max:255'],
             'plan_id' => ['nullable', 'integer', 'exists:internet_plans,id'],
             'full_name' => ['required', 'string', 'max:255'],
@@ -415,8 +431,22 @@ class PppoeCustomerController extends Controller
             'onu_serial_number' => ['nullable', 'string', 'max:64'],
             'onu_id' => ['nullable', 'string', 'max:32'],
         ], [
+            'username.regex' => 'Username contains invalid characters (letters, numbers, . _ @ - allowed).',
+            'username.unique' => 'This username is already taken by another subscriber.',
             'phone.regex' => 'Please enter a valid 10-digit mobile number (e.g. 98XXXXXXXX or 97XXXXXXXX).',
         ]);
+
+        if (!empty($data['username'])) {
+            $data['username'] = trim($data['username']);
+            if ($data['username'] !== $customer->username) {
+                $clashWithVoucher = Voucher::where('code', $data['username'])->whereNull('void_reason')->exists();
+                if ($clashWithVoucher) {
+                    throw ValidationException::withMessages([
+                        'username' => 'This username is already taken by an active voucher.',
+                    ]);
+                }
+            }
+        }
 
         $data = $this->normalizeMac($data);
 
